@@ -5,11 +5,22 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 # 🔧 Conexão com Google Sheets
 @st.cache_resource
+@st.cache_resource
 def connect_sheet():
+    import json
+    from google.oauth2.service_account import Credentials
+
     scope = [
-        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
+
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("UAEW_App").worksheet("Sheet1")
+    return sheet
+
     #creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
     #creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
     import json

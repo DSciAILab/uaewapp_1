@@ -42,7 +42,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("UAE Warriors FightWeek Tasks")
+st.title("UAE Warriors 59-60")
 
 sheet = connect_sheet()
 df = load_data(sheet)

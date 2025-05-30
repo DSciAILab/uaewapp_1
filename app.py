@@ -61,7 +61,7 @@ if st.button("🔄 Atualizar Página"):
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
-    df = df[df['Fight Order'].isin(corner_sel)]
+    df = df[df['Corner'].isin(corner_sel)]
 
 # Render por atleta
 for i, row in df.iterrows():

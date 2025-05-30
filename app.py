@@ -133,7 +133,7 @@ for i, row in df.iterrows():
             else:
                 input_widget = st.text_input
                 args = (f"{campo}",)
-                kwargs = {"value": valor_atual, "key": f"{campo}_{i}", "disabled": not editando, "max_chars": 50 if "Music" in campo else None}
+                kwargs = {"value": valor_atual, "key": f"{campo}_{i}", "disabled": False if "Music" in campo else not editando, "max_chars": 50 if "Music" in campo else None}
 
             if idx % 2 == 0:
                 campo_a.__getattribute__(input_widget.__name__)(*args, **kwargs)

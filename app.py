@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # 🔐 Conecta ao Google Sheets usando as credenciais do secrets
 @st.cache_resource
@@ -29,10 +29,10 @@ def load_data():
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
-# ⚙️ Configuração da interface
+# 📱 Melhoria visual para mobile
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 
-# 🌙 Estilo escuro
+# 🌙 Estilo escuro customizado
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
@@ -50,17 +50,46 @@ df, sheet = load_data()
 if pagina == "Datagrid":
     st.title("📋 Visualização em Datagrid - UAE Warriors")
 
+    # 🔽 Lista de países (resumida, pode expandir conforme necessário)
+    paises = ["United Arab Emirates", "Brazil", "USA", "Russia", "France", "Japan", "Egypt", "India"]
+
     gb = GridOptionsBuilder.from_dataframe(df)
+
     campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight", "Coach", "Music 1", "Music 2", "Music 3"]
     for campo in campos_editaveis:
-        gb.configure_column(campo, editable=True)
+        if "Music" in campo:
+            gb.configure_column(
+                campo,
+                editable=True,
+                cellEditor="agTextCellEditor",
+                tooltipField=campo,
+                headerTooltip="Paste your YouTube link here"
+            )
+        elif campo == "Nationality":
+            gb.configure_column(
+                campo,
+                editable=True,
+                cellEditor="agSelectCellEditor",
+                cellEditorParams={"values": paises},
+                tooltipField=campo,
+                headerTooltip="Select nationality"
+            )
+        else:
+            gb.configure_column(
+                campo,
+                editable=True,
+                tooltipField=campo,
+                headerTooltip="Click to edit"
+            )
 
+    # ⚙️ Outras configurações visuais
     gb.configure_pagination(enabled=True)
     gb.configure_side_bar()
     gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, aggFunc='sum', editable=False)
 
     gridOptions = gb.build()
 
+    # 🧩 Renderização
     response = AgGrid(
         df,
         gridOptions=gridOptions,
@@ -69,7 +98,8 @@ if pagina == "Datagrid":
         allow_unsafe_jscode=True,
         enable_enterprise_modules=False,
         height=600,
-        fit_columns_on_grid_load=True
+        fit_columns_on_grid_load=True,
+        theme="alpine"  # Visual limpo
     )
 
     edited_df = pd.DataFrame(response["data"])

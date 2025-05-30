@@ -1,33 +1,17 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
-# 🔧 Conexão com Google Sheets
-@st.cache_resource
+# 🔧 Conexão com Google Sheets via secrets
 @st.cache_resource
 def connect_sheet():
-    import json
-    from google.oauth2.service_account import Credentials
-
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    sheet = client.open("UAEW_App").worksheet("Sheet1")
-    return sheet
-
-    #creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    #creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    import json
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(creds_dict), scope)
-
-
     client = gspread.authorize(creds)
     sheet = client.open("UAEW_App").worksheet("Sheet1")
     return sheet
@@ -139,7 +123,6 @@ for i, row in df.iterrows():
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])
 
-        # Imagem e dados do lado esquerdo
         if row.get("Image"):
             try:
                 col1.image(row["Image"], width=100)
@@ -149,10 +132,8 @@ for i, row in df.iterrows():
         col1.markdown(f"**Division:** {row['Division']}")
         col1.markdown(f"**Opponent:** {row['Oponent']}")
 
-        # Nome destacado
         col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
 
-        # Botão de edição em lote
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
@@ -169,7 +150,6 @@ for i, row in df.iterrows():
             st.session_state[edit_key] = not editando
             st.rerun()
 
-        # Campos de edição em 2 colunas
         campo_a, campo_b = col2.columns(2)
         campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
         for idx, campo in enumerate(campos_editaveis):
@@ -179,13 +159,11 @@ for i, row in df.iterrows():
             else:
                 campo_b.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
 
-        # Botão de WhatsApp
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
-        # Controles de presença (condicionais)
         status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
         colx = st.columns(len(status_cols))
         for idx, status in enumerate(status_cols):
@@ -204,7 +182,6 @@ for i, row in df.iterrows():
             else:
                 colx[idx].markdown(f"<span style='color:green'>{status}</span>", unsafe_allow_html=True)
 
-        # Check-in geral
         log_col = df.columns.get_loc("log")
         if st.button("✅ Confirmar Check-in", key=f"log_{i}"):
             salvar_valor(sheet, i, log_col, "OK")

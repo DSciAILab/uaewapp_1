@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd 
+import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
@@ -40,7 +40,7 @@ st.markdown("""
     .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
     .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
     .neutral-label { background-color: #444; color: #ccc; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
-    .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
+    .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; color: #f4f4f4; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
     </style>
@@ -76,12 +76,13 @@ for i, row in df.iterrows():
     # Verifica pendências para destacar o cabeçalho do expander
     status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
     tem_pendencia = any(str(row.get(status, "")).strip().lower() == "required" for status in status_cols)
-    titulo_expander = f"🔴 {row['Name']}" if tem_pendencia else row['Name']
+    titulo_expander = row['Name']
 
     with st.expander(titulo_expander):
-        col1, col2 = st.columns([1, 5])
-        col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 5])
 
         if row.get("Image"):
             try:

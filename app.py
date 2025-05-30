@@ -48,12 +48,13 @@ st.markdown("""
 st.sidebar.title("🔐 Login")
 username = st.sidebar.text_input("Usuário")
 password = st.sidebar.text_input("Senha", type="password")
+login_button = st.sidebar.button("Entrar")
 
-if username and password:
+if login_button and username and password:
     df_users, _ = load_data("Login")
-    user_row = df_users[(df_users["USER"] == username) & (df_users["PASSWORD"] == password)]
+    user_row = df_users[(df_users["USER"].astype(str) == username) & (df_users["PASSWORD"].astype(str) == password)]
 
-    if not user_row.empty and str(user_row.iloc[0]["PERMISSION"]).upper() == "TRUE":
+    if not user_row.empty and str(user_row.iloc[0]["PERMISSION"]).strip().upper() == "TRUE":
         st.sidebar.success(f"Bem-vindo, {username}!")
 
         # 📦 Carregamento dos dados principais
@@ -62,7 +63,7 @@ if username and password:
         st.title("🎯 Cards - UAE Warriors")
 
         for i, row in df.iterrows():
-            with st.expander(f"🐭‍♂️ Atleta: {row['NAME']}"):
+            with st.expander(f"👝 Atleta: {row['NAME']}"):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:

@@ -19,7 +19,8 @@ def connect_sheet():
 
 # 🔄 Carrega os dados da planilha como DataFrame
 @st.cache_data(ttl=300)
-def load_data(sheet):
+def load_data():
+    sheet = connect_sheet()
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
@@ -47,8 +48,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 📊 Barra lateral com filtros
+df_original = load_data()
 sheet = connect_sheet()
-df_original = load_data(sheet)
 
 with st.sidebar:
     evento_sel = st.multiselect("Evento", sorted(df_original['Event'].dropna().unique()))

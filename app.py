@@ -96,7 +96,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏋️ Painel de Controle de Atletas - Evento MMA")
+st.title("UAE Warriors FightWeek Tasks")
 
 sheet = connect_sheet()
 df = load_data(sheet)

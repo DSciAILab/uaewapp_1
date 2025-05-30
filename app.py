@@ -50,7 +50,7 @@ df = load_data(sheet)
 # Filtros
 col_evento, col_corner = st.columns([6, 6])
 eventos = sorted(df['Event'].dropna().unique())
-corners = sorted(df['Fight Order'].dropna().unique())
+corners = sorted(df['Corner'].dropna().unique())
 
 evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
 corner_sel = col_corner.multiselect("Corner", corners)

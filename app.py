@@ -1,4 +1,4 @@
-# 📦 Importações necessárias
+# 📦 Importações necessárias 
 import streamlit as st  # Biblioteca para criar interfaces web interativas
 import pandas as pd     # Biblioteca para manipulação de dados
 import gspread          # Cliente Python para interagir com o Google Sheets

@@ -3,7 +3,6 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
-from streamlit_option_menu import option_menu
 
 # 🔐 Conecta ao Google Sheets usando as credenciais do secrets
 @st.cache_resource

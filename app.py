@@ -66,7 +66,7 @@ if corner_sel:
 # Render por atleta
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
-    with st.expander(f"{row['Fighter ID']} - {row['Name']} ({row['Event']})"):
+    with st.expander(f"{row['Fighter ID']} - {row['Name']}"):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])
 

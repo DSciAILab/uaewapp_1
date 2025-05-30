@@ -129,12 +129,15 @@ for i, row in df.iterrows():
             if campo == "Nationality":
                 input_widget = st.selectbox
                 args = (f"{campo}", lista_paises)
-                #kwargs = {"index": lista_paises.index(valor_atual) if valor_atual in lista_paises else 0, "key": f"{campo}_{i}", "disabled": not editando}
-                kwargs = {"value": valor_atual,"key": f"{campo}_{i}","disabled": False if "Music" in campo else not editando}
+                kwargs = {"index": lista_paises.index(valor_atual) if valor_atual in lista_paises else 0, "key": f"{campo}_{i}", "disabled": not editando}
             else:
                 input_widget = st.text_input
                 args = (f"{campo}",)
-                kwargs = {"value": valor_atual, "key": f"{campo}_{i}", "disabled": False if "Music" in campo else not editando}
+                kwargs = {
+                    "value": valor_atual,
+                    "key": f"{campo}_{i}",
+                    "disabled": False if "Music" in campo else not editando
+                }
 
             if idx % 2 == 0:
                 campo_a.__getattribute__(input_widget.__name__)(*args, **kwargs)

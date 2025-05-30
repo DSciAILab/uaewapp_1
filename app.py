@@ -62,7 +62,7 @@ if username and password:
         st.title("🎯 Cards - UAE Warriors")
 
         for i, row in df.iterrows():
-            with st.expander(f"🡭‍♂️ Atleta: {row['NAME']}"):
+            with st.expander(f"🐭‍♂️ Atleta: {row['NAME']}"):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:

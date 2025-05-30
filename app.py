@@ -132,7 +132,7 @@ for i, row in df.iterrows():
             else:
                 input_widget = st.text_input
                 args = (f"{campo}",)
-                kwargs = {"value": valor_atual, "key": f"{campo}_{i}", "disabled": not editando}
+                kwargs = {"value": valor_atual, "key": f"{campo}_{i}", "disabled": not editando, "max_chars": 50 if "Music" in campo else None}
 
             if idx % 2 == 0:
                 campo_a.__getattribute__(input_widget.__name__)(*args, **kwargs)
@@ -145,3 +145,13 @@ for i, row in df.iterrows():
             col3.markdown(f"[📥 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+# Modo TV (visualização somente)
+if st.sidebar.checkbox("🖥️ Modo TV"):
+    st.markdown("""
+    <style>
+        .stApp { zoom: 1.25; }
+        .streamlit-expanderHeader {font-size: 1.5rem;}
+        .athlete-name-header { font-size: 2rem; }
+    </style>
+    """, unsafe_allow_html=True)

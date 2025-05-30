@@ -40,9 +40,9 @@ st.markdown("""
     .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
     .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
     .neutral-label { background-color: #444; color: #ccc; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
-    .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; color: #f4f4f4; }
-    .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
-    .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
+    .athlete-name-header { font-size: 1.8rem; font-weight: bold; margin-bottom: 0.5rem; color: #f4f4f4; text-align: center; }
+    .corner-vermelho { border-top: 4px solid red; padding-top: 6px; margin-top: 0.5rem; }
+    .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; margin-top: 0.5rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -76,49 +76,50 @@ for i, row in df.iterrows():
     # Verifica pendências para destacar o cabeçalho do expander
     status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
     tem_pendencia = any(str(row.get(status, "")).strip().lower() == "required" for status in status_cols)
-    titulo_expander = row['Name']
+    titulo_expander = f"{row['Name']}"
 
     with st.expander(titulo_expander):
-        st.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='athlete-name-header'>{row['Name']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns([1, 5])
+        col1, col2, col3 = st.columns([1, 1.5, 5])
 
         if row.get("Image"):
             try:
                 col1.image(row["Image"], width=100)
-                col1.markdown(f"**Fight:** {row.get('Fight Order', '')}")
             except:
                 col1.warning("Imagem inválida")
-        else:
-            col1.markdown(f"**Fight:** {row.get('Fight Order', '')}")
 
+        # Detalhes da luta (coluna nova)
+        col2.markdown(f"**Fight:** {row.get('Fight Order', '')}")
+        col2.markdown(f"{row['Division']}")
+        col2.markdown(f"**Opponent:** {row['Oponent']}")
+
+        # Tags de status
         for status in status_cols:
             col_idx = df.columns.get_loc(status)
             valor = str(row[status]).strip().lower()
             if valor == "required":
-                if st.session_state.get(f"edit_mode_{i}", False) and col1.button(f"⚠️ {status}", key=f"{status}_{i}"):
+                if st.session_state.get(f"edit_mode_{i}", False) and col2.button(f"⚠️ {status}", key=f"{status}_{i}"):
                     salvar_valor(sheet, i, col_idx, "Done")
                     st.rerun()
                 else:
-                    col1.markdown(f"<span class='pending-label'>{status}</span>", unsafe_allow_html=True)
+                    col2.markdown(f"<span class='pending-label'>{status}</span>", unsafe_allow_html=True)
             elif valor == "done":
-                col1.markdown(f"<span class='done-label'>{status}</span>", unsafe_allow_html=True)
+                col2.markdown(f"<span class='done-label'>{status}</span>", unsafe_allow_html=True)
             elif valor == "---":
-                col1.markdown(f"<span class='neutral-label'>{status}</span>", unsafe_allow_html=True)
+                col2.markdown(f"<span class='neutral-label'>{status}</span>", unsafe_allow_html=True)
             else:
-                col1.markdown(f"<span style='color:green'>{status}</span>", unsafe_allow_html=True)
+                col2.markdown(f"<span style='color:green'>{status}</span>", unsafe_allow_html=True)
 
-        col1.markdown(f"{row['Division']}")
-        col1.markdown(f"**Opponent:** {row['Oponent']}")
-
+        # Edição de dados
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
 
         editando = st.session_state[edit_key]
         botao_label = "Salvar" if editando else "Editar"
-        if col2.button(botao_label, key=f"botao_toggle_{i}"):
+        if col3.button(botao_label, key=f"botao_toggle_{i}"):
             if editando:
                 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
                 for campo in campos_editaveis:
@@ -128,7 +129,7 @@ for i, row in df.iterrows():
             st.session_state[edit_key] = not editando
             st.rerun()
 
-        campo_a, campo_b = col2.columns(2)
+        campo_a, campo_b = col3.columns(2)
         campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
         for idx, campo in enumerate(campos_editaveis):
             valor_atual = str(row.get(campo, ""))
@@ -140,6 +141,6 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            col3.markdown(f"[📥 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

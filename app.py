@@ -3,7 +3,6 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # 🔐 Conecta ao Google Sheets usando as credenciais do secrets
 @st.cache_resource
@@ -52,53 +51,42 @@ if username and password:
     if not user_row.empty and user_row.iloc[0]["PERMISSION"] == True:
         st.sidebar.success(f"Bem-vindo, {username}!")
 
-        # 🔀 Navegação entre páginas
-        pagina = st.sidebar.selectbox("Selecione a visualização", ["Cards", "Datagrid"])
-
         # 📦 Carregamento dos dados principais
         df, sheet = load_data("Sheet1")
 
-        # 🎯 Página: Datagrid
-        if pagina == "Datagrid":
-            st.title("📋 Visualização em Datagrid - UAE Warriors")
+        st.title("🎯 Cards - UAE Warriors")
 
-            gb = GridOptionsBuilder.from_dataframe(df)
-            campos_editaveis = [
-                "Nationality", "Residence", "Hight", "Range", "Weight",
-                "Coach", "Music 1", "Music 2", "Music 3"
-            ]
-            for campo in campos_editaveis:
-                gb.configure_column(campo, editable=True)
+        for i, row in df.iterrows():
+            with st.expander(f"🧍‍♂️ Atleta: {row['NAME']}"):
+                col1, col2, col3 = st.columns(3)
 
-            gb.configure_pagination(enabled=True)
-            gb.configure_side_bar()
-            gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, aggFunc='sum', editable=False)
+                with col1:
+                    row["Nationality"] = st.text_input("Nationality", value=row["Nationality"], key=f"nat_{i}")
+                    row["Residence"] = st.text_input("Residence", value=row["Residence"], key=f"res_{i}")
+                    row["Hight"] = st.text_input("Hight", value=row["Hight"], key=f"hgt_{i}")
 
-            gridOptions = gb.build()
+                with col2:
+                    row["Range"] = st.text_input("Range", value=row["Range"], key=f"rng_{i}")
+                    row["Weight"] = st.text_input("Weight", value=row["Weight"], key=f"wgt_{i}")
+                    row["Coach"] = st.text_input("Coach", value=row["Coach"], key=f"cch_{i}")
 
-            response = AgGrid(
-                df,
-                gridOptions=gridOptions,
-                update_mode=GridUpdateMode.MANUAL,
-                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                allow_unsafe_jscode=True,
-                enable_enterprise_modules=False,
-                height=600,
-                fit_columns_on_grid_load=True
-            )
+                with col3:
+                    row["Music 1"] = st.text_input("Music 1", value=row["Music 1"], key=f"msc1_{i}")
+                    row["Music 2"] = st.text_input("Music 2", value=row["Music 2"], key=f"msc2_{i}")
+                    row["Music 3"] = st.text_input("Music 3", value=row["Music 3"], key=f"msc3_{i}")
 
-            edited_df = pd.DataFrame(response["data"])
-
-            if st.button("💾 Salvar alterações no Google Sheets"):
-                for i, row in edited_df.iterrows():
-                    for campo in campos_editaveis:
+                if st.button("Salvar", key=f"save_{i}"):
+                    for campo in [
+                        "Nationality", "Residence", "Hight", "Range", "Weight",
+                        "Coach", "Music 1", "Music 2", "Music 3"
+                    ]:
                         try:
                             valor = row[campo]
                             col_index = df.columns.get_loc(campo)
                             salvar_valor(sheet, i, col_index, valor)
                         except Exception as e:
-                            st.error(f"Erro ao salvar linha {i}, coluna {campo}: {e}")
-                st.success("Alterações salvas com sucesso!")
+                            st.error(f"Erro ao salvar linha {i}, campo {campo}: {e}")
+                    st.success("Dados salvos com sucesso!")
 
     else:
         st.sidebar.error("Usuário ou senha incorretos ou sem permissão.")

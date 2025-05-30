@@ -45,10 +45,10 @@ username = st.sidebar.text_input("Usuário")
 password = st.sidebar.text_input("Senha", type="password")
 
 if username and password:
-    df_users, _ = load_data("user")
+    df_users, _ = load_data("Login")
     user_row = df_users[(df_users["USER"] == username) & (df_users["PASSWORD"] == password)]
 
-    if not user_row.empty and user_row.iloc[0]["PERMISSION"] == True:
+    if not user_row.empty and str(user_row.iloc[0]["PERMISSION"]).upper() == "TRUE":
         st.sidebar.success(f"Bem-vindo, {username}!")
 
         # 📦 Carregamento dos dados principais

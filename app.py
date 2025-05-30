@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
+from gspread.exceptions import WorksheetNotFound
 
 # 🔐 Conecta ao Google Sheets usando as credenciais do secrets
 @st.cache_resource
@@ -20,9 +21,13 @@ def connect_client():
 @st.cache_data(ttl=300)
 def load_data(sheet_name):
     client = connect_client()
-    sheet = client.open("UAEW_App").worksheet(sheet_name)
-    data = sheet.get_all_records()
-    return pd.DataFrame(data), sheet
+    try:
+        sheet = client.open("UAEW_App").worksheet(sheet_name)
+        data = sheet.get_all_records()
+        return pd.DataFrame(data), sheet
+    except WorksheetNotFound:
+        st.sidebar.error(f"A aba '{sheet_name}' não foi encontrada na planilha. Verifique o nome exato.")
+        st.stop()
 
 # 📂 Atualiza célula específica
 def salvar_valor(sheet, row, col_index, valor):
@@ -31,7 +36,7 @@ def salvar_valor(sheet, row, col_index, valor):
 # ⚙️ Configuração da interface
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 
-# 🌙 Estilo escuro
+# 🌟 Estilo escuro
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
@@ -57,7 +62,7 @@ if username and password:
         st.title("🎯 Cards - UAE Warriors")
 
         for i, row in df.iterrows():
-            with st.expander(f"🧍‍♂️ Atleta: {row['NAME']}"):
+            with st.expander(f"🡭‍♂️ Atleta: {row['NAME']}"):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:

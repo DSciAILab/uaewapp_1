@@ -22,7 +22,7 @@ def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# 💾 Atualiza célula específica
+# 📂 Atualiza célula específica
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
@@ -46,7 +46,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 🏷️ Título da Página
+# 🏣 Título da Página
 st.title("UAE Warriors 59-60")
 
 # 🔗 Conecta à planilha e carrega os dados
@@ -72,9 +72,16 @@ if corner_sel:
 # 👊 Exibição dos atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
-    with st.expander(""):
-        st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+
+    # Verifica pendências para destacar o cabeçalho do expander
+    status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
+    tem_pendencia = any(str(row.get(status, "")).strip().lower() == "required" for status in status_cols)
+    titulo_expander = f"🔴 {row['Name']}" if tem_pendencia else row['Name']
+
+    with st.expander(titulo_expander):
         col1, col2 = st.columns([1, 5])
+        col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
         if row.get("Image"):
             try:
@@ -85,8 +92,6 @@ for i, row in df.iterrows():
         else:
             col1.markdown(f"**Fight:** {row.get('Fight Order', '')}")
 
-        # Tags de status ao lado da imagem
-        status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
         for status in status_cols:
             col_idx = df.columns.get_loc(status)
             valor = str(row[status]).strip().lower()
@@ -106,9 +111,6 @@ for i, row in df.iterrows():
         col1.markdown(f"{row['Division']}")
         col1.markdown(f"**Opponent:** {row['Oponent']}")
 
-        col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
-
-        # 🔧 Botão Editar / Salvar
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
@@ -125,7 +127,6 @@ for i, row in df.iterrows():
             st.session_state[edit_key] = not editando
             st.rerun()
 
-        # 📥 Campos editáveis (2 colunas)
         campo_a, campo_b = col2.columns(2)
         campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
         for idx, campo in enumerate(campos_editaveis):
@@ -135,7 +136,6 @@ for i, row in df.iterrows():
             else:
                 campo_b.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
 
-        # 📲 WhatsApp Link
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"

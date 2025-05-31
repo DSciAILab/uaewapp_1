@@ -1,98 +1,152 @@
-import streamlit as st
-import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-from gspread.exceptions import WorksheetNotFound
 
-# 🔐 Conexão com Google Sheets
+# 📦 Importações necessárias
+import streamlit as st  # Biblioteca para criar interfaces web interativas
+import pandas as pd     # Biblioteca para manipulação de dados
+import gspread          # Cliente Python para interagir com o Google Sheets
+from google.oauth2.service_account import Credentials  # Autenticação via conta de serviço
+from streamlit_autorefresh import st_autorefresh  # Componente do Streamlit para autoatualização
+
+# 📡 Função de conexão ao Google Sheets com cache de recurso para performance
 @st.cache_resource
-def connect_client():
+def connect_sheet():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds_dict = st.secrets["gcp_service_account"]
+    creds_dict = st.secrets["gcp_service_account"]  # Lê credenciais da conta de serviço via secrets.toml
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    return client
+    client = gspread.authorize(creds)  # Autoriza cliente com as credenciais
+    sheet = client.open("UAEW_App").worksheet("Sheet1")  # Abre planilha específica
+    return sheet
 
-# 🔄 Carregamento dos dados
-@st.cache_data(ttl=300)
-def load_data(sheet_name):
-    client = connect_client()
-    try:
-        sheet = client.open("UAEW_App").worksheet(sheet_name)
-        data = sheet.get_all_records()
-        return pd.DataFrame(data), sheet
-    except WorksheetNotFound:
-        st.error(f"A aba '{sheet_name}' não foi encontrada.")
-        st.stop()
+# 🔄 Carrega os dados da planilha como DataFrame do Pandas
+def load_data(sheet):
+    data = sheet.get_all_records()  # Lê todas as linhas como lista de dicionários
+    return pd.DataFrame(data)  # Converte em DataFrame
 
-# Atualização individual
+# 💾 Atualiza valor de uma célula específica na planilha
 def salvar_valor(sheet, row, col_index, valor):
-    sheet.update_cell(row + 2, col_index + 1, valor)
+    sheet.update_cell(row + 2, col_index + 1, valor)  # Ajuste necessário por conta do cabeçalho
 
-# ⚙️ Layout
-st.set_page_config(page_title="Cartões UAEW", layout="wide")
+# ⚙️ Configuração da página
+st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
+st_autorefresh(interval=10_000, key="datarefresh")  # Auto-refresh a cada 10 segundos
 
-# 🌑 Estilo escuro
+# 🎨 Estilos visuais customizados via CSS
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
     .stApp { background-color: #0e1117; }
+    .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
+    .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
+    .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
+    .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
+    .neutral-label { background-color: #444; color: #999; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
+    .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
+    .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
+    .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🥋 Ficha de Atletas - UAE Warriors")
+# 🏷️ Título da página
+st.title("UAE Warriors 59-60")
 
-# 📊 Carregamento da planilha
-df, sheet = load_data("Sheet1")
+# 📥 Conecta à planilha e carrega dados
+sheet = connect_sheet()
+df = load_data(sheet)
 
-# 🎯 Filtros
-col_filtro1, col_filtro2 = st.columns(2)
-eventos = df['EVENT'].dropna().unique()
-cantos = df['CORNER'].dropna().unique()
+# 🔍 Filtros de evento e corner
+col_evento, col_corner = st.columns([6, 6])
+eventos = sorted(df['Event'].dropna().unique())
+corners = sorted(df['Corner'].dropna().unique())
 
-evento_selecionado = col_filtro1.selectbox("Evento", options=["Todos"] + list(eventos))
-canto_selecionado = col_filtro2.selectbox("Corner", options=["Todos"] + list(cantos))
+evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
+corner_sel = col_corner.multiselect("Corner", corners)
 
-# Aplicar filtros
-df_filtrado = df.copy()
-if evento_selecionado != "Todos":
-    df_filtrado = df_filtrado[df_filtrado['EVENT'] == evento_selecionado]
-if canto_selecionado != "Todos":
-    df_filtrado = df_filtrado[df_filtrado['CORNER'] == canto_selecionado]
+# 🔄 Botão manual de atualização
+if st.button("🔄 Atualizar Página"):
+    st.rerun()
 
-# 📄 Interface por atleta
-for i, row in df_filtrado.iterrows():
-    with st.expander(f"👊 Atleta: {row['NAME']}"):
-        col1, col2, col3 = st.columns(3)
+# Aplica os filtros selecionados
+if evento_sel != "Todos":
+    df = df[df['Event'] == evento_sel]
+if corner_sel:
+    df = df[df['Corner'].isin(corner_sel)]
 
-        with col1:
-            st.image(row.get("PHOTO", ""), width=150)
-            row["Nationality"] = st.text_input("Nationality", value=row["Nationality"], key=f"nat_{i}")
-            row["Residence"] = st.text_input("Residence", value=row["Residence"], key=f"res_{i}")
-            row["Hight"] = st.text_input("Hight", value=row["Hight"], key=f"hgt_{i}")
+# 🧍 Renderização individual por atleta
+for i, row in df.iterrows():
+    cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
+    with st.expander(f"{row['Fighter ID']} - {row['Name']}"):
+        st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 5])
 
-        with col2:
-            row["Range"] = st.text_input("Range", value=row["Range"], key=f"rng_{i}")
-            row["Weight"] = st.text_input("Weight", value=row["Weight"], key=f"wgt_{i}")
-            row["Coach"] = st.text_input("Coach", value=row["Coach"], key=f"cch_{i}")
+        # 📷 Exibe imagem e número da luta
+        if row.get("Image"):
+            try:
+                col1.image(row["Image"], width=100)
+                col1.markdown(f"**Fight Order:** {row.get('Fight Order', '')}")
+            except:
+                col1.warning("Imagem inválida")
+        else:
+            col1.markdown(f"**Fight Order:** {row.get('Fight Order', '')}")
 
-        with col3:
-            row["Music 1"] = st.text_input("Music 1", value=row["Music 1"], key=f"msc1_{i}")
-            row["Music 2"] = st.text_input("Music 2", value=row["Music 2"], key=f"msc2_{i}")
-            row["Music 3"] = st.text_input("Music 3", value=row["Music 3"], key=f"msc3_{i}")
+        # 🥋 Informações fixas do atleta
+        col1.markdown(f"**Division:** {row['Division']}")
+        col1.markdown(f"**Opponent:** {row['Oponent']}")
 
-        if st.button("Salvar", key=f"save_{i}"):
-            for campo in [
-                "Nationality", "Residence", "Hight", "Range", "Weight",
-                "Coach", "Music 1", "Music 2", "Music 3"
-            ]:
-                try:
-                    valor = row[campo]
+        # 🏷️ Nome do atleta centralizado
+        col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
+
+        # 🔁 Alternância entre modo edição e visualização
+        edit_key = f"edit_mode_{i}"
+        if edit_key not in st.session_state:
+            st.session_state[edit_key] = False
+
+        editando = st.session_state[edit_key]
+        botao_label = "Salvar" if editando else "Editar"
+        if col2.button(botao_label, key=f"botao_toggle_{i}"):
+            if editando:
+                campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
+                for campo in campos_editaveis:
+                    novo_valor = st.session_state.get(f"{campo}_{i}", "")
                     col_index = df.columns.get_loc(campo)
-                    salvar_valor(sheet, i, col_index, valor)
-                except Exception as e:
-                    st.error(f"Erro ao salvar linha {i}, campo {campo}: {e}")
-            st.success("✅ Dados salvos com sucesso!")
+                    salvar_valor(sheet, i, col_index, novo_valor)
+            st.session_state[edit_key] = not editando
+            st.rerun()
+
+        # 📝 Campos editáveis
+        campo_a, campo_b = col2.columns(2)
+        for idx, campo in enumerate(campos_editaveis):
+            valor_atual = str(row.get(campo, ""))
+            if idx % 2 == 0:
+                campo_a.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+            else:
+                campo_b.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+
+        # 📲 Link para WhatsApp
+        whatsapp = str(row.get("Whatsapp", "")).strip()
+        if whatsapp:
+            link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
+            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+
+        # ✅ Campos de status editáveis (visual e update)
+        status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
+        colx = st.columns(len(status_cols))
+        for idx, status in enumerate(status_cols):
+            col_idx = df.columns.get_loc(status)
+            valor = str(row[status]).strip().lower()
+            if valor == "required":
+                if editando and colx[idx].button(f"⚠️ {status}", key=f"{status}_{i}"):
+                    salvar_valor(sheet, i, col_idx, "Done")
+                    st.rerun()
+                else:
+                    colx[idx].markdown(f"<span class='pending-label'>{status}</span>", unsafe_allow_html=True)
+            elif valor == "done":
+                colx[idx].markdown(f"<span class='done-label'>{status}</span>", unsafe_allow_html=True)
+            elif valor == "---":
+                colx[idx].markdown(f"<span class='neutral-label'>{status}</span>", unsafe_allow_html=True)
+            else:
+                colx[idx].markdown(f"<span style='color:green'>{status}</span>", unsafe_allow_html=True)
+
+        # 🔚 Fechamento da div personalizada
+        st.markdown("</div>", unsafe_allow_html=True)

@@ -1,4 +1,7 @@
 # 📍 UAE Warriors App - Versão Corrigida v1.1.33
+# Configuração principal da página
+st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
+st_autorefresh(interval=10_000)
 
 import streamlit as st
 import pandas as pd
@@ -101,9 +104,6 @@ def renderizar_atleta(i, row, df):
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
 
-# Configuração principal da página
-st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
-st_autorefresh(interval=10_000)
 
 campos_editaveis = ["Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach", "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]

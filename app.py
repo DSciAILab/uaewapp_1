@@ -1,7 +1,7 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.59
+Versão: v1.1.60
 
 ### Novidades desta versão:
 - Comentários linha a linha adicionados
@@ -10,6 +10,8 @@ Versão: v1.1.59
 - Corrigido erro ao editar colunas ausentes com try/except
 - Informações de luta organizadas em tabelas lado a lado (Fight, Division, Opponent)
 - Toggle ativa e bloqueia linha via coluna LockBy = "1724"
+- Tarefas interativas: clique na tarefa para alternar entre Required e Done (com atualização no Google Sheets)
+- Centralização dos textos das tabelas
 """
 
 # 🔑 Importações necessárias
@@ -61,12 +63,12 @@ body, .stApp { background-color: #0e1117; color: white; }
 .athlete-header { display: flex; justify-content: center; align-items: center; gap: 1rem; margin: 1rem 0; }
 .avatar { border-radius: 50%; width: 65px; height: 65px; object-fit: cover; }
 .name-tag { font-size: 1.8rem; font-weight: bold; }
-.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 3px; text-transform: uppercase; display: inline-block; }
-.badge-done { background-color: #2e4f2e; color: #5efc82; }
-.badge-required { background-color: #5c1a1a; color: #ff8080; }
-.badge-neutral { background-color: #444; color: #ccc; }
-table { width: 100%; margin: 5px 0; }
-th, td { text-align: left; padding: 4px 8px; }
+.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 3px; text-transform: uppercase; display: inline-block; cursor: pointer; }
+.badge-done { background-color: #2e4f2e; color: #5efc82; text-align: center; }
+.badge-required { background-color: #5c1a1a; color: #ff8080; text-align: center; }
+.badge-neutral { background-color: #444; color: #ccc; text-align: center; }
+table { width: 100%; margin: 5px 0; border-collapse: collapse; text-align: center; }
+th, td { text-align: center; padding: 4px 8px; border: 1px solid #444; }
 th { font-weight: bold; }
 .section-label { font-weight: bold; margin-top: 1rem; font-size: 1.1rem; }
 </style>
@@ -115,21 +117,28 @@ if df.empty:
 for i, row in df.iterrows():
     with st.container():
         st.markdown(f"""
-        <div class="athlete-header">
-            <img class="avatar" src="{row.get('Image', 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png')}" />
-            <div class="name-tag" style="color:{'#ff4b4b' if row.get('Corner', '').lower() == 'red' else '#0099ff'};">
+        <div class=\"athlete-header\">
+            <img class=\"avatar\" src=\"{row.get('Image', 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png')}\" />
+            <div class=\"name-tag\" style=\"color:{'#ff4b4b' if row.get('Corner', '').lower() == 'red' else '#0099ff'};\">
                 {('⚠️ ' if any(str(row.get(t, '')).lower() == 'required' for t in tarefas) else '') + row.get('Name', '')}
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
-            st.markdown(" ".join([
-                f"<span class='badge {('badge-required' if str(row[t]).lower()=='required' else ('badge-done' if str(row[t]).lower()=='done' else 'badge-neutral'))}'>" + t.upper() + "</span>"
-                for t in tarefas
-            ]), unsafe_allow_html=True)
+            def render_tarefa(tarefa, valor, idx):
+                classe = 'badge-required' if valor.lower() == 'required' else 'badge-done'
+                texto = tarefa.upper()
+                if st.button(texto, key=f"tarefa_{tarefa}_{idx}"):
+                    headers = [h.strip() for h in sheet.row_values(1)]
+                    col_idx = headers.index(tarefa)
+                    novo_valor = 'done' if valor.lower() == 'required' else 'required'
+                    salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
+                return f"<span class='badge {classe}'>{texto}</span>"
 
-            # 🔁 Info da luta em tabelas
+            badges_html = " ".join([render_tarefa(t, str(row.get(t, '')), i) for t in tarefas])
+            st.markdown(badges_html, unsafe_allow_html=True)
+
             st.markdown("""
             <div style='display: flex; justify-content: space-between;'>
                 <table><tr><th>Fight</th></tr><tr><td>{}</td></tr></table>
@@ -138,12 +147,10 @@ for i, row in df.iterrows():
             </div>
             """.format(row.get('Fight Order', ''), row.get('Division', ''), row.get('Oponent', '')), unsafe_allow_html=True)
 
-            # 📱 WhatsApp
             wpp = str(row.get("Whatsapp", "")).strip().replace("+", "").replace(" ", "")
             if wpp:
                 st.markdown(f"<p style='text-align: center;'>📞 <a href='https://wa.me/{wpp}' target='_blank'>Enviar mensagem no WhatsApp</a></p>", unsafe_allow_html=True)
 
-            # 🧾 Tabelas informativas
             st.markdown("""
             <div style='display: flex; gap: 2rem;'>
                 <table><tr><th>Nationality</th><th>DOB</th><th>Passport</th></tr><tr><td>{}</td><td>{}</td><td>{}</td></tr></table>

@@ -1,7 +1,7 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.4
+Versão: v1.1.15
 
 ### Mudanças nesta versão:
 - Novo layout para o título dentro do `st.expander`:

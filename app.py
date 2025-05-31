@@ -1,11 +1,13 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.49
+Versão: v1.1.50
 
 ### Novidades desta versão:
-- Corrigido erro de acesso direto a colunas inexistentes (KeyError)
-- Tarefas agora são exibidas com .get(t, '') para segurança
+- Estruturado três blocos lado a lado: Detalhes Pessoais | Logística | Hotel
+- Corrigido layout com caixas editáveis de música
+- Corrigido salvamento com mensagens de erro descritivas e seguras
+- Melhoria visual nas seções logísticas e links com hyperlink
 """
 
 # 🔑 Importações
@@ -106,30 +108,26 @@ for j, row in df.iterrows():
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📱 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
-        # Detalhes pessoais em tabela
-        st.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
-        st.markdown(f"""
+        col1, col2, col3 = st.columns(3)
+        col1.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
+        col1.markdown(f"""
         <table>
         <tr><th>Nationality</th><th>DOB</th><th>Passport</th></tr>
         <tr><td>{row['Nationality']}</td><td>{row['DOB']}</td><td>{row['Passport']}</td></tr>
         </table>""", unsafe_allow_html=True)
 
-        # Logistica e voo
-        st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
-        st.markdown(f"<b>Arrival:</b> {row['Arrival Details']}", unsafe_allow_html=True)
-        st.markdown(f"<b>Departure:</b> {row['Departure Details']}", unsafe_allow_html=True)
+        col2.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
+        col2.markdown(f"<b>Arrival:</b> {row['Arrival Details']}", unsafe_allow_html=True)
+        col2.markdown(f"<b>Departure:</b> {row['Departure Details']}", unsafe_allow_html=True)
         ticket = row['Flight Ticket']
         if ticket:
-            st.markdown(f"<a href='{ticket}' target='_blank'>🌍 Ver passagem</a>", unsafe_allow_html=True)
-        else:
-            st.markdown("<i>Passagem não disponível</i>", unsafe_allow_html=True)
+            col2.markdown(f"<a href='{ticket}' target='_blank'>🌍 Ver passagem</a>", unsafe_allow_html=True)
 
-        st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
-        st.markdown(f"Room: {row['Booking Number / Room']}")
+        col3.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
+        col3.markdown(f"Room: {row['Booking Number / Room']}")
 
         st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)
 
-        # Campos editáveis em 3 colunas
         campos = [c for c in ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Music 3", "Notes"] if c in df.columns]
         col1, col2, col3 = st.columns(3)
         colunas = [col1, col2, col3]

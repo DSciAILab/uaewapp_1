@@ -1,11 +1,10 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.33
+Versão: v1.1.34
 
 ### Novidades desta versão:
-- Planilha atualizada para utilizar a aba 'App'
-- Campos organizados em setores (Luta, Tarefas, Logística, Dados Pessoais, Evento)
+- Planilha atualizada para utilizar fallback automático se aba "App" não for encontrada
 - Layout oficial com imagem circular ao lado do nome e WhatsApp centralizado
 """
 
@@ -26,7 +25,13 @@ def connect_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open("UAEW_App").worksheet("App")
+    sheet_file = client.open("UAEW_App")
+    abas = [ws.title for ws in sheet_file.worksheets()]
+    if "App" in abas:
+        sheet = sheet_file.worksheet("App")
+    else:
+        st.error("A aba 'App' não foi encontrada. Verifique o nome da aba na planilha.")
+        st.stop()
     return sheet
 
 # 🔄 Carrega dados

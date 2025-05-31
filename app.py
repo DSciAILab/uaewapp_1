@@ -1,3 +1,4 @@
+#Varsão antes do Datagrid
 import streamlit as st
 import pandas as pd
 import gspread
@@ -63,23 +64,23 @@ if login_button and username and password:
         st.title("🎯 Cards - UAE Warriors")
 
         for i, row in df.iterrows():
-            with st.expander(f"👝 Atleta: {row['Name']}"):
+            with st.expander(f"👝 Atleta: {row['NAME']}"):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    row["Nationality"] = st.text_input("Nationality", value=row.get("Nationality", ""), key=f"nat_{i}")
-                    row["Residence"] = st.text_input("Residence", value=row.get("Residence", ""), key=f"res_{i}")
-                    row["Hight"] = st.text_input("Hight", value=row.get("Hight", ""), key=f"hgt_{i}")
+                    row["Nationality"] = st.text_input("Nationality", value=row["Nationality"], key=f"nat_{i}")
+                    row["Residence"] = st.text_input("Residence", value=row["Residence"], key=f"res_{i}")
+                    row["Hight"] = st.text_input("Hight", value=row["Hight"], key=f"hgt_{i}")
 
                 with col2:
-                    row["Range"] = st.text_input("Range", value=row.get("Range", ""), key=f"rng_{i}")
-                    row["Weight"] = st.text_input("Weight", value=row.get("Weight", ""), key=f"wgt_{i}")
-                    row["Coach"] = st.text_input("Coach", value=row.get("Coach", ""), key=f"cch_{i}")
+                    row["Range"] = st.text_input("Range", value=row["Range"], key=f"rng_{i}")
+                    row["Weight"] = st.text_input("Weight", value=row["Weight"], key=f"wgt_{i}")
+                    row["Coach"] = st.text_input("Coach", value=row["Coach"], key=f"cch_{i}")
 
                 with col3:
-                    row["Music 1"] = st.text_input("Music 1", value=row.get("Music 1", ""), key=f"msc1_{i}")
-                    row["Music 2"] = st.text_input("Music 2", value=row.get("Music 2", ""), key=f"msc2_{i}")
-                    row["Music 3"] = st.text_input("Music 3", value=row.get("Music 3", ""), key=f"msc3_{i}")
+                    row["Music 1"] = st.text_input("Music 1", value=row["Music 1"], key=f"msc1_{i}")
+                    row["Music 2"] = st.text_input("Music 2", value=row["Music 2"], key=f"msc2_{i}")
+                    row["Music 3"] = st.text_input("Music 3", value=row["Music 3"], key=f"msc3_{i}")
 
                 if st.button("Salvar", key=f"save_{i}"):
                     for campo in [

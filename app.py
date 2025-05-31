@@ -1,12 +1,14 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.56
+Versão: v1.1.58
 
 ### Novidades desta versão:
 - Comentários linha a linha adicionados
 - Filtro "Corner" agora só permite seleção entre "Red" e "Blue"
 - Campo "Editar" agora usa `st.toggle` para destravar as caixas
+- Corrigido erro ao editar colunas ausentes com try/except
+- Informações de luta organizadas em tabelas lado a lado (Fight, Division, Opponent)
 """
 
 # 🔑 Importações necessárias
@@ -86,13 +88,17 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
+# 🧩 Define tarefas válidas
 tarefas_todas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
 tarefas = [t for t in tarefas_todas if t in df.columns]
 
+# 🎛️ Filtra por status
+def is_required(row): return any(str(row.get(t, '')).lower() == "required" for t in tarefas)
+def is_done(row): return all(str(row.get(t, '')).lower() == "done" for t in tarefas)
 if status_sel == "Somente pendentes":
-    df = df[df[tarefas].apply(lambda row: any(str(row.get(t, '')).lower() == "required" for t in tarefas), axis=1)]
+    df = df[df.apply(is_required, axis=1)]
 elif status_sel == "Somente completos":
-    df = df[df[tarefas].apply(lambda row: all(str(row.get(t, '')).lower() == "done" for t in tarefas), axis=1)]
+    df = df[df.apply(is_done, axis=1)]
 
 # 🎭 Exibir apenas lutadores
 if "ROLE" in df.columns:
@@ -100,7 +106,6 @@ if "ROLE" in df.columns:
 
 # 📌 Contagem
 st.markdown(f"🔎 **{len(df)} atleta(s) encontrados para os filtros aplicados.**")
-
 if df.empty:
     st.warning("Nenhum atleta encontrado com os filtros selecionados.")
     st.stop()
@@ -108,16 +113,14 @@ if df.empty:
 # 👤 Exibição de cada atleta
 for i, row in df.iterrows():
     with st.container():
-        st.markdown("""
+        st.markdown(f"""
         <div class="athlete-header">
-            <img class="avatar" src="{}" />
-            <div class="name-tag" style="color:{};">{}</div>
+            <img class="avatar" src="{row.get('Image', 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png')}" />
+            <div class="name-tag" style="color:{'#ff4b4b' if row.get('Corner', '').lower() == 'red' else '#0099ff'};">
+                {('⚠️ ' if any(str(row.get(t, '')).lower() == 'required' for t in tarefas) else '') + row.get('Name', '')}
+            </div>
         </div>
-        """.format(
-            row.get("Image", "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png"),
-            "#ff4b4b" if row.get("Corner", "").lower() == "red" else "#0099ff",
-            ("⚠️ " if any(str(row.get(t, '')).lower() == "required" for t in tarefas) else "") + row.get("Name", "")
-        ), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
             st.markdown(" ".join([
@@ -125,26 +128,26 @@ for i, row in df.iterrows():
                 for t in tarefas
             ]), unsafe_allow_html=True)
 
-            st.markdown(f"<p style='text-align: center; margin-top: 0.5rem;'>Fight {row.get('Fight Order')} | {row.get('Division')} | Opponent {row.get('Oponent')}</p>", unsafe_allow_html=True)
+            # 🔁 Info da luta em tabelas
+            st.markdown("""
+            <div style='display: flex; justify-content: space-between;'>
+                <table><tr><th>Fight</th></tr><tr><td>{}</td></tr></table>
+                <table><tr><th>Division</th></tr><tr><td>{}</td></tr></table>
+                <table><tr><th>Opponent</th></tr><tr><td>{}</td></tr></table>
+            </div>
+            """.format(row.get('Fight Order', ''), row.get('Division', ''), row.get('Oponent', '')), unsafe_allow_html=True)
 
+            # 📱 WhatsApp
             wpp = str(row.get("Whatsapp", "")).strip().replace("+", "").replace(" ", "")
             if wpp:
                 st.markdown(f"<p style='text-align: center;'>📞 <a href='https://wa.me/{wpp}' target='_blank'>Enviar mensagem no WhatsApp</a></p>", unsafe_allow_html=True)
 
+            # 🧾 Tabelas informativas
             st.markdown("""
             <div style='display: flex; gap: 2rem;'>
-            <table>
-                <tr><th>Nationality</th><th>DOB</th><th>Passport</th></tr>
-                <tr><td>{}</td><td>{}</td><td>{}</td></tr>
-            </table>
-            <table>
-                <tr><th>Arrival</th><th>Departure</th><th>Flight</th></tr>
-                <tr><td>{}</td><td>{}</td><td>{}</td></tr>
-            </table>
-            <table>
-                <tr><th>Room</th></tr>
-                <tr><td>{}</td></tr>
-            </table>
+                <table><tr><th>Nationality</th><th>DOB</th><th>Passport</th></tr><tr><td>{}</td><td>{}</td><td>{}</td></tr></table>
+                <table><tr><th>Arrival</th><th>Departure</th><th>Flight</th></tr><tr><td>{}</td><td>{}</td><td>{}</td></tr></table>
+                <table><tr><th>Room</th></tr><tr><td>{}</td></tr></table>
             </div>
             """.format(
                 row.get("Nationality", ""), row.get("DOB", ""), row.get("Passport", ""),
@@ -153,16 +156,9 @@ for i, row in df.iterrows():
                 row.get("Booking Number / Room", "")
             ), unsafe_allow_html=True)
 
-            campos_editaveis = [
-                "Height", "Range", "Weight",
-                "Country", "City", "Fight Style",
-                "Team", "Uniform", "Notes",
-                "Music 1", "Music 2", "Music 3"
-            ]
-
-            toggle_key = f"edit_toggle_{i}"
-            editar = st.toggle("✏️ Editar informações", key=toggle_key)
-
+            # 🛠️ Campos editáveis
+            campos_editaveis = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Notes", "Music 1", "Music 2", "Music 3"]
+            editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}")
             col1, col2, col3 = st.columns(3)
             for idx, campo in enumerate(campos_editaveis):
                 val = str(row.get(campo, ""))
@@ -172,13 +168,9 @@ for i, row in df.iterrows():
                 else:
                     novo_valor = col.text_input(campo, value=val, key=f"{campo}_{i}", disabled=not editar)
                 if editar and novo_valor != val:
-
                     try:
                         headers = [h.strip() for h in sheet.row_values(1)]
                         col_idx = headers.index(campo)
                         salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     except ValueError:
                         st.warning(f"⚠️ Coluna '{campo}' não encontrada no Google Sheet.")
-
-                    
-                    salvar_valor(sheet, row['original_index'], col_idx, novo_valor)

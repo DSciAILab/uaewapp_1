@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound
 
-# 🔐 Conecta ao Google Sheets
+# 🔐 Conexão com o Google Sheets
 @st.cache_resource
 def connect_client():
     scope = [
@@ -16,7 +16,7 @@ def connect_client():
     client = gspread.authorize(creds)
     return client
 
-# 🔄 Carrega dados da aba
+# 🔄 Carregamento da planilha
 @st.cache_data(ttl=300)
 def load_data(sheet_name):
     client = connect_client()
@@ -28,10 +28,10 @@ def load_data(sheet_name):
         st.error(f"A aba '{sheet_name}' não foi encontrada.")
         st.stop()
 
-# Configuração da interface
-st.set_page_config(page_title="Cartões de Atletas", layout="wide")
+# Configuração do layout
+st.set_page_config(page_title="Dashboard UAEW", layout="wide")
 
-# Estilo escuro
+# Estilo visual (tema escuro)
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
@@ -39,21 +39,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Título principal
-st.title("🥋 UAE Warriors - Cartões de Atletas")
+# Título
+st.title("📋 Dashboard de Atletas - UAEW")
 
-# Carregamento da planilha
+# Carregar dados
 df = load_data("Sheet1")
 
-# Exibição por atleta com expanders
-for i, row in df.iterrows():
-    with st.expander(f"👤 {row['NAME']}"):
-        st.write(f"📍 Nacionalidade: {row['Nationality']}")
-        st.write(f"🏠 Residência: {row['Residence']}")
-        st.write(f"📏 Altura: {row['Hight']}")
-        st.write(f"📐 Alcance: {row['Range']}")
-        st.write(f"⚖️ Peso: {row['Weight']}")
-        st.write(f"🧑‍🏫 Técnico: {row.get('Coach', '')}")
-        st.write(f"🎵 Música 1: {row.get('Music 1', '')}")
-        st.write(f"🎵 Música 2: {row.get('Music 2', '')}")
-        st.write(f"🎵 Música 3: {row.get('Music 3', '')}")
+# Exibir tabela completa
+st.dataframe(df, use_container_width=True)

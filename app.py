@@ -1,18 +1,13 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.3
+Versão: v1.0.8
 
-### Mudanças nesta versão:
-- Melhoria visual: status pendentes (⚠️) e concluídos (✅) voltam a ser exibidos com rótulos ao lado do nome.
-- Removido campo redundante de status dentro do expander.
-- Layout mais limpo e intuitivo.
-
-### Próximas melhorias sugeridas:
-- Paginação por evento
-- Controle de edição por campo
-
-### 🗓️ Última atualização: 2025-05-30
+### Novidades desta versão:
+- Exibição dos status (badges) logo ao lado do nome do atleta no cabeçalho do `expander`
+- Emojis de alerta (⚠️) em atletas com pendências
+- Remoção dos badges duplicados abaixo
+- Otimização de layout para responsividade
 """
 
 # 📦 Importações
@@ -55,13 +50,20 @@ st.markdown("""
     .stApp { background-color: #0e1117; }
     .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
     .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
+    .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
+    .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
+    .neutral-label { background-color: #444; color: #999; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; text-transform: uppercase; display: inline-block; }
+    .badge-done { background-color: #2e4f2e; color: #5efc82; }
+    .badge-required { background-color: #5c1a1a; color: #ff8080; }
+    .badge-neutral { background-color: #444; color: #ccc; }
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-# 🏇 Título principal
+# 🏷️ Título principal
 st.title("UAE Warriors 59-60")
 
 # 🗓️ Dados e filtros
@@ -87,29 +89,31 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-def gerar_status_texto(row):
-    status_list = []
-    for status in status_cols:
-        valor = str(row.get(status, "")).strip().lower()
-        if valor == "done":
-            status_list.append(f"[{status.upper()} ✅]")
-        elif valor == "required":
-            status_list.append(f"[{status.upper()} ⚠️]")
-    return " ".join(status_list)
+def gerar_badge(valor, status):
+    valor = valor.strip().lower()
+    if valor == "done":
+        return f"<span class='badge badge-done'>{status.upper()}</span>"
+    elif valor == "required":
+        return f"<span class='badge badge-required'>{status.upper()}</span>"
+    else:
+        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-# 👸 Renderiza atletas
+# 🤸️ Renderiza atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 
-    status_titulo = gerar_status_texto(row)
-    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
-    icone_alerta = " ⚠️" if tem_pendencia else ""
+    status_tags = " ".join(
+        gerar_badge(str(row.get(status, "")), status)
+        for status in status_cols
+    )
 
-    titulo_base = f"{row['Fighter ID']} - {row['Name']}{icone_alerta} {status_titulo}"
+    tem_pendencia = any(str(row.get(status, "")) == "Required" for status in status_cols)
+    icone_alerta = " \u26a0\ufe0f" if tem_pendencia else ""
 
-    with st.expander(titulo_base):
+    titulo = f"{row['Fighter ID']} - {row['Name']}{icone_alerta} {status_tags}"
+
+    with st.expander(titulo, unsafe_allow_html=True):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
-
         col1, col2 = st.columns([1, 5])
 
         if row.get("Image"):

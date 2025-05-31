@@ -21,23 +21,35 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 🔐 Conexão com Google Sheets
+# 🔐 Conexão com Google Sheets (com validação e tratamento de erro)
 @st.cache_resource
 def connect_sheet():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    sheet_file = client.open("UAEW_App")
-    return sheet_file.worksheet("App")
+    try:
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet_file = client.open("UAEW_App")
 
-# 🔄 Carrega dados e corrige nomes duplicados
+        if "App" not in [ws.title for ws in sheet_file.worksheets()]:
+            st.error("A aba 'App' não existe no arquivo 'UAEW_App'.")
+            return None
+
+        return sheet_file.worksheet("App")
+    except Exception as e:
+        st.error(f"Erro ao conectar com Google Sheets: {e}")
+        return None
+
+# 🔄 Carrega dados da planilha e renomeia colunas duplicadas
 @st.cache_data(ttl=300)
 def load_data():
     sheet = connect_sheet()
+    if sheet is None:
+        st.stop()
+
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df["original_index"] = df.index
@@ -45,7 +57,7 @@ def load_data():
         df.rename(columns={"CORNER": "Coach"}, inplace=True)
     return df, sheet
 
-# 📂 Atualiza valores de célula individual
+# 📂 Atualiza valores na planilha de forma individual
 def salvar_valor(sheet, row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
@@ -73,8 +85,6 @@ th { font-weight: bold; }
 .section-label { font-weight: bold; margin-top: 1rem; font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
-
-# Continuação da Versão v1.1.61 - UAE Warriors App
 
 # 🔍 Carregando dados e planilha
 df, sheet = load_data()
@@ -107,13 +117,11 @@ for _, row in df.iterrows():
     id_unico = f"lock_{row['original_index']}"
     edicao_liberada = st.toggle("Editar", key=id_unico, value=(lock == "1724"), disabled=(lock not in ["", "1724"]))
 
-    # Atualiza LockBy no Sheets se toggle mudou
     if edicao_liberada and lock != "1724":
         salvar_valor(sheet, row['original_index'], headers.index("LockBy"), "1724")
     elif not edicao_liberada and lock == "1724":
         salvar_valor(sheet, row['original_index'], headers.index("LockBy"), "")
 
-    # Cabeçalho com nome e imagem
     st.markdown("<hr>", unsafe_allow_html=True)
     col1, col2 = st.columns([0.3, 0.7])
     with col1:
@@ -122,7 +130,6 @@ for _, row in df.iterrows():
         st.markdown(f"<div class='name-tag'>{row.get('Name')}</div>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>Fight {row.get('Fight Order')} | {row.get('Division')} | Opponent {row.get('Oponent')}</p>", unsafe_allow_html=True)
 
-    # 🔹 Dados em 2 colunas com 2 tabelas cada
     info1, info2 = st.columns(2)
     with info1:
         st.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
@@ -157,7 +164,6 @@ for _, row in df.iterrows():
             <tr><th>Comments</th><td>{row.get('Comments')}</td></tr>
         </table>""", unsafe_allow_html=True)
 
-    # 🚀 Tarefas interativas com badges clicáveis
     st.markdown("<div class='section-label'>Tarefas</div>", unsafe_allow_html=True)
     badge_line = []
     for t in tarefas:
@@ -168,12 +174,12 @@ for _, row in df.iterrows():
         elif valor_atual == "done":
             classe = "badge-done"
 
-        # Se edição liberada e clicado, troca valor
         if edicao_liberada:
             if st.button(t.upper(), key=f"{t}_{row['original_index']}"):
                 novo_valor = "done" if valor_atual == "required" else "required"
                 salvar_valor(sheet, row['original_index'], headers.index(t), novo_valor)
                 st.experimental_rerun()
+
         badge_line.append(f"<span class='badge {classe}'>{t.upper()}</span>")
 
     st.markdown(" ".join(badge_line), unsafe_allow_html=True)

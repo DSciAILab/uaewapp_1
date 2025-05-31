@@ -1,14 +1,13 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.34
+Versão: v1.1.36
 
 ### Novidades desta versão:
-- Planilha atualizada para utilizar fallback automático se aba "App" não for encontrada
-- Layout oficial com imagem circular ao lado do nome e WhatsApp centralizado
+- Campo "Uniform" agora é exibido como dropdown com opções: Small, Medium, Large, 2X-Large
 """
 
-# 🗖️ Importações
+# 🖖️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -86,7 +85,7 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🧹 Campos por setor
+# 🪩 Campos por setor
 campos_setores = {
     "Tarefas": ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"],
     "Logística": ["Booking Number / Room", "Arrival Details", "Departure Details", "Flight Ticket"],
@@ -136,17 +135,26 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📱 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
             for setor, campos in campos_setores.items():
-                st.subheader(setor)
-                col1, col2 = st.columns(2)
-                for idx, campo in enumerate(campos):
-                    valor_atual = str(row.get(campo, ""))
-                    if idx % 2 == 0:
-                        col1.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=True)
-                    else:
-                        col2.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=True)
+                if setor != "Tarefas":
+                    st.subheader(setor)
+                    col1, col2 = st.columns(2)
+                    for idx, campo in enumerate(campos):
+                        valor_atual = str(row.get(campo, ""))
+                        if campo == "Uniform":
+                            options = ["Small", "Medium", "Large", "2X-Large"]
+                            selected = valor_atual if valor_atual in options else options[0]
+                            if idx % 2 == 0:
+                                col1.selectbox(campo, options, index=options.index(selected), key=f"{campo}_{i}", disabled=True)
+                            else:
+                                col2.selectbox(campo, options, index=options.index(selected), key=f"{campo}_{i}", disabled=True)
+                        else:
+                            if idx % 2 == 0:
+                                col1.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=True)
+                            else:
+                                col2.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=True)
 
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)

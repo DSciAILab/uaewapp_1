@@ -1,15 +1,14 @@
 # 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.28
+Versão: v1.1.29
 
 ### Mudanças nesta versão:
-- Centralização total: imagem, nome, badges, detalhes e botão WhatsApp
-- Reorganização visual: badges viraram a primeira linha dentro do expander
-- Detalhes da luta como segunda linha
-- Botão do WhatsApp é a terceira linha
-- Nome removido de dentro do expander
-- Mantida divisão com `<hr>` estilizado
+- Centralização horizontal: imagem e nome lado a lado
+- Estilo do nome ajustado com tamanho maior e em negrito
+- Expander com bordas neutras
+- Divisor horizontal entre atletas mantido
+- Layout final consolidado
 
 ### 🍛 Última atualização: 2025-05-31
 """
@@ -73,6 +72,7 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 .status-line { text-align: center; margin-bottom: 8px; }
 .fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
 .wa-button { text-align: center; margin-bottom: 10px; }
+.header-container { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 20px; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,33 +112,33 @@ for i, row in df.iterrows():
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
 
-    col_foto, col_nome = st.columns([1, 5])
-    with col_foto:
-        if row.get("Image"):
-            try:
-                st.markdown(f"""<div class='circle-img'><img src='{row['Image']}'></div>""", unsafe_allow_html=True)
-            except: pass
-    with col_nome:
-        st.markdown(f"<div class='{nome_class}'>{icone_alerta}{row['Name']}</div>", unsafe_allow_html=True)
+    # ✅ Nome + Imagem centralizados
+    nome_html = f"<div class='{nome_class}'>{icone_alerta}{row['Name']}</div>"
+    if row.get("Image"):
+        img_html = f"<div class='circle-img'><img src='{row['Image']}'></div>"
+    else:
+        img_html = ""
+    st.markdown(f"""
+    <div class='header-container'>
+        {img_html}
+        {nome_html}
+    </div>
+    """, unsafe_allow_html=True)
 
     with st.expander("Exibir detalhes"):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        # Linha 1 - status
         badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges}</div>", unsafe_allow_html=True)
 
-        # Linha 2 - detalhes
         luta_info = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
         st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
 
-        # Linha 3 - WhatsApp
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
-        # Campos editáveis
         col1, col2 = st.columns([1, 5])
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:

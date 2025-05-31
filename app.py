@@ -19,7 +19,7 @@ def connect_sheet():
     sheet_file = client.open("UAEW_App")
     return sheet_file.worksheet("App")
 
-# 🔄 Carrega dados
+# 🔄 Carrega dados e corrige nome da coluna 'CORNER'
 @st.cache_data(ttl=300)
 def load_data():
     sheet = connect_sheet()
@@ -30,14 +30,14 @@ def load_data():
         df.rename(columns={"CORNER": "Coach"}, inplace=True)
     return df, sheet
 
-# Atualiza célula
+# Atualiza valor individual em uma célula
 def salvar_valor(sheet, row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao salvar valor: linha {row+2}, coluna {col_index+1}: {e}")
 
-# Estilo visual
+# 🎨 Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -52,13 +52,13 @@ th, td { padding: 4px 8px; border: 1px solid #444; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# Autoatualização a cada 10s
+# Auto atualização a cada 10s
 st_autorefresh(interval=10000, key="autorefresh")
 
-# Carrega os dados
+# Carrega os dados da planilha
 df, sheet = load_data()
 
-# Filtros
+# 🎛️ Filtros na barra lateral
 with st.sidebar:
     st.header("Filtros")
     eventos = sorted(df['Event'].dropna().unique())
@@ -66,12 +66,13 @@ with st.sidebar:
     corner_sel = st.multiselect("Corner", ["Red", "Blue"])
     status_sel = st.radio("Status das tarefas", ["Todos", "Somente pendentes", "Somente completos"])
 
-# Aplicando filtros
+# Aplica filtros
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
+# Define tarefas válidas
 tarefas_todas = ["Black Screen", "Photoshoot", "Blood Test", "Interview", "Stats"]
 tarefas = [t for t in tarefas_todas if t in df.columns]
 
@@ -91,7 +92,7 @@ if df.empty:
     st.warning("Nenhum atleta encontrado.")
     st.stop()
 
-# Função para badge clicável
+# Texto clicável para tarefas
 def render_tarefa_clickavel(tarefa, valor, idx, editar):
     classe = 'badge-required' if valor.lower() == 'requested' else 'badge-done'
     texto = tarefa.upper()
@@ -129,7 +130,12 @@ for i, row in df.iterrows():
 
             editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}", value=row.get("LockBy") == "1724")
 
-            headers = [h.strip() for h in sheet.row_values(1)]
+            try:
+                headers = [h.strip() for h in sheet.row_values(1)]
+            except Exception as e:
+                st.error("❌ Erro ao acessar os cabeçalhos da planilha. Verifique a aba 'App' e permissões.")
+                st.stop()
+
             lock_col_idx = headers.index("LockBy") if "LockBy" in headers else None
 
             if editar and lock_col_idx is not None and row.get("LockBy") != "1724":
@@ -149,7 +155,7 @@ for i, row in df.iterrows():
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     st.experimental_rerun()
 
-            # Info adicionais
+            # Informações complementares
             st.markdown(f"""
             <div style='display: flex; justify-content: space-between;'>
                 <table><tr><th>Fight</th></tr><tr><td>{row.get('Fight Order', '')}</td></tr></table>

@@ -1,26 +1,28 @@
-# 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
+# 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.29
+Versão: v1.1.38
 
-### Mudanças nesta versão:
-- Centralização horizontal: imagem e nome lado a lado
-- Estilo do nome ajustado com tamanho maior e em negrito
-- Expander com bordas neutras
-- Divisor horizontal entre atletas mantido
-- Layout final consolidado
-
-### 🍛 Última atualização: 2025-05-31
+### Novidades desta versão:
+- Layout reorganizado:
+  - Nome e foto centralizados fora do expander (foto em círculo)
+  - Dentro do expander:
+    1. Pendências (badges)
+    2. Detalhes da luta
+    3. Dados pessoais
+    4. Logística
+    5. Hotel/voo
+    6. Campos editáveis restantes
 """
 
-# 🏓️ Importações
+# 🖖️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 📱 Conexão com Google Sheets
+# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -30,134 +32,111 @@ def connect_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open("UAEW_App").worksheet("Sheet1")
-    return sheet
+    sheet_file = client.open("UAEW_App")
+    return sheet_file.worksheet("App")
 
-# 🔀 Carregamento de dados
-def load_data(sheet):
+# 🔄 Carrega dados
+@st.cache_data(ttl=300)
+def load_data():
+    sheet = connect_sheet()
     data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    return pd.DataFrame(data), sheet
 
-# 📂 Atualização de célula
+# 📂 Salvar valores
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
-# ⚙️ Layout e Auto-refresh
+# ⚙️ Config inicial
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
-st_autorefresh(interval=10_000, key="datarefresh")
+st_autorefresh(interval=10000, key="autorefresh")
 
-# 🎨 CSS
+# 🎨 Estilo
 st.markdown("""
 <style>
-body { background-color: #0e1117; color: white; }
-.stApp { background-color: #0e1117; }
-.stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
-.stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
-.name-vermelho, .name-azul {
-  font-weight: bold;
-  font-size: 1.6rem;
-  display: inline-block;
-}
-.name-vermelho { color: red; }
-.name-azul { color: #0099ff; }
-.circle-img { width: 70px; height: 70px; border-radius: 50%; overflow: hidden; }
-.circle-img img { width: 100%; height: 100%; object-fit: cover; }
-.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
+body, .stApp { background-color: #0e1117; color: white; }
+.athlete-header { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 10px; }
+.avatar { border-radius: 50%; width: 60px; height: 60px; object-fit: cover; }
+.name-tag { font-size: 2rem; font-weight: bold; }
+.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 3px; text-transform: uppercase; display: inline-block; }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
 .badge-neutral { background-color: #444; color: #ccc; }
-.corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
-.corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
-hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
-.status-line { text-align: center; margin-bottom: 8px; }
-.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
-.wa-button { text-align: center; margin-bottom: 10px; }
-.header-container { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 20px; margin-bottom: 10px; }
+.section-label { font-weight: bold; margin-top: 1rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🏇 Título
-df = load_data(connect_sheet())
+# 📅 Título
 st.title("UAE Warriors 59-60")
+df, sheet = load_data()
 
-col_evento, col_corner = st.columns([6, 6])
+# 🔍 Filtros
+col_evento, col_corner = st.columns(2)
 eventos = sorted(df['Event'].dropna().unique())
 corners = sorted(df['Corner'].dropna().unique())
 
 evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
 corner_sel = col_corner.multiselect("Corner", corners)
 
-if st.button("Atualizar Página"):
-    st.rerun()
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🔋 Campos
-campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
-status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
+# Apenas Fighters
+df = df[df['ROLE'].str.lower() == 'fighter']
+
+# 📂 Campos de status e badges
+tarefas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
 
 def gerar_badge(valor, status):
     valor = valor.strip().lower()
-    if valor == "done": return f"<span class='badge badge-done'>{status.upper()}</span>"
-    elif valor == "required": return f"<span class='badge badge-required'>{status.upper()}</span>"
-    else: return f"<span class='badge badge-neutral'>{status.upper()}</span>"
-
-# 🦉 Renderizar cada atleta
-for i, row in df.iterrows():
-    corner = str(row.get("Corner", "")).lower()
-    cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
-    nome_class = "name-vermelho" if corner == "red" else "name-azul"
-    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
-    icone_alerta = "⚠️ " if tem_pendencia else ""
-
-    # ✅ Nome + Imagem centralizados
-    nome_html = f"<div class='{nome_class}'>{icone_alerta}{row['Name']}</div>"
-    if row.get("Image"):
-        img_html = f"<div class='circle-img'><img src='{row['Image']}'></div>"
+    if valor == "done":
+        return f"<span class='badge badge-done'>{status.upper()}</span>"
+    elif valor == "required":
+        return f"<span class='badge badge-required'>{status.upper()}</span>"
     else:
-        img_html = ""
-    st.markdown(f"""
-    <div class='header-container'>
-        {img_html}
-        {nome_html}
-    </div>
-    """, unsafe_allow_html=True)
+        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-    with st.expander("Exibir detalhes"):
-        st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+# 👥 Iterar atletas
+for i, row in df.iterrows():
+    with st.container():
+        st.markdown("""
+            <div class='athlete-header'>
+                <img class='avatar' src='""" + row.get("Image", "") + """'/>
+                <span class='name-tag' style='color: """ +
+                ("#ff4b4b" if row.get("Corner", "").lower() == "red" else "#0099ff") + "';">" +
+                ("⚠️ " if any(str(row.get(t, "")).lower() == "required" for t in tarefas) else "") +
+                row["Name"] + "</span></div>
+        """, unsafe_allow_html=True)
 
-        badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
-        st.markdown(f"<div class='status-line'>{badges}</div>", unsafe_allow_html=True)
+        with st.expander("Exibir detalhes"):
+            st.markdown(" ".join([gerar_badge(str(row.get(t, "")), t) for t in tarefas]), unsafe_allow_html=True)
+            st.markdown(f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}")
 
-        luta_info = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
-        st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
+            whatsapp = str(row.get("Whatsapp", "")).strip()
+            if whatsapp:
+                link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
+                st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📱 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
-        whatsapp = str(row.get("Whatsapp", "")).strip()
-        if whatsapp:
-            link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
+            st.text(f"Nationality: {row['Nationality']}  |  DOB: {row['DOB']}  |  Passport: {row['Passport']}")
 
-        col1, col2 = st.columns([1, 5])
-        edit_key = f"edit_mode_{i}"
-        if edit_key not in st.session_state:
-            st.session_state[edit_key] = False
-        editando = st.session_state[edit_key]
-        if col2.button("Salvar" if editando else "Editar", key=f"toggle_{i}"):
-            if editando:
-                for campo in campos_editaveis:
-                    novo_valor = st.session_state.get(f"{campo}_{i}", "")
-                    col_index = df.columns.get_loc(campo)
-                    salvar_valor(sheet, i, col_index, novo_valor)
-            st.session_state[edit_key] = not editando
-            st.rerun()
+            st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
+            st.text(f"Arrival: {row['Arrival Details']}  |  Departure: {row['Departure Details']}")
 
-        campo_1, campo_2 = col2.columns(2)
-        for idx, campo in enumerate(campos_editaveis):
-            valor_atual = str(row.get(campo, ""))
-            target = campo_1 if idx % 2 == 0 else campo_2
-            target.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+            st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
+            st.text(f"Room: {row['Booking Number / Room']}  |  Flight: {row['Flight Ticket']}")
 
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
+            st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)
+
+            col1, col2 = st.columns(2)
+            for campo in ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Notes"]:
+                valor = str(row.get(campo, ""))
+                if campo == "Uniform":
+                    opcoes = ["Small", "Medium", "Large", "2X-Large"]
+                    idx = opcoes.index(valor) if valor in opcoes else 0
+                    col1.selectbox(campo, opcoes, index=idx, disabled=True, key=f"{campo}_{i}")
+                else:
+                    col1.text_input(campo, value=valor, key=f"{campo}_{i}", disabled=True)
+
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)

@@ -1,10 +1,11 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.5
+Versão: v1.0.6
 
 ### Novidades desta versão:
 - Melhor responsividade para os campos editáveis (divididos em 2 colunas por categoria)
+- Adicionado “⚠️” no título dos atletas com campos pendentes
 - Layout mais limpo e organizado
 - Códigos CSS e lógica reorganizados para facilitar manutenção
 """
@@ -65,7 +66,7 @@ st.markdown("""
 # 🏷️ Título da página
 st.title("UAE Warriors 59-60")
 
-# 📅 Conecta e carrega
+# 🗓️ Conecta e carrega
 df = load_data(connect_sheet())
 
 # 🔍 Filtros
@@ -106,9 +107,14 @@ for i, row in df.iterrows():
         for status in status_cols
     )
 
-    titulo = f"<b>{row['Fighter ID']} - {row['Name']}</b> {status_tags}"
+    # Novo: adiciona ⚠️ se algum campo está como "required"
+    tem_pendencia = any(str(row.get(status, "")) == "Required" for status in status_cols)
+    icone_alerta = " ⚠️" if tem_pendencia else ""
 
-    with st.expander(titulo, unsafe_allow_html=True):
+    titulo = f"{row['Fighter ID']} - {row['Name']}{icone_alerta}"
+
+    with st.expander(titulo):
+        st.markdown(status_tags, unsafe_allow_html=True)
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])
 

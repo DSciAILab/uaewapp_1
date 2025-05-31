@@ -101,7 +101,7 @@ elif status_sel == "Somente completos":
     df = df[df[tarefas].apply(lambda row: all(str(row.get(t, '')).lower() == "done" for t in tarefas), axis=1)]
 
 # Foco em lutadores
-df = df[df['Role'].str.lower() == 'fighter']
+df = df[df['Role'].str.lower() == 'Fighter']
 
 # ✅ Avisos e contagem
 st.markdown(f"🔎 **{len(df)} atleta(s) encontrados para os filtros aplicados.**")

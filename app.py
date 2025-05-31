@@ -119,6 +119,13 @@ def load_data():
 
 df = load_data()
 
+df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
+
+# 👇 Debug visual: mostra as colunas carregadas
+st.subheader("🧩 Colunas carregadas após normalização")
+st.code(df.columns.tolist())
+
+
 # 🧼 Padronizar nomes de colunas
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 

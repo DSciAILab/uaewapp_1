@@ -1,10 +1,12 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.43
+Versão: v1.1.44
 
 ### Novidades desta versão:
-- Layout das caixas de texto reorganizado em 3 colunas para melhor aproveitamento visual
+- Layout visual com 3 colunas mantido
+- Restaurado botão de edição/salvamento
+- Campos agora podem ser editáveis sob controle do usuário
 """
 
 # 🔑 Importações
@@ -58,8 +60,8 @@ body, .stApp { background-color: #0e1117; color: white; }
 """, unsafe_allow_html=True)
 
 # 🗓️ Título
-st.title("UAE Warriors 59-60")
 df, sheet = load_data()
+st.title("UAE Warriors 59-60")
 
 # 🔍 Filtros
 col_evento, col_corner = st.columns(2)
@@ -102,6 +104,8 @@ for i, row in df.iterrows():
         """
         st.markdown(nome_html, unsafe_allow_html=True)
 
+        editar = st.toggle("Editar dados", key=f"editar_{i}")
+
         with st.expander("Exibir detalhes"):
             st.markdown(" ".join([gerar_badge(str(row.get(t, "")), t) for t in tarefas]), unsafe_allow_html=True)
             st.markdown(f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}")
@@ -131,11 +135,16 @@ for i, row in df.iterrows():
             for idx, campo in enumerate(campos):
                 valor = str(row.get(campo, ""))
                 coluna = colunas[idx % 3]
+                key = f"{campo}_{i}"
                 if campo == "Uniform":
                     opcoes = ["Small", "Medium", "Large", "2X-Large"]
-                    idx = opcoes.index(valor) if valor in opcoes else 0
-                    coluna.selectbox(campo, opcoes, index=idx, disabled=True, key=f"{campo}_{i}")
+                    idx_sel = opcoes.index(valor) if valor in opcoes else 0
+                    new_valor = coluna.selectbox(campo, opcoes, index=idx_sel, disabled=not editar, key=key)
                 else:
-                    coluna.text_input(campo, value=valor, key=f"{campo}_{i}", disabled=True)
+                    new_valor = coluna.text_input(campo, value=valor, key=key, disabled=not editar)
+
+                if editar and new_valor != valor:
+                    col_idx = df.columns.get_loc(campo)
+                    salvar_valor(sheet, i, col_idx, new_valor)
 
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)

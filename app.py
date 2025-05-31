@@ -48,14 +48,19 @@ def connect_sheet():
 def load_data():
     sheet = connect_sheet()
     if sheet is None:
+        st.error("❌ Falha ao conectar à planilha.")
         st.stop()
 
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
-    df["original_index"] = df.index
-    if "CORNER" in df.columns:
-        df.rename(columns={"CORNER": "Coach"}, inplace=True)
-    return df, sheet
+    try:
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        df["original_index"] = df.index
+        if "CORNER" in df.columns:
+            df.rename(columns={"CORNER": "Coach"}, inplace=True)
+        return df, sheet
+    except Exception as e:
+        st.error(f"Erro ao carregar os dados da planilha: {e}")
+        st.stop()
 
 # 📂 Atualiza valores na planilha de forma individual
 def salvar_valor(sheet, row, col_index, valor):
@@ -88,7 +93,37 @@ th { font-weight: bold; }
 
 # 🔍 Carregando dados e planilha
 df, sheet = load_data()
-headers = [h.strip() for h in sheet.row_values(1)]
+
+# 🛠️ Painel de Debug para verificar headers e conexão
+def show_debug(sheet, df):
+    with st.expander("🛠️ Debug Info"):
+        st.markdown("### Verificação de Conexão com Google Sheets")
+        if sheet:
+            st.success("✅ Conectado com sucesso à aba 'App'")
+            st.markdown(f"**Título da aba:** `{sheet.title}`")
+            try:
+                headers_raw = sheet.row_values(1)
+                headers = [h.strip() for h in headers_raw]
+                st.write("🔣 Cabeçalhos detectados:", headers)
+            except Exception as e:
+                st.error(f"❌ Erro ao ler cabeçalhos: {e}")
+        else:
+            st.error("❌ A aba 'App' não foi carregada. Verifique o nome da planilha ou permissões da conta.")
+        st.markdown("### Prévia do DataFrame carregado")
+        try:
+            st.dataframe(df.head())
+        except:
+            st.warning("⚠️ DataFrame `df` não pôde ser carregado corretamente.")
+
+show_debug(sheet, df)
+
+# ✅ Headers protegidos
+try:
+    headers = [h.strip() for h in sheet.row_values(1)]
+except Exception as e:
+    st.error(f"Erro ao acessar cabeçalhos da planilha: {e}")
+    st.stop()
+
 tarefas = [t for t in headers if t.upper() in ["PHOTOSHOOT", "BLOOD TEST", "UNIFORM", "MUSIC", "STATS"]]
 
 # 📍 Filtros no sidebar

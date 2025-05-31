@@ -1,7 +1,7 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.61
+Versão: v1.1.61 (com bypass de headers)
 
 ### Novidades desta versão:
 - Comentários linha a linha adicionados
@@ -12,6 +12,7 @@ Versão: v1.1.61
 - Toggle ativa e bloqueia linha via coluna LockBy = "1724"
 - Tarefas interativas com toggle: clique para alternar entre Required e Done
 - Centralização dos textos das tabelas
+- Substituição da leitura direta de headers por `df.columns.tolist()` para evitar erro de versão do Google Auth
 """
 
 # 🔑 Importações necessárias
@@ -94,6 +95,9 @@ th { font-weight: bold; }
 # 🔍 Carregando dados e planilha
 df, sheet = load_data()
 
+# Headers via DataFrame
+headers = df.columns.tolist()
+
 # 🛠️ Painel de Debug para verificar headers e conexão
 def show_debug(sheet, df):
     with st.expander("🛠️ Debug Info"):
@@ -101,12 +105,7 @@ def show_debug(sheet, df):
         if sheet:
             st.success("✅ Conectado com sucesso à aba 'App'")
             st.markdown(f"**Título da aba:** `{sheet.title}`")
-            try:
-                headers_raw = sheet.row_values(1)
-                headers = [h.strip() for h in headers_raw]
-                st.write("🔣 Cabeçalhos detectados:", headers)
-            except Exception as e:
-                st.error(f"❌ Erro ao ler cabeçalhos: {e}")
+            st.write("🔣 Cabeçalhos detectados (via df.columns):", headers)
         else:
             st.error("❌ A aba 'App' não foi carregada. Verifique o nome da planilha ou permissões da conta.")
         st.markdown("### Prévia do DataFrame carregado")
@@ -116,13 +115,6 @@ def show_debug(sheet, df):
             st.warning("⚠️ DataFrame `df` não pôde ser carregado corretamente.")
 
 show_debug(sheet, df)
-
-# ✅ Headers protegidos
-try:
-    headers = [h.strip() for h in sheet.row_values(1)]
-except Exception as e:
-    st.error(f"Erro ao acessar cabeçalhos da planilha: {e}")
-    st.stop()
 
 tarefas = [t for t in headers if t.upper() in ["PHOTOSHOOT", "BLOOD TEST", "UNIFORM", "MUSIC", "STATS"]]
 

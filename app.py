@@ -1,15 +1,11 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.48
+Versão: v1.1.49
 
 ### Novidades desta versão:
-- Organização visual em seções: Tarefas, Detalhes da Luta, Dados Pessoais, Logística e Hotel
-- Dados pessoais agora em tabela (2 linhas: cabeçalho + valores)
-- Informativo logístico separado em linhas distintas com link ao lado
-- Campos de música e uniform restaurados e organizados
-- Edição por toggle mantida
-- Layout responsivo em 3 colunas para campos
+- Corrigido erro de acesso direto a colunas inexistentes (KeyError)
+- Tarefas agora são exibidas com .get(t, '') para segurança
 """
 
 # 🔑 Importações
@@ -102,7 +98,7 @@ for j, row in df.iterrows():
 
     editar = st.toggle("Editar dados", key=f"editar_{i}")
     with st.expander("Exibir detalhes"):
-        st.markdown(" ".join([f"<span class='badge {('badge-required' if str(row[t]).lower()=='required' else ('badge-done' if str(row[t]).lower()=='done' else 'badge-neutral'))}'>{t.upper()}</span>" for t in tarefas]), unsafe_allow_html=True)
+        st.markdown(" ".join([f"<span class='badge {('badge-required' if str(row.get(t, '')).lower()=='required' else ('badge-done' if str(row.get(t, '')).lower()=='done' else 'badge-neutral'))}'>{t.upper()}</span>" for t in tarefas]), unsafe_allow_html=True)
 
         st.markdown(f"<div style='text-align:center;'>Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}</div>", unsafe_allow_html=True)
         whatsapp = str(row.get("Whatsapp", "")).strip()

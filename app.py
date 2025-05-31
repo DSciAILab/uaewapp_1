@@ -56,8 +56,8 @@ th, td { padding: 4px 8px; border: 1px solid #444; text-align: center; }
 """, unsafe_allow_html=True)
 
 # 🎯 Inicial
-st.set_page_config(page_title="UAEW Fighters", layout="wide")
-st_autorefresh(interval=10000, key="autorefresh")
+#st.set_page_config(page_title="UAEW Fighters", layout="wide")
+#st_autorefresh(interval=10000, key="autorefresh")
 
 df, sheet = load_data()
 

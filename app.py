@@ -1,30 +1,33 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.0
+Versão: v1.0.1
 
-Este script cria uma aplicação interativa utilizando Streamlit para visualizar e atualizar
-informações de atletas de MMA armazenadas em uma planilha do Google Sheets.
+Este script cria uma aplicação interativa utilizando Streamlit para visualizar e atualizar informações de atletas de MMA
+armazenadas em uma planilha do Google Sheets.
 
 ### Principais funcionalidades:
 - Conexão segura via conta de serviço com a API do Google Sheets
-- Visualização customizada de atletas com imagem, corner, status de tarefas (fotos, exames, etc.)
+- Visualização customizada de atletas com imagem, corner, status de tarefas (fotos, exame de sangue, etc.)
 - Edição de campos diretamente pela interface web
 - Estilização customizada via CSS
 - Filtros por evento e corner
 - Atualização automática da página a cada 10 segundos
 - Botão individual para salvar edições
 - Exibição de status resumido ao lado do nome do atleta
+
+### Atualizações nesta versão:
+- Corrigido: `st.expander()` agora recebe texto puro no cabeçalho e status são renderizados internamente.
 """
 
-# 📦 Importações
+# 📦 Importações necessárias
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 📡 Conexão com o Google Sheets (com cache para performance)
+# 📡 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -37,20 +40,20 @@ def connect_sheet():
     sheet = client.open("UAEW_App").worksheet("Sheet1")
     return sheet
 
-# 🔄 Carrega dados da planilha
+# 🔄 Carrega os dados da planilha
 def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# 💾 Atualiza célula específica
+# 💾 Atualiza valor de célula
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
 # ⚙️ Configuração do app
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
-st_autorefresh(interval=10_000, key="datarefresh")  # Atualização automática a cada 10s
+st_autorefresh(interval=10_000, key="datarefresh")
 
-# 🎨 Estilo CSS customizado
+# 🎨 CSS customizado
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
@@ -69,11 +72,11 @@ st.markdown("""
 # 🏷️ Título da página
 st.title("UAE Warriors 59-60")
 
-# 🔌 Conecta à planilha e carrega dados
+# 📥 Conecta e carrega
 sheet = connect_sheet()
 df = load_data(sheet)
 
-# 🎛️ Filtros superiores
+# 🔍 Filtros
 col_evento, col_corner = st.columns([6, 6])
 eventos = sorted(df['Event'].dropna().unique())
 corners = sorted(df['Corner'].dropna().unique())
@@ -84,39 +87,24 @@ corner_sel = col_corner.multiselect("Corner", corners)
 if st.button("🔄 Atualizar Página"):
     st.rerun()
 
-# Aplica os filtros
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🛠️ Campos editáveis e status
+# 🔧 Campos editáveis
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🧍 Loop para exibir os atletas
+# 🧍 Exibição por atleta
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 
-    # 🔠 Cabeçalho do expander com status visual
-    status_inline = ""
-    for status in status_cols:
-        valor = str(row.get(status, "")).strip().lower()
-        if valor == "done":
-            status_inline += f"<span class='done-label'>{status.upper()}</span> "
-        elif valor == "required":
-            status_inline += f"<span class='pending-label'>{status.upper()}</span> "
-        elif valor == "---":
-            status_inline += f"<span class='neutral-label'>{status.upper()}</span> "
-
-    titulo = f"<div style='display:flex; flex-wrap:wrap; gap:8px; align-items:center;'><strong>{row['Fighter ID']} - {row['Name']}</strong> {status_inline}</div>"
-
-    # 🪟 Expander do atleta
-    with st.expander(titulo, unsafe_allow_html=True):
+    titulo = f"{row['Fighter ID']} - {row['Name']}"
+    with st.expander(titulo):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])
 
-        # 📷 Imagem e info básicas
         if row.get("Image"):
             try:
                 col1.image(row["Image"], width=100)
@@ -129,10 +117,8 @@ for i, row in df.iterrows():
         col1.markdown(f"**Division:** {row['Division']}")
         col1.markdown(f"**Opponent:** {row['Oponent']}")
 
-        # 🏷️ Nome centralizado
         col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
 
-        # ✏️ Botão de edição
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
@@ -148,7 +134,6 @@ for i, row in df.iterrows():
             st.session_state[edit_key] = not editando
             st.rerun()
 
-        # ✍️ Campos de edição
         campo_a, campo_b = col2.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             valor_atual = str(row.get(campo, ""))
@@ -157,13 +142,11 @@ for i, row in df.iterrows():
             else:
                 campo_b.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
 
-        # 📲 Link para WhatsApp
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
-        # 🔁 Campos de status
         colx = st.columns(len(status_cols))
         for idx, status in enumerate(status_cols):
             col_idx = df.columns.get_loc(status)

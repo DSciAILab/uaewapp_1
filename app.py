@@ -1,3 +1,4 @@
+
 import streamlit as st
 st.set_page_config(page_title="UAEW Fighters", layout="wide")
 
@@ -6,7 +7,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -19,25 +19,20 @@ def connect_sheet():
     sheet_file = client.open("UAEW_App")
     return sheet_file.worksheet("App")
 
-# 🔄 Carrega dados
 @st.cache_data(ttl=300)
 def load_data():
     sheet = connect_sheet()
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df["original_index"] = df.index
-    if "CORNER" in df.columns:
-        df.rename(columns={"CORNER": "Coach"}, inplace=True)
     return df, sheet
 
-# 📂 Atualiza valor individual na planilha
 def salvar_valor(sheet, row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao salvar valor: linha {row+2}, coluna {col_index+1}: {e}")
 
-# 🎨 Estilo
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -52,13 +47,10 @@ th, td { padding: 4px 8px; border: 1px solid #444; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔄 Autoatualização
 st_autorefresh(interval=10000, key="autorefresh")
 
-# 🚀 Carrega dados
 df, sheet = load_data()
 
-# 🎛️ Filtros
 with st.sidebar:
     st.header("Filtros")
     eventos = sorted(df['Event'].dropna().unique())
@@ -90,7 +82,6 @@ if df.empty:
     st.warning("Nenhum atleta encontrado.")
     st.stop()
 
-# 🔘 Badge clicável
 def render_tarefa_clickavel(tarefa, valor, idx, editar):
     classe = 'badge-required' if valor.lower() == 'requested' else 'badge-done'
     texto = tarefa.upper()
@@ -112,7 +103,6 @@ def render_tarefa_clickavel(tarefa, valor, idx, editar):
     query = st.query_params
     return query.get("clicked", [""])[0] == html_id
 
-# 🧍 Loop de atletas
 for i, row in df.iterrows():
     with st.container():
         st.markdown(f"""
@@ -151,45 +141,3 @@ for i, row in df.iterrows():
                     novo_valor = 'done' if val_atual.lower() == 'requested' else 'requested'
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     st.experimental_rerun()
-
-            # Informações complementares
-            st.markdown(f"""
-            <div style='display: flex; justify-content: space-between;'>
-                <table><tr><th>Fight</th></tr><tr><td>{row.get('Fight Order', '')}</td></tr></table>
-                <table><tr><th>Division</th></tr><tr><td>{row.get('Division', '')}</td></tr></table>
-                <table><tr><th>Opponent</th></tr><tr><td>{row.get('Oponent', '')}</td></tr></table>
-            </div>
-            """, unsafe_allow_html=True)
-
-            wpp = str(row.get("Whatsapp", "")).strip().replace("+", "").replace(" ", "")
-            if wpp:
-                st.markdown(f"<p style='text-align: center;'>📞 <a href='https://wa.me/{wpp}' target='_blank'>Enviar mensagem no WhatsApp</a></p>", unsafe_allow_html=True)
-
-            st.markdown("""
-            <div style='display: flex; gap: 2rem;'>
-                <table><tr><th>Nationality</th><th>DOB</th><th>Passport</th></tr><tr><td>{}</td><td>{}</td><td>{}</td></tr></table>
-                <table><tr><th>Arrival</th><th>Departure</th><th>Flight</th></tr><tr><td>{}</td><td>{}</td><td>{}</td></tr></table>
-                <table><tr><th>Room</th></tr><tr><td>{}</td></tr></table>
-            </div>
-            """.format(
-                row.get("Nationality", ""), row.get("DOB", ""), row.get("Passport", ""),
-                row.get("Arrival Details", ""), row.get("Departure Details", ""),
-                f"<a href='{row.get('Flight Ticket', '')}' target='_blank'>Ver passagem</a>" if str(row.get("Flight Ticket", "")).startswith("http") else "N/A",
-                row.get("Booking Number / Room", "")
-            ), unsafe_allow_html=True)
-
-            campos_editaveis = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Notes", "Music 1", "Music 2", "Music 3"]
-            col1, col2, col3 = st.columns(3)
-            for idx, campo in enumerate(campos_editaveis):
-                val = str(row.get(campo, ""))
-                col = [col1, col2, col3][idx % 3]
-                if campo == "Uniform":
-                    novo_valor = col.selectbox(campo, ["", "Small", "Medium", "Large", "2X-Large"], index=["", "Small", "Medium", "Large", "2X-Large"].index(val) if val in ["Small", "Medium", "Large", "2X-Large"] else 0, key=f"{campo}_{i}", disabled=not editar)
-                else:
-                    novo_valor = col.text_input(campo, value=val, key=f"{campo}_{i}", disabled=not editar)
-                if editar and novo_valor != val:
-                    try:
-                        col_idx = headers.index(campo)
-                        salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
-                    except:
-                        st.warning(f"⚠️ Coluna '{campo}' não encontrada.")

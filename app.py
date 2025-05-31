@@ -1,20 +1,5 @@
-# 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
+# UAE Warriors App - v1.1.62 - Deploy Ready for Streamlit Cloud
 
-"""
-Versão: v1.1.60
-
-### Novidades desta versão:
-- Comentários linha a linha adicionados
-- Filtro "Corner" agora só permite seleção entre "Red" e "Blue"
-- Campo "Editar" agora usa `st.toggle` para destravar as caixas
-- Corrigido erro ao editar colunas ausentes com try/except
-- Informações de luta organizadas em tabelas lado a lado (Fight, Division, Opponent)
-- Toggle ativa e bloqueia linha via coluna LockBy = "1724"
-- Tarefas interativas: clique na tarefa para alternar entre Required e Done (com atualização no Google Sheets)
-- Centralização dos textos das tabelas
-"""
-
-# 🔑 Importações necessárias
 import streamlit as st
 import pandas as pd
 import gspread
@@ -34,7 +19,7 @@ def connect_sheet():
     sheet_file = client.open("UAEW_App")
     return sheet_file.worksheet("App")
 
-# 🔄 Carrega dados e corrige nomes duplicados
+# 🔄 Carrega os dados
 @st.cache_data(ttl=300)
 def load_data():
     sheet = connect_sheet()
@@ -45,39 +30,35 @@ def load_data():
         df.rename(columns={"CORNER": "Coach"}, inplace=True)
     return df, sheet
 
-# 📂 Atualiza valores de célula individual
+# 📂 Atualiza célula específica
 def salvar_valor(sheet, row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
-        st.error(f"Erro ao salvar valor em linha {row+2}, coluna {col_index+1}: {e}")
+        st.error(f"Erro ao salvar valor: linha {row+2}, coluna {col_index+1}: {e}")
 
-# ⚙️ Configuração inicial da página
-st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
-st_autorefresh(interval=10000, key="autorefresh")
-
-# 🎨 Estilo customizado em HTML e CSS
+# 🎛️ Estilos
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
 .athlete-header { display: flex; justify-content: center; align-items: center; gap: 1rem; margin: 1rem 0; }
 .avatar { border-radius: 50%; width: 65px; height: 65px; object-fit: cover; }
 .name-tag { font-size: 1.8rem; font-weight: bold; }
-.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 3px; text-transform: uppercase; display: inline-block; cursor: pointer; }
-.badge-done { background-color: #2e4f2e; color: #5efc82; text-align: center; }
-.badge-required { background-color: #5c1a1a; color: #ff8080; text-align: center; }
-.badge-neutral { background-color: #444; color: #ccc; text-align: center; }
-table { width: 100%; margin: 5px 0; border-collapse: collapse; text-align: center; }
-th, td { text-align: center; padding: 4px 8px; border: 1px solid #444; }
-th { font-weight: bold; }
-.section-label { font-weight: bold; margin-top: 1rem; font-size: 1.1rem; }
+.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 3px; text-transform: uppercase; display: inline-block; }
+.badge-done { background-color: #2e4f2e; color: #5efc82; }
+.badge-required { background-color: #5c1a1a; color: #ff8080; }
+table { width: 100%; border-collapse: collapse; text-align: center; }
+th, td { padding: 4px 8px; border: 1px solid #444; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🗂️ Carrega dados e exibe título
+# 🎯 Inicial
+st.set_page_config(page_title="UAEW Fighters", layout="wide")
+st_autorefresh(interval=10000, key="autorefresh")
+
 df, sheet = load_data()
 
-# 🔍 Filtros no Sidebar
+# 🎚️ Sidebar filtros
 with st.sidebar:
     st.header("Filtros")
     eventos = sorted(df['Event'].dropna().unique())
@@ -85,67 +66,98 @@ with st.sidebar:
     corner_sel = st.multiselect("Corner", ["Red", "Blue"])
     status_sel = st.radio("Status das tarefas", ["Todos", "Somente pendentes", "Somente completos"])
 
-# 🎯 Aplica os filtros ao DataFrame
+# 🎯 Aplica filtros
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🧩 Define tarefas válidas
-tarefas_todas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
+tarefas_todas = ["Black Screen", "Photoshoot", "Blood Test", "Interview", "Stats"]
 tarefas = [t for t in tarefas_todas if t in df.columns]
 
-# 🎛️ Filtra por status
-def is_required(row): return any(str(row.get(t, '')).lower() == "required" for t in tarefas)
+def is_required(row): return any(str(row.get(t, '')).lower() == "requested" for t in tarefas)
 def is_done(row): return all(str(row.get(t, '')).lower() == "done" for t in tarefas)
 if status_sel == "Somente pendentes":
     df = df[df.apply(is_required, axis=1)]
 elif status_sel == "Somente completos":
     df = df[df.apply(is_done, axis=1)]
 
-# 🎭 Exibir apenas lutadores
-if "ROLE" in df.columns:
-    df = df[df['ROLE'].str.lower() == 'fighter']
+if "Role" in df.columns:
+    df = df[df["Role"].str.lower() == "fighter"]
 
-# 📌 Contagem
-st.markdown(f"🔎 **{len(df)} atleta(s) encontrados para os filtros aplicados.**")
+st.markdown(f"🔎 **{len(df)} atleta(s) encontrados com os filtros.**")
 if df.empty:
-    st.warning("Nenhum atleta encontrado com os filtros selecionados.")
+    st.warning("Nenhum atleta encontrado.")
     st.stop()
 
-# 👤 Exibição de cada atleta
+# 🧠 Texto clicável das tarefas
+def render_tarefa_clickavel(tarefa, valor, idx, editar):
+    classe = 'badge-required' if valor.lower() == 'requested' else 'badge-done'
+    texto = tarefa.upper()
+    html_id = f"tarefa_click_{tarefa}_{idx}"
+    st.markdown(f"""
+        <span class='badge {classe}' id='{html_id}'>{texto}</span>
+        <script>
+        const el = window.parent.document.getElementById('{html_id}');
+        if (el && {str(editar).lower()}) {{
+            el.style.cursor = 'pointer';
+            el.onclick = () => {{
+                const search = new URLSearchParams(window.location.search);
+                search.set("clicked", "{html_id}");
+                window.location.search = search.toString();
+            }};
+        }}
+        </script>
+    """, unsafe_allow_html=True)
+    query = st.experimental_get_query_params()
+    return query.get("clicked", [""])[0] == html_id
+
+# 🧍 Atletas
 for i, row in df.iterrows():
     with st.container():
         st.markdown(f"""
-        <div class=\"athlete-header\">
-            <img class=\"avatar\" src=\"{row.get('Image', 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png')}\" />
-            <div class=\"name-tag\" style=\"color:{'#ff4b4b' if row.get('Corner', '').lower() == 'red' else '#0099ff'};\">
-                {('⚠️ ' if any(str(row.get(t, '')).lower() == 'required' for t in tarefas) else '') + row.get('Name', '')}
+        <div class="athlete-header">
+            <img class="avatar" src="{row.get('Image', 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png')}" />
+            <div class="name-tag" style="color:{'#ff4b4b' if row.get('Corner', '').lower() == 'red' else '#0099ff'};">
+                {('⚠️ ' if any(str(row.get(t, '')).lower() == 'requested' for t in tarefas) else '') + row.get('Name', '')}
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
-            def render_tarefa(tarefa, valor, idx):
-                classe = 'badge-required' if valor.lower() == 'required' else 'badge-done'
-                texto = tarefa.upper()
-                if st.button(texto, key=f"tarefa_{tarefa}_{idx}"):
-                    headers = [h.strip() for h in sheet.row_values(1)]
-                    col_idx = headers.index(tarefa)
-                    novo_valor = 'done' if valor.lower() == 'required' else 'required'
+
+            editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}", value=row.get("LockBy") == "1724")
+
+            try:
+                headers = [h.strip() for h in sheet.row_values(1)]
+                lock_col_idx = headers.index("LockBy")
+                if editar and row.get("LockBy") != "1724":
+                    salvar_valor(sheet, row['original_index'], lock_col_idx, "1724")
+                elif not editar and row.get("LockBy") == "1724":
+                    salvar_valor(sheet, row['original_index'], lock_col_idx, "")
+            except:
+                st.warning("⚠️ Coluna 'LockBy' ausente.")
+
+            if row.get("LockBy") not in ["", "1724"]:
+                st.warning(f"🔒 Linha bloqueada por outro usuário: {row.get('LockBy')}")
+                continue
+
+            for t in tarefas:
+                val_atual = str(row.get(t, ''))
+                if render_tarefa_clickavel(t, val_atual, i, editar) and editar:
+                    col_idx = headers.index(t)
+                    novo_valor = 'done' if val_atual.lower() == 'requested' else 'requested'
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
-                return f"<span class='badge {classe}'>{texto}</span>"
+                    st.experimental_rerun()
 
-            badges_html = " ".join([render_tarefa(t, str(row.get(t, '')), i) for t in tarefas])
-            st.markdown(badges_html, unsafe_allow_html=True)
-
-            st.markdown("""
+            # 🔎 Informações principais
+            st.markdown(f"""
             <div style='display: flex; justify-content: space-between;'>
-                <table><tr><th>Fight</th></tr><tr><td>{}</td></tr></table>
-                <table><tr><th>Division</th></tr><tr><td>{}</td></tr></table>
-                <table><tr><th>Opponent</th></tr><tr><td>{}</td></tr></table>
+                <table><tr><th>Fight</th></tr><tr><td>{row.get('Fight Order', '')}</td></tr></table>
+                <table><tr><th>Division</th></tr><tr><td>{row.get('Division', '')}</td></tr></table>
+                <table><tr><th>Opponent</th></tr><tr><td>{row.get('Oponent', '')}</td></tr></table>
             </div>
-            """.format(row.get('Fight Order', ''), row.get('Division', ''), row.get('Oponent', '')), unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
             wpp = str(row.get("Whatsapp", "")).strip().replace("+", "").replace(" ", "")
             if wpp:
@@ -160,27 +172,11 @@ for i, row in df.iterrows():
             """.format(
                 row.get("Nationality", ""), row.get("DOB", ""), row.get("Passport", ""),
                 row.get("Arrival Details", ""), row.get("Departure Details", ""),
-                f"<a href='{row.get('Flight Ticket', '')}' target='_blank'>Ver passagem</a>" if row.get("Flight Ticket", "").startswith("http") else "Passagem não disponível",
+                f"<a href='{row.get('Flight Ticket', '')}' target='_blank'>Ver passagem</a>" if str(row.get("Flight Ticket", "")).startswith("http") else "N/A",
                 row.get("Booking Number / Room", "")
             ), unsafe_allow_html=True)
 
             campos_editaveis = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Notes", "Music 1", "Music 2", "Music 3"]
-            editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}", value=row.get("LockBy") == "1724")
-
-            try:
-                headers = [h.strip() for h in sheet.row_values(1)]
-                lock_col_idx = headers.index("LockBy")
-                if editar and row.get("LockBy") != "1724":
-                    salvar_valor(sheet, row['original_index'], lock_col_idx, "1724")
-                elif not editar and row.get("LockBy") == "1724":
-                    salvar_valor(sheet, row['original_index'], lock_col_idx, "")
-            except:
-                st.warning("⚠️ Coluna 'LockBy' não encontrada ou erro ao tentar travar/destravar a linha.")
-
-            if row.get("LockBy") not in ["", "1724"]:
-                st.warning(f"🔒 Linha bloqueada para edição por outro usuário: {row.get('LockBy')}")
-                continue
-
             col1, col2, col3 = st.columns(3)
             for idx, campo in enumerate(campos_editaveis):
                 val = str(row.get(campo, ""))
@@ -193,5 +189,5 @@ for i, row in df.iterrows():
                     try:
                         col_idx = headers.index(campo)
                         salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
-                    except ValueError:
-                        st.warning(f"⚠️ Coluna '{campo}' não encontrada no Google Sheet.")
+                    except:
+                        st.warning(f"⚠️ Coluna '{campo}' não encontrada.")

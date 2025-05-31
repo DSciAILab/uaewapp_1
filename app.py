@@ -152,7 +152,13 @@ for _, row in df.iterrows():
     st.markdown("<hr>", unsafe_allow_html=True)
     col1, col2 = st.columns([0.3, 0.7])
     with col1:
-        st.image(row.get("Avatar"), width=100)
+        if row.get("Avatar"):
+            try:
+                st.image(row.get("Avatar"), width=100)
+            except Exception as e:
+                st.warning(f"Imagem inválida ou não carregada: {e}")
+        else:
+            st.info("Nenhuma imagem disponível para este atleta.")
     with col2:
         st.markdown(f"<div class='name-tag'>{row.get('Name')}</div>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center;'>Fight {row.get('Fight Order')} | {row.get('Division')} | Opponent {row.get('Oponent')}</p>", unsafe_allow_html=True)

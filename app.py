@@ -1,7 +1,7 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.58
+Versão: v1.1.59
 
 ### Novidades desta versão:
 - Comentários linha a linha adicionados
@@ -9,6 +9,7 @@ Versão: v1.1.58
 - Campo "Editar" agora usa `st.toggle` para destravar as caixas
 - Corrigido erro ao editar colunas ausentes com try/except
 - Informações de luta organizadas em tabelas lado a lado (Fight, Division, Opponent)
+- Toggle ativa e bloqueia linha via coluna LockBy = "1724"
 """
 
 # 🔑 Importações necessárias
@@ -156,9 +157,23 @@ for i, row in df.iterrows():
                 row.get("Booking Number / Room", "")
             ), unsafe_allow_html=True)
 
-            # 🛠️ Campos editáveis
             campos_editaveis = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Notes", "Music 1", "Music 2", "Music 3"]
-            editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}")
+            editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}", value=row.get("LockBy") == "1724")
+
+            try:
+                headers = [h.strip() for h in sheet.row_values(1)]
+                lock_col_idx = headers.index("LockBy")
+                if editar and row.get("LockBy") != "1724":
+                    salvar_valor(sheet, row['original_index'], lock_col_idx, "1724")
+                elif not editar and row.get("LockBy") == "1724":
+                    salvar_valor(sheet, row['original_index'], lock_col_idx, "")
+            except:
+                st.warning("⚠️ Coluna 'LockBy' não encontrada ou erro ao tentar travar/destravar a linha.")
+
+            if row.get("LockBy") not in ["", "1724"]:
+                st.warning(f"🔒 Linha bloqueada para edição por outro usuário: {row.get('LockBy')}")
+                continue
+
             col1, col2, col3 = st.columns(3)
             for idx, campo in enumerate(campos_editaveis):
                 val = str(row.get(campo, ""))
@@ -169,7 +184,6 @@ for i, row in df.iterrows():
                     novo_valor = col.text_input(campo, value=val, key=f"{campo}_{i}", disabled=not editar)
                 if editar and novo_valor != val:
                     try:
-                        headers = [h.strip() for h in sheet.row_values(1)]
                         col_idx = headers.index(campo)
                         salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     except ValueError:

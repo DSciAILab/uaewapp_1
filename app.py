@@ -62,7 +62,7 @@ def renderizar_atleta(i, row, df):
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        luta_info = f"Fight {row['Fight_Order']} | {row['Division']} | Opponent {row['Oponent']}"
+        luta_info = f"Fight {row['Fight_Order']} | {row['Division']} | Opponent {row['Opponent']}"
         st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
 
         whatsapp = str(row.get("Whatsapp", "")).strip()

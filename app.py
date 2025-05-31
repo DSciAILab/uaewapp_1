@@ -1,10 +1,13 @@
-# UAE Warriors App - v1.1.62 - Deploy Ready for Streamlit Cloud
-
+# ✅ Deve ser a primeira linha de execução!
 import streamlit as st
+st.set_page_config(page_title="UAEW Fighters", layout="wide")
+
+# 🔍 Demais imports
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
+
 
 # 🔐 Conexão com Google Sheets
 @st.cache_resource

@@ -1,20 +1,12 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.4
+Versão: v1.0.5
 
-Este script cria uma aplicação interativa utilizando Streamlit para visualizar e atualizar informações de atletas de MMA
-armazenadas em uma planilha do Google Sheets.
-
-### Principais funcionalidades:
-- Conexão segura via conta de serviço com a API do Google Sheets
-- Visualização customizada de atletas com imagem, corner, status de tarefas (fotos, exame de sangue, etc.)
-- Edição de campos diretamente pela interface web
-- Estilização customizada via CSS
-- Filtros por evento e corner
-- Atualização automática da página a cada 10 segundos
-- Botão individual para salvar edições
-- ✅ Novo: Exibição de status resumido ao lado do nome do atleta no cabeçalho do expander (com badges coloridos)
+### Novidades desta versão:
+- Melhor responsividade para os campos editáveis (divididos em 2 colunas por categoria)
+- Layout mais limpo e organizado
+- Códigos CSS e lógica reorganizados para facilitar manutenção
 """
 
 # 📦 Importações necessárias
@@ -149,13 +141,13 @@ for i, row in df.iterrows():
             st.session_state[edit_key] = not editando
             st.rerun()
 
-        campo_a, campo_b = col2.columns(2)
+        campo_1, campo_2 = col2.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             valor_atual = str(row.get(campo, ""))
             if idx % 2 == 0:
-                campo_a.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+                campo_1.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
             else:
-                campo_b.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+                campo_2.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
 
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:

@@ -1,8 +1,9 @@
-# 📍 UAE Warriors App - v1.2.3
+# 📍 UAE Warriors App - v1.2.4
 # ✅ Alterações:
-# - Slider único substitui filtros de evento, corner e pendência
-# - Ordenação por Event, Fight_Order e Corner
-# - Comentários adicionados para facilitar manutenção
+# - Filtros movidos para a barra lateral (evento, corner, status)
+# - Exibe apenas registros com Role == 'Fighter'
+# - Ordenação: Event > Fight_Order > Corner
+# - Interface ajustada com CSS e comentários aplicados
 
 import streamlit as st
 import pandas as pd
@@ -10,11 +11,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# Configuração de layout e atualização automática
+# 🎯 Configuração da página
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
-# Estilos visuais personalizados
+# 🎨 Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -47,7 +48,7 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# Autenticação com Google Sheets
+# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -61,34 +62,30 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
-# Carrega os dados da planilha
+# 📥 Carregar dados
 @st.cache_data(ttl=30)
 def load_data():
     return pd.DataFrame(sheet.get_all_records())
 
 df = load_data()
-
-# Normaliza os nomes das colunas
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
-
-# Garante que Fight_Order seja numérico para ordenação correta
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
-# Campos editáveis e de status
+# 🎯 Campos configuráveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# Atualiza valor na planilha
+# 💾 Atualizar célula
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-# Gera badge de status
+# 🏷️ Badges de status
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -96,7 +93,7 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# Renderiza detalhes do atleta
+# 👤 Renderizar atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -107,10 +104,7 @@ def renderizar_atleta(i, row, df):
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
 
-    st.markdown(f"""
-        <div class='header-container'>
-            {img_html}{nome_html}
-        </div>""", unsafe_allow_html=True)
+    st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
 
     edit_key = f"edit_mode_{i}"
     if edit_key not in st.session_state:
@@ -122,10 +116,7 @@ def renderizar_atleta(i, row, df):
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        fight_order = row.get("Fight_Order", "N/A")
-        opponent = row.get("Opponent", "N/A")
-        division = row.get("Division", "N/A")
-        luta_info = f"Fight {fight_order} | {division} | Opponent {opponent}"
+        luta_info = f"Fight {row.get('Fight_Order', 'N/A')} | {row.get('Division', 'N/A')} | Opponent {row.get('Opponent', 'N/A')}"
         st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
 
         whatsapp = str(row.get("Whatsapp", "")).strip()
@@ -141,8 +132,6 @@ def renderizar_atleta(i, row, df):
                         if campo in df.columns:
                             col_index = df.columns.get_loc(campo)
                             salvar_valor(i, col_index, novo_valor)
-                        else:
-                            st.warning(f"Campo '{campo}' não encontrado.")
                 st.success('Alterações salvas com sucesso!')
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
@@ -150,45 +139,47 @@ def renderizar_atleta(i, row, df):
         cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             target_col = cols[idx % 2]
-            target_col.text_input(
-                campo,
-                value=row.get(campo, ""),
-                key=f"{campo}_{i}",
-                disabled=not st.session_state[edit_key]
-            )
+            target_col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
 
-# 🔀 Slider para selecionar visualização
-visualizacao = st.select_slider(
-    "🔎 Modo de Visualização",
-    options=["Todos", "Por Evento", "Por Corner", "Somente com Pendências"]
-)
+# 🧭 Filtros na barra lateral
+st.sidebar.title("Filtros")
 
-# Filtros baseados no slider
-if visualizacao == "Por Evento":
-    evento_sel = st.selectbox("Escolha o Evento", sorted(df['Event'].dropna().unique()))
-    df = df[df['Event'] == evento_sel]
+# Evento
+eventos = sorted(df["Event"].dropna().unique())
+evento_sel = st.sidebar.selectbox("Selecionar Evento", ["Todos"] + eventos)
 
-elif visualizacao == "Por Corner":
-    corner_sel = st.multiselect("Escolha o Corner", sorted(df['Corner'].dropna().unique()))
-    if corner_sel:
-        df = df[df['Corner'].isin(corner_sel)]
+# Corner
+corners = sorted(df["Corner"].dropna().unique())
+corner_sel = st.sidebar.multiselect("Selecionar Corner", options=corners, default=corners)
 
-elif visualizacao == "Somente com Pendências":
+# Pendências
+status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
+
+# 🔍 Aplicar filtros
+df = df[df["Role"] == "Fighter"]
+if evento_sel != "Todos":
+    df = df[df["Event"] == evento_sel]
+if corner_sel:
+    df = df[df["Corner"].isin(corner_sel)]
+
+if status_sel == "Somente Pendentes":
     df = df[df[status_cols].apply(lambda row: "required" in row.str.lower().values, axis=1)]
+elif status_sel == "Somente Completos":
+    df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
-# 🔢 Ordenação final
-df = df.sort_values(by=["Event", "Fight_Order", "Corner"], ascending=True)
+# 🔢 Ordenar registros
+df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
 
-# 🔁 Botão manual de atualização
-if st.button("🔄 Atualizar Página"):
+# Botão manual de refresh
+if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 
-# Título principal
+# Título da página principal
 st.title("UAE Warriors 59-60")
 
-# Renderiza todos os atletas filtrados e ordenados
+# Renderizar atletas filtrados
 for i, row in df.iterrows():
     renderizar_atleta(i, row, df)

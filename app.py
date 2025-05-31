@@ -1,9 +1,5 @@
-# 📍 UAE Warriors App - v1.3.9
-# ✅ Atualizações:
-# - Textos centralizados nas tabelas (conteúdo e títulos)
-# - Autorefresh desativado quando qualquer expander estiver aberto
-# - Campos em 3 colunas
-# - Badges centralizados e visíveis apenas durante edição
+# 📍 UAE Warriors App - v1.3.8
+# ✅ Atualizações: tabelas e badges centralizados, caixas em 3 colunas, atualização manual
 
 import streamlit as st
 import pandas as pd
@@ -16,9 +12,7 @@ st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
-.name-vermelho, .name-azul {
-    font-weight: bold; font-size: 1.6rem; display: inline-block;
-}
+.name-vermelho, .name-azul { font-weight: bold; font-size: 1.6rem; display: inline-block; }
 .name-vermelho { color: red; }
 .name-azul { color: #0099ff; }
 .circle-img { width: 70px; height: 70px; border-radius: 50%; overflow: hidden; }
@@ -26,6 +20,7 @@ body, .stApp { background-color: #0e1117; color: white; }
 .badge {
     padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
     margin: 0 3px; text-transform: uppercase; display: inline-block;
+    text-align: center;
 }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
@@ -34,20 +29,15 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 .status-line { text-align: center; margin-bottom: 8px; }
-.header-container {
-    display: flex; align-items: center; justify-content: center;
-    gap: 16px; margin-top: 20px; margin-bottom: 10px;
-}
+.header-container { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 20px; margin-bottom: 10px; }
 .custom-table {
-    width: 100%; border-collapse: collapse; margin-bottom: 10px;
-    text-align: center;
+    width: 100%; border-collapse: collapse; margin-bottom: 10px; text-align: center;
 }
 .custom-table td {
-    border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem; text-align: center;
+    border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem;
 }
 .custom-table td.title {
-    font-weight: bold; background-color: #222;
-    text-align: center; color: #ddd;
+    font-weight: bold; background-color: #222; color: #ddd; text-align: center;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -71,25 +61,37 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
+# Campos editáveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
+# Atualizar valor na planilha
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-def gerar_badge(valor, status):
+# Badge interativo
+def gerar_badge_interativo(valor, status, row_index):
     classe = {
         "done": "badge-done",
         "required": "badge-required"
     }.get(str(valor).strip().lower(), "badge-neutral")
-    return f"<span class='badge {classe}'>{status.upper()}</span>"
 
+    label = status.upper()
+    badge_html = f"<span class='badge {classe}'>{label}</span>"
+    if st.session_state.get(f"edit_mode_{row_index}", False):
+        if st.button(label, key=f"badge_{status}_{row_index}"):
+            novo_valor = "done" if str(valor).lower() != "done" else "required"
+            salvar_valor(row_index, df.columns.get_loc(status), novo_valor)
+            st.rerun()
+    return badge_html
+
+# Tabelas
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -109,8 +111,8 @@ def render_tabela_documentos(row):
     <table class='custom-table'>
         <tr><td class='title'>Nationality</td><td class='title'>Passport</td><td class='title'>Document</td></tr>
         <tr><td>{row.get("Nationality_Passport", "")}</td><td>{row.get("Passport", "")}</td><td>{doc_link}</td></tr>
-        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'> </td></tr>
-        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td> </td></tr>
+        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'></td></tr>
+        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td></td></tr>
     </table>
     """
 
@@ -121,11 +123,12 @@ def render_tabela_voo(row):
     <table class='custom-table'>
         <tr><td class='title'>Arrivals</td><td class='title'>Departure</td></tr>
         <tr><td>{row.get("Arrivals", "")}</td><td>{row.get("Departure", "")}</td></tr>
-        <tr><td class='title'>Flight_Ticket</td><td class='title'>Hotel</td></tr>
+        <tr><td class='title'>Flight Ticket</td><td class='title'>Hotel</td></tr>
         <tr><td>{ticket_link}</td><td>{row.get("Hotel", "")}</td></tr>
     </table>
     """
 
+# Render atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -145,23 +148,15 @@ def renderizar_atleta(i, row, df):
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        if st.session_state[edit_key]:
-            badge_cols = st.columns(len(status_cols) + 1)
-            for j, status in enumerate(status_cols):
-                current = str(row.get(status, "")).lower()
-                novo = "done" if current == "required" else "required"
-                if badge_cols[j].button(status.upper(), key=f"badgebtn_{i}_{j}"):
-                    salvar_valor(i, df.columns.get_loc(status), novo)
-                    st.rerun()
-
-        st.markdown("<div class='status-line'>" + "".join(gerar_badge(row.get(status, ""), status) for status in status_cols) + "</div>", unsafe_allow_html=True)
+        badge_html = "".join(gerar_badge_interativo(row.get(status, ""), status, i) for status in status_cols)
+        st.markdown(f"<div class='status-line'>{badge_html}</div>", unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns(3)
         with col1: st.markdown(render_tabela_fight(row), unsafe_allow_html=True)
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
         with col3: st.markdown(render_tabela_voo(row), unsafe_allow_html=True)
 
-        if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
+        if st.button("Editar" if not st.session_state[edit_key] else "Salvar", key=f"toggle_{i}"):
             if st.session_state[edit_key]:
                 for campo in campos_editaveis:
                     novo_valor = st.session_state.get(f"{campo}_{i}", "")
@@ -170,12 +165,16 @@ def renderizar_atleta(i, row, df):
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
 
+        input_cols = st.columns(3)
         for idx, campo in enumerate(campos_editaveis):
-            col = st.columns(3)[idx % 3]
             if campo == "Uniform":
-                col.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"], key=f"{campo}_{i}", index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(row.get(campo, "Medium")), disabled=not st.session_state[edit_key])
+                input_cols[idx % 3].selectbox(
+                    campo, ["", "Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
+                    key=f"{campo}_{i}", index=0 if row.get(campo, "") == "" else None,
+                    disabled=not st.session_state[edit_key]
+                )
             else:
-                col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+                input_cols[idx % 3].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
@@ -185,6 +184,10 @@ st.sidebar.title("Filtros")
 evento_sel = st.sidebar.selectbox("Evento", ["Todos"] + sorted(df['Event'].dropna().unique()))
 corner_sel = st.sidebar.multiselect("Corner", sorted(df['Corner'].dropna().unique()))
 status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
+
+# Botão de atualização
+if st.sidebar.button("🔄 Atualizar Página"):
+    st.rerun()
 
 # Aplicar filtros
 df = df[df["Role"] == "Fighter"]
@@ -198,9 +201,8 @@ elif status_sel == "Somente Completos":
     df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
-if not any(st.session_state.get(f"edit_mode_{i}", False) for i in df.index):
-    st.experimental_rerun = st.experimental_singleton(lambda: True)
 
+# Render
 st.title("UAE Warriors 59-60")
 for i, row in df.iterrows():
     renderizar_atleta(i, row, df)

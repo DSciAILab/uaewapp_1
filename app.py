@@ -1,4 +1,8 @@
-# 📍 UAE Warriors App - v1.2.6
+# 📍 UAE Warriors App - v1.2.7
+# ✅ Alterações:
+# - Tabelas visuais com bordas para "Fight Details" e "Documentos Pessoais"
+# - Tabelas aparecem após os badges e antes dos campos editáveis
+# - Mantida estrutura e filtros anteriores
 
 import streamlit as st
 import pandas as pd
@@ -6,9 +10,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
+# 🎯 Configuração da página
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
+# 🎨 Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -32,17 +38,40 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 .status-line { text-align: center; margin-bottom: 8px; }
+.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
 .wa-button { text-align: center; margin-bottom: 10px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
 }
+.table-block {
+    border: 1px solid #444; border-radius: 10px; padding: 10px; margin-bottom: 20px;
+}
+.table-block table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.table-block td {
+    border: 1px solid #555;
+    padding: 6px 10px;
+    vertical-align: top;
+    font-size: 0.85rem;
+}
+.table-block th {
+    background: #222;
+    padding: 6px 10px;
+    text-align: left;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
@@ -50,6 +79,7 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
+# 📥 Carregar dados
 @st.cache_data(ttl=30)
 def load_data():
     return pd.DataFrame(sheet.get_all_records())
@@ -86,6 +116,7 @@ def renderizar_atleta(i, row, df):
 
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
+
     st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
 
     edit_key = f"edit_mode_{i}"
@@ -95,34 +126,45 @@ def renderizar_atleta(i, row, df):
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        # 🔖 Badges
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        # 🧾 Tabela com borda
-        st.markdown("""
-        <div style='display: flex; gap: 24px; margin-top: 10px; margin-bottom: 20px;'>
-            <div style='flex: 1; border: 1px solid #444; border-radius: 10px; padding: 12px;'>
-                <h4 style='margin-top: 0;'>Fight Details</h4>
-                <p><strong>Fight Order:</strong><br>{fight_order}</p>
-                <p><strong>Corner:</strong><br>{corner}</p>
-                <p><strong>Opponent:</strong><br>{opponent}</p>
-            </div>
-            <div style='flex: 1; border: 1px solid #444; border-radius: 10px; padding: 12px;'>
-                <h4 style='margin-top: 0;'>Match Info</h4>
-                <p><strong>Event:</strong><br>{event}</p>
-                <p><strong>Division:</strong><br>{division}</p>
-                <p><strong>Coach:</strong><br>{coach}</p>
-            </div>
+        # ▶️ Tabela 1 – Fight Details
+        st.markdown(f"""
+        <div class="table-block">
+        <table>
+            <tr>
+                <td><strong>Fight Order</strong><br>{row.get('Fight_Order', 'N/A')}</td>
+                <td><strong>Corner</strong><br>{row.get('Corner', 'N/A')}</td>
+                <td><strong>Event</strong><br>{row.get('Event', 'N/A')}</td>
+                <td><strong>Division</strong><br>{row.get('Division', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Opponent</strong><br>{row.get('Opponent', 'N/A')}</td>
+                <td><strong>Coach</strong><br>{row.get('Coach', 'N/A')}</td>
+                <td colspan="2"></td>
+            </tr>
+        </table>
         </div>
-        """.format(
-            fight_order=row.get('Fight_Order', 'N/A'),
-            corner=row.get('Corner', 'N/A'),
-            opponent=row.get('Opponent', 'N/A'),
-            event=row.get('Event', 'N/A'),
-            division=row.get('Division', 'N/A'),
-            coach=row.get('Coach', 'N/A')
-        ), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+
+        # ▶️ Tabela 2 – Documentos Pessoais
+        st.markdown(f"""
+        <div class="table-block">
+        <table>
+            <tr>
+                <td><strong>Nationality (Passport)</strong><br>{row.get('Nationality_Passport', 'N/A')}</td>
+                <td><strong>Passport</strong><br>{row.get('Passport', 'N/A')}</td>
+                <td><strong>Personal Doc</strong><br>{row.get('Personal_Doc', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Date of Birth</strong><br>{row.get('DOB', 'N/A')}</td>
+                <td><strong>Whatsapp</strong><br>{row.get('Whatsapp', 'N/A')}</td>
+                <td colspan="1"></td>
+            </tr>
+        </table>
+        </div>
+        """, unsafe_allow_html=True)
 
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
@@ -157,7 +199,6 @@ corners = sorted(df["Corner"].dropna().unique())
 corner_sel = st.sidebar.multiselect("Selecionar Corner", options=corners, default=corners)
 status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
 
-# 🔍 Aplicar filtros
 df = df[df["Role"] == "Fighter"]
 if evento_sel != "Todos":
     df = df[df["Event"] == evento_sel]
@@ -174,6 +215,5 @@ if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 
 st.title("UAE Warriors 59-60")
-
 for i, row in df.iterrows():
     renderizar_atleta(i, row, df)

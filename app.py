@@ -55,7 +55,7 @@ def connect_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    return client.open("UAEW_App").worksheet("Sheet1")
+    return client.open("UAEW_App").worksheet("App")
 
 sheet = connect_sheet()
 

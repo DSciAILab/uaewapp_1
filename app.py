@@ -1,10 +1,12 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.36
+Versão: v1.1.37
 
 ### Novidades desta versão:
-- Campo "Uniform" agora é exibido como dropdown com opções: Small, Medium, Large, 2X-Large
+- Exibindo apenas atletas com ROLE == Fighter
+- Estilo de layout atualizado para tarefas, logística e dados pessoais em linha
+- Restaurado estilo de cabeçalho da versão 1.1.29
 """
 
 # 🖖️ Importações
@@ -38,7 +40,9 @@ def connect_sheet():
 def load_data():
     sheet = connect_sheet()
     data = sheet.get_all_records()
-    return pd.DataFrame(data), sheet
+    df = pd.DataFrame(data)
+    df = df[df["ROLE"].str.lower() == "fighter"]  # filtra apenas lutadores
+    return df, sheet
 
 # 📂 Salvar valores no Google Sheets
 def salvar_valor(sheet, row, col_index, valor):
@@ -66,8 +70,8 @@ body, .stApp { background-color: #0e1117; color: white; }
 """, unsafe_allow_html=True)
 
 # 🔖 Carregamento
-st.title("UAE Warriors 59-60")
 df, sheet = load_data()
+st.title("UAE Warriors 59-60")
 
 # 🔍 Filtros
 col_evento, col_corner = st.columns([6, 6])
@@ -85,7 +89,7 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🪩 Campos por setor
+# 🚩 Campos por setor
 campos_setores = {
     "Tarefas": ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"],
     "Logística": ["Booking Number / Room", "Arrival Details", "Departure Details", "Flight Ticket"],
@@ -109,7 +113,7 @@ def gerar_badge(valor, status):
 for i, row in df.iterrows():
     corner_color = "#0099ff" if str(row.get("Corner", "")).lower() == "blue" else "#ff4b4b"
     nome_html = f"<span style='color:{corner_color}; font-size: 1.8rem; font-weight: bold;'>"
-    nome_html += ("⚠️ " if any(str(row.get(col, "")).lower() == "required" for col in status_cols) else "")
+    nome_html += ("\u26a0\ufe0f " if any(str(row.get(col, "")).lower() == "required" for col in status_cols) else "")
     nome_html += f"{row['Name']}</span>"
 
     with st.container():
@@ -135,15 +139,20 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📱 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>\ud83d\udcf1 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
             for setor, campos in campos_setores.items():
-                if setor != "Tarefas":
-                    st.subheader(setor)
-                    col1, col2 = st.columns(2)
-                    for idx, campo in enumerate(campos):
-                        valor_atual = str(row.get(campo, ""))
+                st.subheader(setor)
+                col1, col2 = st.columns(2)
+                for idx, campo in enumerate(campos):
+                    valor_atual = str(row.get(campo, ""))
+                    if setor in ["Tarefas", "Logística", "Pessoais"]:
+                        if idx % 2 == 0:
+                            col1.markdown(f"**{campo}**: {valor_atual}")
+                        else:
+                            col2.markdown(f"**{campo}**: {valor_atual}")
+                    elif setor == "Evento":
                         if campo == "Uniform":
                             options = ["Small", "Medium", "Large", "2X-Large"]
                             selected = valor_atual if valor_atual in options else options[0]

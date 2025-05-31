@@ -1,11 +1,10 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.40
+Versão: v1.1.41
 
 ### Novidades desta versão:
-- Corrigido: campo 'Flight Ticket' agora aparece na seção Logística, e não mais em Hotel
-- Layout da versão 1.1.39 mantido com melhorias estruturais
+- Corrigido: campo 'Flight Ticket' agora aparece como hyperlink clicável na seção Logística
 """
 
 # 🔑 Importações
@@ -116,7 +115,9 @@ for i, row in df.iterrows():
             st.text(f"Nationality: {row['Nationality']}  |  DOB: {row['DOB']}  |  Passport: {row['Passport']}")
 
             st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
-            st.text(f"Arrival: {row['Arrival Details']}  |  Departure: {row['Departure Details']}  |  Flight: {row['Flight Ticket']}")
+            flight_link = row['Flight Ticket']
+            flight_label = f"[Visualizar Passagem Aérea]({flight_link})" if flight_link else "Passagem não disponível"
+            st.markdown(f"Arrival: {row['Arrival Details']}  |  Departure: {row['Departure Details']}  |  Flight: {flight_label}", unsafe_allow_html=True)
 
             st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
             st.text(f"Room: {row['Booking Number / Room']}")

@@ -1,13 +1,12 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.2
+Versão: v1.1.3
 
 ### Mudanças nesta versão:
-- Retorno ao estilo da versão 1.0.7: status exibidos diretamente no título do expander.
-- Emojis ⚠️ mantidos ao lado do nome quando houver pendências.
-- Remoção dos badges estilizados via HTML dentro do corpo do expander.
-- Estilo mais direto, com resumo dos status visível com a caixa fechada.
+- Melhoria visual: status pendentes (⚠️) e concluídos (✅) voltam a ser exibidos com rótulos ao lado do nome.
+- Removido campo redundante de status dentro do expander.
+- Layout mais limpo e intuitivo.
 
 ### Próximas melhorias sugeridas:
 - Paginação por evento
@@ -76,7 +75,7 @@ corners = sorted(df['Corner'].dropna().unique())
 evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
 corner_sel = col_corner.multiselect("Corner", corners)
 
-if st.button("🔄 Atualizar Página"):
+if st.button("\ud83d\udd04 Atualizar Página"):
     st.rerun()
 
 if evento_sel != "Todos":
@@ -153,6 +152,6 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            col2.markdown(f"[\ud83d\udcde Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

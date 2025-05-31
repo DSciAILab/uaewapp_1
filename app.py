@@ -1,15 +1,15 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.32
+Versão: v1.1.33
 
 ### Novidades desta versão:
 - Planilha atualizada para utilizar a aba 'App'
 - Campos organizados em setores (Luta, Tarefas, Logística, Dados Pessoais, Evento)
-- Estilo atualizado para comportar novas seções e manter layout limpo
+- Layout oficial com imagem circular ao lado do nome e WhatsApp centralizado
 """
 
-# 📆 Importações
+# 🗖️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -81,7 +81,7 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🧩 Campos por setor
+# 🧹 Campos por setor
 campos_setores = {
     "Tarefas": ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"],
     "Logística": ["Booking Number / Room", "Arrival Details", "Departure Details", "Flight Ticket"],
@@ -105,7 +105,7 @@ def gerar_badge(valor, status):
 for i, row in df.iterrows():
     corner_color = "#0099ff" if str(row.get("Corner", "")).lower() == "blue" else "#ff4b4b"
     nome_html = f"<span style='color:{corner_color}; font-size: 1.8rem; font-weight: bold;'>"
-    nome_html += ("\u26a0\ufe0f " if any(str(row.get(col, "")).lower() == "required" for col in status_cols) else "")
+    nome_html += ("⚠️ " if any(str(row.get(col, "")).lower() == "required" for col in status_cols) else "")
     nome_html += f"{row['Name']}</span>"
 
     with st.container():

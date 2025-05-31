@@ -174,11 +174,11 @@ for i, row in df.iterrows():
                 if editar and novo_valor != val:
 
                     try:
-                    headers = [h.strip() for h in sheet.row_values(1)]
-                    col_idx = headers.index(campo)
-                    salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
+                        headers = [h.strip() for h in sheet.row_values(1)]
+                        col_idx = headers.index(campo)
+                        salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     except ValueError:
-                    st.warning(f"⚠️ Coluna '{campo}' não encontrada no Google Sheet.")
+                        st.warning(f"⚠️ Coluna '{campo}' não encontrada no Google Sheet.")
 
                     
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)

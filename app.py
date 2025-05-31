@@ -1,21 +1,14 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.38
+Versão: v1.1.39
 
 ### Novidades desta versão:
-- Layout reorganizado:
-  - Nome e foto centralizados fora do expander (foto em círculo)
-  - Dentro do expander:
-    1. Pendências (badges)
-    2. Detalhes da luta
-    3. Dados pessoais
-    4. Logística
-    5. Hotel/voo
-    6. Campos editáveis restantes
+- Correção de bug na renderização do nome com imagem e cor por corner (f-string ao invés de concatenação manual)
+- Manutenção do layout da versão 1.1.29 com refinamentos
 """
 
-# 🖖️ Importações
+# 🖖️️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -65,7 +58,7 @@ body, .stApp { background-color: #0e1117; color: white; }
 </style>
 """, unsafe_allow_html=True)
 
-# 📅 Título
+# 🗓️ Título
 st.title("UAE Warriors 59-60")
 df, sheet = load_data()
 
@@ -100,14 +93,15 @@ def gerar_badge(valor, status):
 # 👥 Iterar atletas
 for i, row in df.iterrows():
     with st.container():
-        st.markdown("""
-            <div class='athlete-header'>
-                <img class='avatar' src='""" + row.get("Image", "") + """'/>
-                <span class='name-tag' style='color: """ +
-                ("#ff4b4b" if row.get("Corner", "").lower() == "red" else "#0099ff") + "';">" +
-                ("⚠️ " if any(str(row.get(t, "")).lower() == "required" for t in tarefas) else "") +
-                row["Name"] + "</span></div>
-        """, unsafe_allow_html=True)
+        cor = "#ff4b4b" if row.get("Corner", "").lower() == "red" else "#0099ff"
+        alerta = "⚠️ " if any(str(row.get(t, "")).lower() == "required" for t in tarefas) else ""
+        nome_html = f"""
+        <div class='athlete-header'>
+            <img class='avatar' src='{row.get("Image", "")}'/>
+            <span class='name-tag' style='color: {cor};'>{alerta}{row["Name"]}</span>
+        </div>
+        """
+        st.markdown(nome_html, unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
             st.markdown(" ".join([gerar_badge(str(row.get(t, "")), t) for t in tarefas]), unsafe_allow_html=True)

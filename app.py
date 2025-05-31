@@ -1,14 +1,14 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.39
+Versão: v1.1.40
 
 ### Novidades desta versão:
-- Correção de bug na renderização do nome com imagem e cor por corner (f-string ao invés de concatenação manual)
-- Manutenção do layout da versão 1.1.29 com refinamentos
+- Corrigido: campo 'Flight Ticket' agora aparece na seção Logística, e não mais em Hotel
+- Layout da versão 1.1.39 mantido com melhorias estruturais
 """
 
-# 🖖️️ Importações
+# 🔑 Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -116,10 +116,10 @@ for i, row in df.iterrows():
             st.text(f"Nationality: {row['Nationality']}  |  DOB: {row['DOB']}  |  Passport: {row['Passport']}")
 
             st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
-            st.text(f"Arrival: {row['Arrival Details']}  |  Departure: {row['Departure Details']}")
+            st.text(f"Arrival: {row['Arrival Details']}  |  Departure: {row['Departure Details']}  |  Flight: {row['Flight Ticket']}")
 
             st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
-            st.text(f"Room: {row['Booking Number / Room']}  |  Flight: {row['Flight Ticket']}")
+            st.text(f"Room: {row['Booking Number / Room']}")
 
             st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)
 

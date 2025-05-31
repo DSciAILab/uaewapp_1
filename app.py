@@ -1,13 +1,14 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.45
+Versão: v1.1.46
 
 ### Novidades desta versão:
 - Layout visual com 3 colunas mantido
 - Restaurado botão de edição/salvamento
 - Campos agora podem ser editáveis sob controle do usuário
 - Correção do erro de update_cell usando índice original da planilha
+- Corrigido erro ao salvar campo inexistente
 """
 
 # 🔑 Importações
@@ -134,7 +135,7 @@ for j, row in df.iterrows():
             st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)
 
             col1, col2, col3 = st.columns(3)
-            campos = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Notes"]
+            campos = [c for c in ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Notes"] if c in df.columns]
             colunas = [col1, col2, col3]
             for idx, campo in enumerate(campos):
                 valor = str(row.get(campo, ""))

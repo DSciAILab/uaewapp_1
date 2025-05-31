@@ -3,19 +3,27 @@
 """
 Versão: v1.1.4
 
-### Mudanças desta versão:
-- Reformulado o título de cada atleta:
-  Exemplo: ⚠️ Magomed Tuchalov | Fight 01 | Bantamweight | Opponent Murad Ibragimov
-- Removida a listagem de status (✅ ⚠️) do título para focar no resumo principal.
+### Mudanças nesta versão:
+- Novo layout para o título dentro do `st.expander`:
+  - Linha 1: Nome do atleta (com ícone de pendência se aplicável)
+  - Linha 2: Informações da luta (Fight Order, Division, Opponent)
+  - Linha 3: Pendências como status
+
+### Próximas melhorias sugeridas:
+- Paginação por evento
+- Controle de edição por campo
+
+### 🗓️ Última atualização: 2025-05-31
 """
 
+# 📦 Importações
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 📡 Conexão com Google Sheets
+# 📱 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -28,20 +36,20 @@ def connect_sheet():
     sheet = client.open("UAEW_App").worksheet("Sheet1")
     return sheet
 
-# 📥 Carregamento
+# 🔄 Carregamento de dados
 def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# 💾 Atualização individual
+# 📂 Atualização de célula
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
-# ⚙️ Layout e Refresh
+# ⚙️ Layout e Auto-refresh
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000, key="datarefresh")
 
-# 🎨 CSS personalizado
+# 🎨 Estilo CSS
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
@@ -51,17 +59,17 @@ st.markdown("""
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
+    .status-row { font-size: 0.85rem; padding-top: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-# 🏷️ Cabeçalho
+# 🏇 Título principal
 st.title("UAE Warriors 59-60")
 
-# 🗂️ Dados
+# 🗓️ Dados e filtros
 sheet = connect_sheet()
 df = load_data(sheet)
 
-# 🎛️ Filtros
 col_evento, col_corner = st.columns([6, 6])
 eventos = sorted(df['Event'].dropna().unique())
 corners = sorted(df['Corner'].dropna().unique())
@@ -69,7 +77,7 @@ corners = sorted(df['Corner'].dropna().unique())
 evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
 corner_sel = col_corner.multiselect("Corner", corners)
 
-if st.button("🔄 Atualizar Página"):
+if st.button("Atualizar Página"):
     st.rerun()
 
 if evento_sel != "Todos":
@@ -77,35 +85,33 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 📋 Campos
+# 🔋 Campos e status
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🔍 Renderizar atletas
+# 👩‍🏋️ Renderiza atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
-    tem_pendencia = any(str(row.get(status, "")).strip().lower() == "required" for status in status_cols)
-    icone = "⚠️ " if tem_pendencia else ""
 
-    # Novo título formatado
-    titulo = f"{icone}{row['Name']} | Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
+    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
+    icone_alerta = "\u26a0\ufe0f " if tem_pendencia else ""
+    nome = f"{icone_alerta}{row['Name']}"
+    detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
+    pendencias = " ".join(status for status in status_cols if str(row.get(status, "")).lower() == "required")
 
-    with st.expander(titulo):
+    with st.expander(nome):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 0.9rem; color: #ccc; margin-top: -5px;'>{detalhes_luta}</div>", unsafe_allow_html=True)
+        if pendencias:
+            st.markdown(f"<div class='status-row'>\ud83d\udd39 Pendências: {pendencias}</div>", unsafe_allow_html=True)
 
         col1, col2 = st.columns([1, 5])
 
         if row.get("Image"):
             try:
                 col1.image(row["Image"], width=100)
-                col1.markdown(f"**Fight Order:** {row.get('Fight Order', '')}")
             except:
                 col1.warning("Imagem inválida")
-        else:
-            col1.markdown(f"**Fight Order:** {row.get('Fight Order', '')}")
-
-        col1.markdown(f"**Division:** {row['Division']}")
-        col1.markdown(f"**Opponent:** {row['Oponent']}")
 
         col2.markdown(f"<div class='athlete-name'>{row['Name']}</div>", unsafe_allow_html=True)
 
@@ -135,6 +141,6 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            col2.markdown(f"[\ud83d\udcde Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

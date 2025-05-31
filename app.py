@@ -1,5 +1,8 @@
-# 📍 UAE Warriors App - v1.3.0
-# ✅ Tabelas lado a lado: Fight Details | Documentos Pessoais | Voo & Hotel
+# 📍 UAE Warriors App - v1.3.1
+# ✅ Melhorias:
+# - Badges centralizados
+# - Textos nas tabelas alinhados ao centro
+# - Botão "Editar" substituído por toggle com ícone
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +13,6 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
-# 🎨 Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -28,10 +30,13 @@ body, .stApp { background-color: #0e1117; color: white; }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
 .badge-neutral { background-color: #444; color: #ccc; }
+.status-line {
+    display: flex; justify-content: center; flex-wrap: wrap;
+    gap: 6px; margin-bottom: 12px;
+}
 .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
-.status-line { text-align: center; margin-bottom: 8px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
@@ -41,6 +46,7 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 }
 .custom-table td {
     border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem;
+    text-align: center;
 }
 .custom-table td.title {
     font-weight: bold; background-color: #222;
@@ -49,7 +55,6 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conexão com o Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -68,21 +73,18 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
-# Campos editáveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# Atualizar valor na planilha
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-# Badges de status
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -90,7 +92,6 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# 📋 Tabela 1 - Fight Details
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -101,7 +102,6 @@ def render_tabela_fight(row):
     </table>
     """
 
-# 📋 Tabela 2 - Documentos Pessoais
 def render_tabela_documentos(row):
     doc = row.get("Personal_Doc", "")
     doc_link = f"<a href='{doc}' target='_blank'>Visualizar</a>" if doc else "—"
@@ -116,7 +116,6 @@ def render_tabela_documentos(row):
     </table>
     """
 
-# 📋 Tabela 3 - Voo & Hotel
 def render_tabela_voo(row):
     ticket = row.get("Flight_Ticket", "")
     ticket_link = f"<a href='{ticket}' target='_blank'>View</a>" if ticket else "—"
@@ -129,7 +128,6 @@ def render_tabela_voo(row):
     </table>
     """
 
-# 👤 Renderizar atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -139,7 +137,6 @@ def renderizar_atleta(i, row, df):
 
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
-
     st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
 
     edit_key = f"edit_mode_{i}"
@@ -155,17 +152,21 @@ def renderizar_atleta(i, row, df):
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
         with col3: st.markdown(render_tabela_voo(row), unsafe_allow_html=True)
 
-        if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
-            if st.session_state[edit_key]:
-                for campo in campos_editaveis:
-                    novo_valor = st.session_state.get(f"{campo}_{i}", "")
-                    if campo in df.columns:
-                        salvar_valor(i, df.columns.get_loc(campo), novo_valor)
-            st.session_state[edit_key] = not st.session_state[edit_key]
+        toggle = st.toggle("✏️ Editar informações", key=f"toggle_{i}")
+        if toggle != st.session_state[edit_key]:
+            st.session_state[edit_key] = toggle
+            if not toggle:
+                with st.spinner("Salvando alterações..."):
+                    for campo in campos_editaveis:
+                        novo_valor = st.session_state.get(f"{campo}_{i}", "")
+                        if campo in df.columns:
+                            salvar_valor(i, df.columns.get_loc(campo), novo_valor)
+                st.success("Alterações salvas com sucesso!")
             st.rerun()
 
+        cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
-            st.columns(2)[idx % 2].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+            cols[idx % 2].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
@@ -176,7 +177,6 @@ evento_sel = st.sidebar.selectbox("Evento", ["Todos"] + sorted(df['Event'].dropn
 corner_sel = st.sidebar.multiselect("Corner", sorted(df['Corner'].dropna().unique()))
 status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
 
-# Aplicar filtros
 df = df[df["Role"] == "Fighter"]
 if evento_sel != "Todos":
     df = df[df["Event"] == evento_sel]
@@ -188,6 +188,7 @@ elif status_sel == "Somente Completos":
     df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
+
 if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 

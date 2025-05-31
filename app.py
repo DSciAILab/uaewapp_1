@@ -1,13 +1,12 @@
-# ✅ Deve ser a primeira linha de execução!
+# ✅ Esta linha deve ser a primeira execução do script!
 import streamlit as st
 st.set_page_config(page_title="UAEW Fighters", layout="wide")
 
-# 🔍 Demais imports
+# 📦 Imports restantes
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
-
 
 # 🔐 Conexão com Google Sheets
 @st.cache_resource
@@ -40,7 +39,7 @@ def salvar_valor(sheet, row, col_index, valor):
     except Exception as e:
         st.error(f"Erro ao salvar valor: linha {row+2}, coluna {col_index+1}: {e}")
 
-# 🎛️ Estilos
+# 🎨 Estilo da interface
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -55,13 +54,13 @@ th, td { padding: 4px 8px; border: 1px solid #444; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🎯 Inicial
-#st.set_page_config(page_title="UAEW Fighters", layout="wide")
-#st_autorefresh(interval=10000, key="autorefresh")
+# 🔄 Auto atualização da página a cada 10s
+st_autorefresh(interval=10000, key="autorefresh")
 
+# 📊 Carregando os dados
 df, sheet = load_data()
 
-# 🎚️ Sidebar filtros
+# 🎛️ Filtros
 with st.sidebar:
     st.header("Filtros")
     eventos = sorted(df['Event'].dropna().unique())
@@ -69,7 +68,7 @@ with st.sidebar:
     corner_sel = st.multiselect("Corner", ["Red", "Blue"])
     status_sel = st.radio("Status das tarefas", ["Todos", "Somente pendentes", "Somente completos"])
 
-# 🎯 Aplica filtros
+# 🧩 Aplicação dos filtros
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
@@ -93,7 +92,7 @@ if df.empty:
     st.warning("Nenhum atleta encontrado.")
     st.stop()
 
-# 🧠 Texto clicável das tarefas
+# 🧠 Função para tarefa clicável
 def render_tarefa_clickavel(tarefa, valor, idx, editar):
     classe = 'badge-required' if valor.lower() == 'requested' else 'badge-done'
     texto = tarefa.upper()
@@ -115,7 +114,7 @@ def render_tarefa_clickavel(tarefa, valor, idx, editar):
     query = st.experimental_get_query_params()
     return query.get("clicked", [""])[0] == html_id
 
-# 🧍 Atletas
+# 👤 Iterando sobre cada atleta
 for i, row in df.iterrows():
     with st.container():
         st.markdown(f"""
@@ -153,7 +152,7 @@ for i, row in df.iterrows():
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
                     st.experimental_rerun()
 
-            # 🔎 Informações principais
+            # Info complementar
             st.markdown(f"""
             <div style='display: flex; justify-content: space-between;'>
                 <table><tr><th>Fight</th></tr><tr><td>{row.get('Fight Order', '')}</td></tr></table>

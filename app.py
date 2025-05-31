@@ -1,4 +1,8 @@
-# 📍 UAE Warriors App - v1.3.11
+# 📍 UAE Warriors App - v1.3.8
+# ✅ Atualizações:
+# - Caixas de texto organizadas em 3 colunas
+# - Botões de status (badges) divididos com botão de editar em linha horizontal (5 colunas)
+# - Tabelas e badges centralizados (mantido conforme versão anterior)
 
 import streamlit as st
 import pandas as pd
@@ -6,10 +10,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
+# Configurações da página
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
-# 🎨 Estilo visual
+# Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -22,18 +27,15 @@ body, .stApp { background-color: #0e1117; color: white; }
 .circle-img img { width: 100%; height: 100%; object-fit: cover; }
 .badge {
     padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
-    margin: 0 3px; text-transform: uppercase; display: inline-block; cursor: pointer;
+    margin: 0 5px; text-transform: uppercase; display: inline-block;
 }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
 .badge-neutral { background-color: #444; color: #ccc; }
-.status-line {
-    text-align: center;
-    margin-bottom: 10px;
-}
 .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
+.status-line { text-align: center; margin-bottom: 8px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
@@ -43,7 +45,6 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 }
 .custom-table td {
     border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem;
-    text-align: center;
 }
 .custom-table td.title {
     font-weight: bold; background-color: #222;
@@ -52,7 +53,7 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conexão com o Google Sheets
+# Conexão segura
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -71,6 +72,7 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
+# Campos
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
@@ -80,25 +82,17 @@ status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
-        return True
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
-        return False
 
-def gerar_badge_interativo(valor, status, row_idx, col_idx):
+def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
         "required": "badge-required"
     }.get(str(valor).strip().lower(), "badge-neutral")
-    texto = status.upper()
-    key = f"{status}_{row_idx}"
-    if st.button(f"{texto}", key=key):
-        novo_valor = "done" if str(valor).strip().lower() != "done" else "required"
-        salvar_valor(row_idx, col_idx, novo_valor)
-        st.experimental_rerun()
-    st.markdown(f"<div class='badge {classe}'>{texto}</div>", unsafe_allow_html=True)
+    return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# Renderizar tabelas HTML
+# Tabelas
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -135,11 +129,14 @@ def render_tabela_voo(row):
     </table>
     """
 
+# Renderizar
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
     nome_class = "name-vermelho" if corner == "red" else "name-azul"
-    icone_alerta = "⚠️ " if any(str(row.get(status, "")).lower() == "required" for status in status_cols) else ""
+    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
+    icone_alerta = "⚠️ " if tem_pendencia else ""
+
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
     st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
@@ -150,45 +147,58 @@ def renderizar_atleta(i, row, df):
 
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='status-line'>{''.join(gerar_badge(row.get(s, ''), s) for s in status_cols)}</div>", unsafe_allow_html=True)
 
-        # Badges interativos
-        st.markdown("<div class='status-line'>", unsafe_allow_html=True)
-        for status in status_cols:
-            col_index = df.columns.get_loc(status)
-            gerar_badge_interativo(row.get(status, ""), status, i, col_index)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # Tabelas
         col1, col2, col3 = st.columns(3)
         with col1: st.markdown(render_tabela_fight(row), unsafe_allow_html=True)
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
         with col3: st.markdown(render_tabela_voo(row), unsafe_allow_html=True)
 
-        if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
-            if st.session_state[edit_key]:
-                for campo in campos_editaveis:
-                    novo_valor = st.session_state.get(f"{campo}_{i}", "")
-                    if campo in df.columns:
-                        salvar_valor(i, df.columns.get_loc(campo), novo_valor)
-            st.session_state[edit_key] = not st.session_state[edit_key]
-            st.rerun()
+        usuario_atual = "admin"
+        lockby_col_index = df.columns.get_loc("LockBy")
+        lockado_por = row.get("LockBy", "").strip()
+        toggle_key = f"toggle_{i}"
+        bloqueado = bool(lockado_por and lockado_por != usuario_atual)
 
-        # Campos editáveis em 3 colunas
-        cols = st.columns(3)
+        col_a, col_b, col_c, col_d, col_e = st.columns(5)
+        if bloqueado:
+            col_a.warning(f"🔒 Sendo editado por: {lockado_por}")
+        else:
+            toggle = col_a.toggle("✏️ Editar", key=toggle_key)
+            if toggle and not st.session_state[edit_key]:
+                salvar_valor(i, lockby_col_index, usuario_atual)
+                st.session_state[edit_key] = True
+
+            elif not toggle and st.session_state[edit_key]:
+                with st.spinner("Salvando..."):
+                    for campo in campos_editaveis:
+                        novo_valor = st.session_state.get(f"{campo}_{i}", "")
+                        if campo in df.columns:
+                            salvar_valor(i, df.columns.get_loc(campo), novo_valor)
+                    salvar_valor(i, lockby_col_index, "")
+                st.success("✔️ Alterações salvas")
+                st.session_state[edit_key] = False
+                st.rerun()
+
+            if st.session_state[edit_key]:
+                if col_b.button("📸 PS", key=f"ps_{i}"): salvar_valor(i, df.columns.get_loc("Photoshoot"), "done" if row["Photoshoot"].lower() == "required" else "required"); st.rerun()
+                if col_c.button("🧪 Labs", key=f"labs_{i}"): salvar_valor(i, df.columns.get_loc("Labs"), "done" if row["Labs"].lower() == "required" else "required"); st.rerun()
+                if col_d.button("🎤 Interview", key=f"int_{i}"): salvar_valor(i, df.columns.get_loc("Interview"), "done" if row["Interview"].lower() == "required" else "required"); st.rerun()
+                if col_e.button("🖥️ BS", key=f"bs_{i}"): salvar_valor(i, df.columns.get_loc("Black_Screen"), "done" if row["Black_Screen"].lower() == "required" else "required"); st.rerun()
+
+        col_a, col_b, col_c = st.columns(3)
         for idx, campo in enumerate(campos_editaveis):
-            target_col = cols[idx % 3]
+            col = [col_a, col_b, col_c][idx % 3]
             if campo == "Uniform":
-                target_col.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
-                    key=f"{campo}_{i}",
-                    index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(row.get(campo, "Medium")) if row.get(campo) in ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"] else 1,
-                    disabled=not st.session_state[edit_key])
+                col.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
+                              key=f"{campo}_{i}", disabled=not st.session_state[edit_key], index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(row.get(campo, "Medium")) if row.get(campo, "Medium") in ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"] else 1)
             else:
-                target_col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+                col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
 
-# 🎛️ Filtros
+# Filtros
 st.sidebar.title("Filtros")
 evento_sel = st.sidebar.selectbox("Evento", ["Todos"] + sorted(df['Event'].dropna().unique()))
 corner_sel = st.sidebar.multiselect("Corner", sorted(df['Corner'].dropna().unique()))
@@ -202,7 +212,7 @@ if corner_sel:
 if status_sel == "Somente Pendentes":
     df = df[df[status_cols].apply(lambda row: "required" in row.str.lower().values, axis=1)]
 elif status_sel == "Somente Completos":
-    df = df[df[status_cols].apply(lambda row: all(str(val).strip().lower() == "done" for val in row.values), axis=1)]
+    df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
 if st.sidebar.button("🔄 Atualizar Página"):

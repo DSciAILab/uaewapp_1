@@ -172,5 +172,13 @@ for i, row in df.iterrows():
                 else:
                     novo_valor = col.text_input(campo, value=val, key=f"{campo}_{i}", disabled=not editar)
                 if editar and novo_valor != val:
-                    col_idx = sheet.row_values(1).index(campo)
+
+                    try:
+                    headers = [h.strip() for h in sheet.row_values(1)]
+                    col_idx = headers.index(campo)
+                    salvar_valor(sheet, row['original_index'], col_idx, novo_valor)
+                    except ValueError:
+                    st.warning(f"⚠️ Coluna '{campo}' não encontrada no Google Sheet.")
+
+                    
                     salvar_valor(sheet, row['original_index'], col_idx, novo_valor)

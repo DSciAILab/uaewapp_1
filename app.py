@@ -39,7 +39,7 @@ def load_data():
     df["original_index"] = df.index
     #if "CORNER" in df.columns:
     #    df.rename(columns={"CORNER": "Coach"}, inplace=True)
-    #return df, sheet
+    return df, sheet
 
 # 📂 Atualiza valores
 def salvar_valor(sheet, row, col_index, valor):

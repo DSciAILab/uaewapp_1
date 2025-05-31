@@ -1,4 +1,3 @@
-
 import streamlit as st
 st.set_page_config(page_title="UAEW Fighters", layout="wide")
 
@@ -121,6 +120,7 @@ for i, row in df.iterrows():
                 headers = [h.strip() for h in sheet.row_values(1)]
             except Exception as e:
                 st.error("❌ Erro ao acessar os cabeçalhos da planilha.")
+                st.code(str(e))  # <--- Exibe mensagem detalhada
                 st.stop()
 
             lock_col_idx = headers.index("LockBy") if "LockBy" in headers else None

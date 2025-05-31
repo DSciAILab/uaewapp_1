@@ -1,20 +1,16 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.20
+Versão: v1.1.22
 
 ### Mudanças nesta versão:
-- Nome do atleta em negrito e colorido conforme o corner (vermelho ou azul)
-- Visual do `expander` fechado não apenas mostra o alerta, mas também cor do nome conforme corner
-- Mantido layout com:
-  1. Linha 1: Nome com alerta
-  2. Linha 2: Detalhes da luta
-  3. Linha 3: Pendências com badges coloridos (como v1.0.7)
+- Atualização de versão para 1.1.22
+- Sem alterações funcionais ou visuais adicionais nesta versão
 
 ### 🗓️ Última atualização: 2025-05-31
 """
 
-# 🗖️ Importações
+# 🏖️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -34,7 +30,7 @@ def connect_sheet():
     sheet = client.open("UAEW_App").worksheet("Sheet1")
     return sheet
 
-# 🔄 Carregamento de dados
+# 🔀 Carregamento de dados
 def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
@@ -103,7 +99,7 @@ def gerar_badge(valor, status):
     else:
         return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-# 🧕‍🤽️ Renderiza atletas
+# 🦕‍🤽️ Renderiza atletas
 for i, row in df.iterrows():
     corner = str(row.get("Corner", "")).lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"

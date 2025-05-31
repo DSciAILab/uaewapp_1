@@ -1,20 +1,20 @@
 # 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.26
+Versão: v1.1.28
 
 ### Mudanças nesta versão:
-- Imagem do atleta ao lado do nome usando duas colunas
-- Imagem com borda circular
-- Nome centralizado, com cor representando o corner
-- Removido nome duplicado de dentro do expander
-- Linha divisória entre atletas mantida
-- Expander mais suave visualmente
+- Centralização total: imagem, nome, badges, detalhes e botão WhatsApp
+- Reorganização visual: badges viraram a primeira linha dentro do expander
+- Detalhes da luta como segunda linha
+- Botão do WhatsApp é a terceira linha
+- Nome removido de dentro do expander
+- Mantida divisão com `<hr>` estilizado
 
-### 🗓️ Última atualização: 2025-05-31
+### 🍛 Última atualização: 2025-05-31
 """
 
-# 🏖️ Importações
+# 🏓️ Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -47,36 +47,38 @@ def salvar_valor(sheet, row, col_index, valor):
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000, key="datarefresh")
 
-# 🎨 Estilo CSS
+# 🎨 CSS
 st.markdown("""
-    <style>
-    body { background-color: #0e1117; color: white; }
-    .stApp { background-color: #0e1117; }
-    .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
-    .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
-    .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
-    .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
-    .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
-    .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
-    .badge-done { background-color: #2e4f2e; color: #5efc82; }
-    .badge-required { background-color: #5c1a1a; color: #ff8080; }
-    .badge-neutral { background-color: #444; color: #ccc; }
-    .status-line { padding-top: 6px; margin-bottom: 5px; }
-    .name-vermelho { color: red; font-weight: bold; font-size: 1.6rem; }
-    .name-azul { color: #0099ff; font-weight: bold; font-size: 1.6rem; }
-    .row-header { display: flex; align-items: center; justify-content: center; gap: 20px; padding-top: 10px; }
-    hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
-    .circle-img { width: 70px; height: 70px; border-radius: 50%; overflow: hidden; }
-    .circle-img img { width: 100%; height: 100%; object-fit: cover; }
-    </style>
+<style>
+body { background-color: #0e1117; color: white; }
+.stApp { background-color: #0e1117; }
+.stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
+.stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
+.name-vermelho, .name-azul {
+  font-weight: bold;
+  font-size: 1.6rem;
+  display: inline-block;
+}
+.name-vermelho { color: red; }
+.name-azul { color: #0099ff; }
+.circle-img { width: 70px; height: 70px; border-radius: 50%; overflow: hidden; }
+.circle-img img { width: 100%; height: 100%; object-fit: cover; }
+.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
+.badge-done { background-color: #2e4f2e; color: #5efc82; }
+.badge-required { background-color: #5c1a1a; color: #ff8080; }
+.badge-neutral { background-color: #444; color: #ccc; }
+.corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
+.corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
+hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
+.status-line { text-align: center; margin-bottom: 8px; }
+.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
+.wa-button { text-align: center; margin-bottom: 10px; }
+</style>
 """, unsafe_allow_html=True)
 
-# 🏇 Título principal
+# 🏇 Título
+df = load_data(connect_sheet())
 st.title("UAE Warriors 59-60")
-
-# 🗓️ Dados e filtros
-sheet = connect_sheet()
-df = load_data(sheet)
 
 col_evento, col_corner = st.columns([6, 6])
 eventos = sorted(df['Event'].dropna().unique())
@@ -87,69 +89,62 @@ corner_sel = col_corner.multiselect("Corner", corners)
 
 if st.button("Atualizar Página"):
     st.rerun()
-
 if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🔋 Campos e status
+# 🔋 Campos
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
 def gerar_badge(valor, status):
     valor = valor.strip().lower()
-    if valor == "done":
-        return f"<span class='badge badge-done'>{status.upper()}</span>"
-    elif valor == "required":
-        return f"<span class='badge badge-required'>{status.upper()}</span>"
-    else:
-        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
+    if valor == "done": return f"<span class='badge badge-done'>{status.upper()}</span>"
+    elif valor == "required": return f"<span class='badge badge-required'>{status.upper()}</span>"
+    else: return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-# 🦕 Renderiza atletas
+# 🦉 Renderizar cada atleta
 for i, row in df.iterrows():
     corner = str(row.get("Corner", "")).lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
     nome_class = "name-vermelho" if corner == "red" else "name-azul"
-
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
 
-    # Nome + imagem (lado a lado)
     col_foto, col_nome = st.columns([1, 5])
     with col_foto:
         if row.get("Image"):
             try:
-                st.markdown(f"""
-                <div class='circle-img'>
-                    <img src="{row['Image']}" />
-                </div>
-                """, unsafe_allow_html=True)
-            except:
-                pass
+                st.markdown(f"""<div class='circle-img'><img src='{row['Image']}'></div>""", unsafe_allow_html=True)
+            except: pass
     with col_nome:
         st.markdown(f"<div class='{nome_class}'>{icone_alerta}{row['Name']}</div>", unsafe_allow_html=True)
 
     with st.expander("Exibir detalhes"):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        # Linha 1 - BADGES
-        status_badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
-        st.markdown(f"<div class='status-line'>{status_badges}</div>", unsafe_allow_html=True)
+        # Linha 1 - status
+        badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
+        st.markdown(f"<div class='status-line'>{badges}</div>", unsafe_allow_html=True)
 
-        # Linha 2 - detalhes da luta
-        detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
-        st.markdown(f"<div style='font-size: 0.9rem; color: #ccc; margin-bottom: 6px;'>{detalhes_luta}</div>", unsafe_allow_html=True)
+        # Linha 2 - detalhes
+        luta_info = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
+        st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
 
+        # Linha 3 - WhatsApp
+        whatsapp = str(row.get("Whatsapp", "")).strip()
+        if whatsapp:
+            link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
+            st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+
+        # Campos editáveis
         col1, col2 = st.columns([1, 5])
-
         edit_key = f"edit_mode_{i}"
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
-
         editando = st.session_state[edit_key]
-        botao_label = "Salvar" if editando else "Editar"
-        if col2.button(botao_label, key=f"botao_toggle_{i}"):
+        if col2.button("Salvar" if editando else "Editar", key=f"toggle_{i}"):
             if editando:
                 for campo in campos_editaveis:
                     novo_valor = st.session_state.get(f"{campo}_{i}", "")
@@ -161,16 +156,8 @@ for i, row in df.iterrows():
         campo_1, campo_2 = col2.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             valor_atual = str(row.get(campo, ""))
-            if idx % 2 == 0:
-                campo_1.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
-            else:
-                campo_2.text_input(f"{campo}", value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
-
-        whatsapp = str(row.get("Whatsapp", "")).strip()
-        if whatsapp:
-            link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"<a href='{link}' target='_blank'>📞 Enviar mensagem no WhatsApp</a>", unsafe_allow_html=True)
+            target = campo_1 if idx % 2 == 0 else campo_2
+            target.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
 
         st.markdown("</div>", unsafe_allow_html=True)
-
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)

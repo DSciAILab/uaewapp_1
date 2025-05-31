@@ -1,11 +1,10 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.42
+Versão: v1.1.43
 
 ### Novidades desta versão:
-- Seção de logística agora exibe chegada e partida em linhas separadas
-- Link de passagem aérea aparece ao lado do título 'Logística'
+- Layout das caixas de texto reorganizado em 3 colunas para melhor aproveitamento visual
 """
 
 # 🔑 Importações
@@ -126,14 +125,17 @@ for i, row in df.iterrows():
 
             st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)
 
-            col1, col2 = st.columns(2)
-            for campo in ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Notes"]:
+            col1, col2, col3 = st.columns(3)
+            campos = ["Height", "Range", "Weight", "Country", "City", "Fight Style", "Team", "Uniform", "Music 1", "Music 2", "Notes"]
+            colunas = [col1, col2, col3]
+            for idx, campo in enumerate(campos):
                 valor = str(row.get(campo, ""))
+                coluna = colunas[idx % 3]
                 if campo == "Uniform":
                     opcoes = ["Small", "Medium", "Large", "2X-Large"]
                     idx = opcoes.index(valor) if valor in opcoes else 0
-                    col1.selectbox(campo, opcoes, index=idx, disabled=True, key=f"{campo}_{i}")
+                    coluna.selectbox(campo, opcoes, index=idx, disabled=True, key=f"{campo}_{i}")
                 else:
-                    col1.text_input(campo, value=valor, key=f"{campo}_{i}", disabled=True)
+                    coluna.text_input(campo, value=valor, key=f"{campo}_{i}", disabled=True)
 
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)

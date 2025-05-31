@@ -1,23 +1,21 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.6
+Versão: v1.1.4
 
-### Novidades desta versão:
-- Melhor responsividade para os campos editáveis (divididos em 2 colunas por categoria)
-- Adicionado “⚠️” no título dos atletas com campos pendentes
-- Layout mais limpo e organizado
-- Códigos CSS e lógica reorganizados para facilitar manutenção
+### Mudanças desta versão:
+- Reformulado o título de cada atleta:
+  Exemplo: ⚠️ Magomed Tuchalov | Fight 01 | Bantamweight | Opponent Murad Ibragimov
+- Removida a listagem de status (✅ ⚠️) do título para focar no resumo principal.
 """
 
-# 📦 Importações necessárias
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 📱 Conexão com Google Sheets
+# 📡 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -30,46 +28,40 @@ def connect_sheet():
     sheet = client.open("UAEW_App").worksheet("Sheet1")
     return sheet
 
-# 🔄 Carrega os dados da planilha
+# 📥 Carregamento
 def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# 📂 Atualiza valor de célula
+# 💾 Atualização individual
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
-# ⚙️ Configuração do app
+# ⚙️ Layout e Refresh
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000, key="datarefresh")
 
-# 🎨 CSS customizado
+# 🎨 CSS personalizado
 st.markdown("""
     <style>
     body { background-color: #0e1117; color: white; }
     .stApp { background-color: #0e1117; }
     .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
     .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
-    .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
-    .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
-    .neutral-label { background-color: #444; color: #999; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
-    .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; text-transform: uppercase; display: inline-block; }
-    .badge-done { background-color: #2e4f2e; color: #5efc82; }
-    .badge-required { background-color: #5c1a1a; color: #ff8080; }
-    .badge-neutral { background-color: #444; color: #ccc; }
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-# 🏷️ Título da página
+# 🏷️ Cabeçalho
 st.title("UAE Warriors 59-60")
 
-# 🗓️ Conecta e carrega
-df = load_data(connect_sheet())
+# 🗂️ Dados
+sheet = connect_sheet()
+df = load_data(sheet)
 
-# 🔍 Filtros
+# 🎛️ Filtros
 col_evento, col_corner = st.columns([6, 6])
 eventos = sorted(df['Event'].dropna().unique())
 corners = sorted(df['Corner'].dropna().unique())
@@ -85,37 +77,22 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# ⚖️ Campos editáveis e status
+# 📋 Campos
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-def gerar_badge(valor, status):
-    valor = valor.strip().lower()
-    if valor == "done":
-        return f"<span class='badge badge-done'>{status.upper()}</span>"
-    elif valor == "required":
-        return f"<span class='badge badge-required'>{status.upper()}</span>"
-    else:
-        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
-
-# 🧕 Exibição por atleta
+# 🔍 Renderizar atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
+    tem_pendencia = any(str(row.get(status, "")).strip().lower() == "required" for status in status_cols)
+    icone = "⚠️ " if tem_pendencia else ""
 
-    status_tags = " ".join(
-        gerar_badge(str(row.get(status, "")), status)
-        for status in status_cols
-    )
-
-    # Novo: adiciona ⚠️ se algum campo está como "required"
-    tem_pendencia = any(str(row.get(status, "")) == "Required" for status in status_cols)
-    icone_alerta = " ⚠️" if tem_pendencia else ""
-
-    titulo = f"{row['Fighter ID']} - {row['Name']}{icone_alerta}"
+    # Novo título formatado
+    titulo = f"{icone}{row['Name']} | Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
 
     with st.expander(titulo):
-        st.markdown(status_tags, unsafe_allow_html=True)
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+
         col1, col2 = st.columns([1, 5])
 
         if row.get("Image"):
@@ -143,7 +120,7 @@ for i, row in df.iterrows():
                 for campo in campos_editaveis:
                     novo_valor = st.session_state.get(f"{campo}_{i}", "")
                     col_index = df.columns.get_loc(campo)
-                    salvar_valor(connect_sheet(), i, col_index, novo_valor)
+                    salvar_valor(sheet, i, col_index, novo_valor)
             st.session_state[edit_key] = not editando
             st.rerun()
 
@@ -159,22 +136,5 @@ for i, row in df.iterrows():
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
-
-        colx = st.columns(len(status_cols))
-        for idx, status in enumerate(status_cols):
-            col_idx = df.columns.get_loc(status)
-            valor = str(row[status]).strip().lower()
-            if valor == "required":
-                if editando and colx[idx].button(f"⚠️ {status}", key=f"{status}_{i}"):
-                    salvar_valor(connect_sheet(), i, col_idx, "Done")
-                    st.rerun()
-                else:
-                    colx[idx].markdown(f"<span class='pending-label'>{status}</span>", unsafe_allow_html=True)
-            elif valor == "done":
-                colx[idx].markdown(f"<span class='done-label'>{status}</span>", unsafe_allow_html=True)
-            elif valor == "---":
-                colx[idx].markdown(f"<span class='neutral-label'>{status}</span>", unsafe_allow_html=True)
-            else:
-                colx[idx].markdown(f"<span style='color:green'>{status}</span>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

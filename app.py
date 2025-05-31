@@ -1,17 +1,15 @@
-# 📍 UAE Warriors App - v1.3.9
-# ✅ Alterações:
-# - Toggle restaurado (✏️ Editar informações)
-# - Botões de status (Photoshoot, Labs, Interview, Black Screen) ao lado do toggle
-# - Layout das tabelas centralizado
-# - Caixas de texto em 3 colunas
-# - Atualização manual via botão na sidebar
+# 📍 UAE Warriors App - v1.4.0
+# ✅ Melhorias:
+# - Correção do selectbox de Uniform sem valor padrão forçado
+# - Centralização vertical dos textos das tabelas
+# - Badge toggle funcionando corretamente
+# - Layout mantido conforme solicitado
 
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Configuração da página
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 
 # 🎨 Estilo visual
@@ -35,7 +33,6 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
-.status-line { text-align: center; margin-bottom: 8px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
@@ -45,7 +42,7 @@ table.custom-table {
 }
 table.custom-table td {
     border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem;
-    text-align: center;
+    text-align: center; vertical-align: middle;
 }
 table.custom-table td.title {
     font-weight: bold; background-color: #222; color: #ddd;
@@ -53,7 +50,6 @@ table.custom-table td.title {
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão segura
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -146,10 +142,13 @@ def renderizar_atleta(i, row, df):
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        # Toggle + botões de status na mesma linha
         c1, c2, c3, c4, c5 = st.columns(5)
         toggle = c1.toggle("✏️ Editar", key=f"toggle_{i}")
-        if st.session_state.get(edit_key):
+        if toggle != st.session_state[edit_key]:
+            st.session_state[edit_key] = toggle
+            st.rerun()
+
+        if st.session_state[edit_key]:
             def status_btn(col, nome, emoji):
                 if col.button(f"{emoji} {nome.upper()}", key=f"{nome}_{i}"):
                     atual = str(row.get(nome, "")).strip().lower()
@@ -161,10 +160,6 @@ def renderizar_atleta(i, row, df):
             status_btn(c4, "Interview", "🎤")
             status_btn(c5, "Black_Screen", "🖥️")
 
-        if toggle != st.session_state[edit_key]:
-            st.session_state[edit_key] = toggle
-            st.rerun()
-
         st.markdown("".join(gerar_badge(row.get(status, ""), status) for status in status_cols), unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns(3)
@@ -172,31 +167,32 @@ def renderizar_atleta(i, row, df):
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
         with col3: st.markdown(render_tabela_voo(row), unsafe_allow_html=True)
 
-        # Campos editáveis (3 colunas)
         cols = st.columns(3)
         for idx, campo in enumerate(campos_editaveis):
             target = cols[idx % 3]
-
             if campo == "Uniform":
                 opcoes_uniform = ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"]
                 valor_atual = str(row.get(campo, "")).strip()
                 index_uniform = opcoes_uniform.index(valor_atual) if valor_atual in opcoes_uniform else None
-                target.selectbox(
-                    campo,
-                    options=opcoes_uniform,
-                    index=index_uniform if index_uniform is not None else 0,
-                    key=f"{campo}_{i}",
-                    disabled=not st.session_state[edit_key],
-                    placeholder="Selecione o tamanho"
-                )
 
-            
-            #if campo == "Uniform":
-            #    target.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
-            #                     index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(str(row.get(campo, "Medium"))),
-            #                     key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
-            #else:
-            #    target.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+                if index_uniform is not None:
+                    target.selectbox(
+                        campo,
+                        options=opcoes_uniform,
+                        index=index_uniform,
+                        key=f"{campo}_{i}",
+                        disabled=not st.session_state[edit_key]
+                    )
+                else:
+                    target.selectbox(
+                        campo,
+                        options=[""] + opcoes_uniform,
+                        index=0,
+                        key=f"{campo}_{i}",
+                        disabled=not st.session_state[edit_key]
+                    )
+            else:
+                target.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         if st.session_state[edit_key]:
             if st.button("Salvar alterações", key=f"salvar_{i}"):

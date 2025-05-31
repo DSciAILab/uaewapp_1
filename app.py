@@ -1,11 +1,12 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.51
+Versão: v1.1.52
 
 ### Novidades desta versão:
 - Filtros de seleção movidos para o sidebar: Evento, Corner, Status das tarefas
-- Adicionado filtro "Status" para mostrar apenas pendentes, apenas completos ou todos
+- Corrigido erro de KeyError quando colunas de tarefas não existem
+- Considerado que agora existem colunas 'Corner' e 'CORNER' -> a coluna 'CORNER' foi renomeada para 'Coach'
 """
 
 # 🔑 Importações
@@ -35,6 +36,9 @@ def load_data():
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df["original_index"] = df.index
+    # Corrige duplicidade
+    if "CORNER" in df.columns:
+        df.rename(columns={"CORNER": "Coach"}, inplace=True)
     return df, sheet
 
 # 📂 Atualiza valores
@@ -83,12 +87,15 @@ if evento_sel != "Todos":
     df = df[df['Event'] == evento_sel]
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
+
+# Verifica colunas de tarefas válidas
+tarefas_todas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
+tarefas = [t for t in tarefas_todas if t in df.columns]
+
 if status_sel == "Somente pendentes":
-    tarefas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
-    df = df[df[tarefas].apply(lambda row: any(str(row[t]).lower() == "required" for t in tarefas), axis=1)]
+    df = df[df[tarefas].apply(lambda row: any(str(row.get(t, '')).lower() == "required" for t in tarefas), axis=1)]
 elif status_sel == "Somente completos":
-    tarefas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
-    df = df[df[tarefas].apply(lambda row: all(str(row[t]).lower() == "done" for t in tarefas), axis=1)]
+    df = df[df[tarefas].apply(lambda row: all(str(row.get(t, '')).lower() == "done" for t in tarefas), axis=1)]
 
 # Foco em lutadores
 df = df[df['ROLE'].str.lower() == 'fighter']

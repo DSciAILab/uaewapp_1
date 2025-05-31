@@ -1,3 +1,18 @@
+# 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
+
+"""
+Este script cria uma aplicação interativa utilizando Streamlit para visualizar e atualizar informações de atletas de MMA
+armazenadas em uma planilha do Google Sheets.
+
+### Principais funcionalidades:
+- Conexão segura via conta de serviço com a API do Google Sheets
+- Visualização customizada de atletas com imagem, corner, status de tarefas (fotos, exame de sangue, etc.)
+- Edição de campos diretamente pela interface web
+- Estilização customizada via CSS
+- Filtros por evento e corner
+- Atualização automática da página a cada 10 segundos
+- Botão individual para salvar edições
+"""
 
 # 📦 Importações necessárias
 import streamlit as st  # Biblioteca para criar interfaces web interativas
@@ -9,11 +24,13 @@ from streamlit_autorefresh import st_autorefresh  # Componente do Streamlit para
 # 📡 Função de conexão ao Google Sheets com cache de recurso para performance
 @st.cache_resource
 def connect_sheet():
+    # Define os escopos de acesso necessários
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds_dict = st.secrets["gcp_service_account"]  # Lê credenciais da conta de serviço via secrets.toml
+    # Lê as credenciais armazenadas no arquivo secrets.toml
+    creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)  # Autoriza cliente com as credenciais
     sheet = client.open("UAEW_App").worksheet("Sheet1")  # Abre planilha específica

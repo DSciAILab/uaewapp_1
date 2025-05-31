@@ -45,7 +45,7 @@ def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
 # ⚙️ Config inicial
-st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
+st.set_page_config(page_title="UAE Warriors 59-60", layout="wide")
 st_autorefresh(interval=10000, key="autorefresh")
 
 # 🎨 Estilo
@@ -120,16 +120,16 @@ for j, row in df.iterrows():
                 link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
                 st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📱 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
-            st.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Personal Data</div>", unsafe_allow_html=True)
             st.text(f"Nationality: {row['Nationality']}  |  DOB: {row['DOB']}  |  Passport: {row['Passport']}")
 
-            st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Logistic Info</div>", unsafe_allow_html=True)
             flight_link = row['Flight Ticket']
             flight_label = f"[Visualizar Passagem Aérea]({flight_link})" if flight_link else "Passagem não disponível"
             st.markdown(f"<span style='font-weight:bold'>Arrival:</span> {row['Arrival Details']}", unsafe_allow_html=True)
             st.markdown(f"<span style='font-weight:bold'>Departure:</span> {row['Departure Details']}  |  Flight: {flight_label}", unsafe_allow_html=True)
 
-            st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Accomodation Info</div>", unsafe_allow_html=True)
             st.text(f"Room: {row['Booking Number / Room']}")
 
             st.markdown("<hr style='border-top:1px solid #444;'>", unsafe_allow_html=True)

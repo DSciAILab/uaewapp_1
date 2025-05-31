@@ -65,7 +65,7 @@ def renderizar_atleta(i, row):
         luta_info = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
         st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
 
-        whatsapp = row.get("Whatsapp", "").strip()
+        whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 WhatsApp</a></div>", unsafe_allow_html=True)

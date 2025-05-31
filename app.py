@@ -73,3 +73,4 @@ th { font-weight: bold; }
 .section-label { font-weight: bold; margin-top: 1rem; font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
+ 

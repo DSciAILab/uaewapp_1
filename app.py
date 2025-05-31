@@ -1,11 +1,12 @@
-# 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
+# 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.22
+Versão: v1.1.23
 
 ### Mudanças nesta versão:
-- Atualização de versão para 1.1.22
-- Sem alterações funcionais ou visuais adicionais nesta versão
+- Nome do atleta estilizado com cor e negrito de acordo com o corner (vermelho ou azul)
+- Substitui HTML no label do st.expander, evitando erro de UnicodeEncodeError
+- Nome renderizado com markdown antes do expander
 
 ### 🗓️ Última atualização: 2025-05-31
 """
@@ -58,8 +59,8 @@ st.markdown("""
     .badge-required { background-color: #5c1a1a; color: #ff8080; }
     .badge-neutral { background-color: #444; color: #ccc; }
     .status-line { padding-top: 6px; }
-    .name-vermelho { color: red; font-weight: bold; font-size: 1rem; }
-    .name-azul { color: #0099ff; font-weight: bold; font-size: 1rem; }
+    .name-vermelho { color: red; font-weight: bold; font-size: 1.2rem; }
+    .name-azul { color: #0099ff; font-weight: bold; font-size: 1.2rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -89,7 +90,7 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🩿 Função para gerar badges
+# 🩿‍🤽️ Função para gerar badges
 def gerar_badge(valor, status):
     valor = valor.strip().lower()
     if valor == "done":
@@ -99,7 +100,7 @@ def gerar_badge(valor, status):
     else:
         return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-# 🦕‍🤽️ Renderiza atletas
+# 🦕️‍🧨 Renderiza atletas
 for i, row in df.iterrows():
     corner = str(row.get("Corner", "")).lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -108,12 +109,15 @@ for i, row in df.iterrows():
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
     nome = f"{icone_alerta}<span class='{nome_class}'>{row['Name']}</span>"
-    detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
-    status_badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
 
-    with st.expander(nome, unsafe_allow_html=True):
+    st.markdown(nome, unsafe_allow_html=True)
+    with st.expander("Exibir detalhes"):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
+
+        detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
         st.markdown(f"<div style='font-size: 0.9rem; color: #ccc; margin-top: -5px;'>{detalhes_luta}</div>", unsafe_allow_html=True)
+
+        status_badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{status_badges}</div>", unsafe_allow_html=True)
 
         col1, col2 = st.columns([1, 5])

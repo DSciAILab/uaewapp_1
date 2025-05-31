@@ -1,15 +1,14 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.17
+Versão: v1.1.18
 
 ### Mudanças nesta versão:
-- Correção definitiva de erro de encoding ao usar emojis (usando string literal UTF-8 e variável separada)
-- Atualização de versão para v1.1.17
-
-### Próximas melhorias sugeridas:
-- Paginação por evento
-- Controle de edição por campo
+- Terceira linha com pendências agora usa badges no estilo da versão 1.0.7
+- Layout do expander reorganizado:
+  1. Nome com alerta
+  2. Linha de detalhes da luta
+  3. Linha com pendências
 
 ### 🗓️ Última atualização: 2025-05-31
 """
@@ -57,7 +56,11 @@ st.markdown("""
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
-    .status-row { font-size: 0.85rem; padding-top: 5px; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
+    .badge-done { background-color: #2e4f2e; color: #5efc82; }
+    .badge-required { background-color: #5c1a1a; color: #ff8080; }
+    .badge-neutral { background-color: #444; color: #ccc; }
+    .status-line { padding-top: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -87,6 +90,16 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
+# 🧷 Função para gerar badges
+def gerar_badge(valor, status):
+    valor = valor.strip().lower()
+    if valor == "done":
+        return f"<span class='badge badge-done'>{status.upper()}</span>"
+    elif valor == "required":
+        return f"<span class='badge badge-required'>{status.upper()}</span>"
+    else:
+        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
+
 # 👩‍🏋️ Renderiza atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
@@ -95,13 +108,12 @@ for i, row in df.iterrows():
     icone_alerta = "⚠️ " if tem_pendencia else ""
     nome = f"{icone_alerta}{row['Name']}"
     detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
-    pendencias = " ".join(status for status in status_cols if str(row.get(status, "")).lower() == "required")
+    status_badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
 
     with st.expander(nome):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         st.markdown(f"<div style='font-size: 0.9rem; color: #ccc; margin-top: -5px;'>{detalhes_luta}</div>", unsafe_allow_html=True)
-        if pendencias:
-            st.markdown(f"<div class='status-row'>🔹 Pendências: {pendencias}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='status-line'>{status_badges}</div>", unsafe_allow_html=True)
 
         col1, col2 = st.columns([1, 5])
 
@@ -139,7 +151,6 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            whatsapp_icon = "📞"
-            col2.markdown(f"[{whatsapp_icon} Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            col2.markdown(f"<a href='{link}' target='_blank'>📞 Enviar mensagem no WhatsApp</a>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

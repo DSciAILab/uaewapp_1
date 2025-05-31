@@ -1,9 +1,5 @@
 streamlit
-gspread
-oauth2client
 pandas
+gspread==5.11.1
+google-auth==2.22.0
 streamlit-autorefresh
-streamlit-aggrid
-
-
-google-auth

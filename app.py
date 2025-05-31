@@ -1,4 +1,4 @@
-# 📍 UAE Warriors App - v1.3.10
+# 📍 UAE Warriors App - v1.3.11
 
 import streamlit as st
 import pandas as pd
@@ -22,7 +22,7 @@ body, .stApp { background-color: #0e1117; color: white; }
 .circle-img img { width: 100%; height: 100%; object-fit: cover; }
 .badge {
     padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
-    margin: 0 3px; text-transform: uppercase; display: inline-block;
+    margin: 0 3px; text-transform: uppercase; display: inline-block; cursor: pointer;
 }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
@@ -71,29 +71,34 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
-# Campos editáveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# Atualizar valor na planilha
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
+        return True
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
+        return False
 
-# Badges de status
-def gerar_badge(valor, status):
+def gerar_badge_interativo(valor, status, row_idx, col_idx):
     classe = {
         "done": "badge-done",
         "required": "badge-required"
     }.get(str(valor).strip().lower(), "badge-neutral")
-    return f"<span class='badge {classe}'>{status.upper()}</span>"
+    texto = status.upper()
+    key = f"{status}_{row_idx}"
+    if st.button(f"{texto}", key=key):
+        novo_valor = "done" if str(valor).strip().lower() != "done" else "required"
+        salvar_valor(row_idx, col_idx, novo_valor)
+        st.experimental_rerun()
+    st.markdown(f"<div class='badge {classe}'>{texto}</div>", unsafe_allow_html=True)
 
-# 📋 Tabela 1 - Fight Details
+# Renderizar tabelas HTML
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -104,7 +109,6 @@ def render_tabela_fight(row):
     </table>
     """
 
-# 📋 Tabela 2 - Documentos Pessoais
 def render_tabela_documentos(row):
     doc = row.get("Personal_Doc", "")
     doc_link = f"<a href='{doc}' target='_blank'>Visualizar</a>" if doc else "—"
@@ -119,7 +123,6 @@ def render_tabela_documentos(row):
     </table>
     """
 
-# 📋 Tabela 3 - Voo & Hotel
 def render_tabela_voo(row):
     ticket = row.get("Flight_Ticket", "")
     ticket_link = f"<a href='{ticket}' target='_blank'>View</a>" if ticket else "—"
@@ -132,17 +135,13 @@ def render_tabela_voo(row):
     </table>
     """
 
-# 👤 Renderizar atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
     nome_class = "name-vermelho" if corner == "red" else "name-azul"
-    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
-    icone_alerta = "⚠️ " if tem_pendencia else ""
-
+    icone_alerta = "⚠️ " if any(str(row.get(status, "")).lower() == "required" for status in status_cols) else ""
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
-
     st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
 
     edit_key = f"edit_mode_{i}"
@@ -151,8 +150,15 @@ def renderizar_atleta(i, row, df):
 
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
-        st.markdown("<div class='status-line'>" + "".join(gerar_badge(row.get(status, ""), status) for status in status_cols) + "</div>", unsafe_allow_html=True)
 
+        # Badges interativos
+        st.markdown("<div class='status-line'>", unsafe_allow_html=True)
+        for status in status_cols:
+            col_index = df.columns.get_loc(status)
+            gerar_badge_interativo(row.get(status, ""), status, i, col_index)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Tabelas
         col1, col2, col3 = st.columns(3)
         with col1: st.markdown(render_tabela_fight(row), unsafe_allow_html=True)
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
@@ -167,14 +173,17 @@ def renderizar_atleta(i, row, df):
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
 
+        # Campos editáveis em 3 colunas
+        cols = st.columns(3)
         for idx, campo in enumerate(campos_editaveis):
-            coluna = st.columns(2)[idx % 2]
+            target_col = cols[idx % 3]
             if campo == "Uniform":
-                coluna.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
-                                 key=f"{campo}_{i}", index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(row.get(campo, "Medium")) if row.get(campo) in ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"] else 1,
-                                 disabled=not st.session_state[edit_key])
+                target_col.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
+                    key=f"{campo}_{i}",
+                    index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(row.get(campo, "Medium")) if row.get(campo) in ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"] else 1,
+                    disabled=not st.session_state[edit_key])
             else:
-                coluna.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+                target_col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)

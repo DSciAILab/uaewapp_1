@@ -1,11 +1,11 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.16
+Versão: v1.1.17
 
 ### Mudanças nesta versão:
-- Correção de erro Unicode ao usar emoji no botão de WhatsApp
-- Substituído `\ud83d\udcde` por emoji UTF-8 diretamente (📞)
+- Correção definitiva de erro de encoding ao usar emojis (usando string literal UTF-8 e variável separada)
+- Atualização de versão para v1.1.17
 
 ### Próximas melhorias sugeridas:
 - Paginação por evento
@@ -92,7 +92,7 @@ for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
-    icone_alerta = "\u26a0\ufe0f " if tem_pendencia else ""
+    icone_alerta = "⚠️ " if tem_pendencia else ""
     nome = f"{icone_alerta}{row['Name']}"
     detalhes_luta = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
     pendencias = " ".join(status for status in status_cols if str(row.get(status, "")).lower() == "required")
@@ -139,6 +139,7 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            whatsapp_icon = "📞"
+            col2.markdown(f"[{whatsapp_icon} Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

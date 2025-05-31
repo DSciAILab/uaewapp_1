@@ -73,7 +73,8 @@ th { font-weight: bold; }
 """, unsafe_allow_html=True)
 
 # 🗓️ Título
-df, sheet = load_data()
+df = load_data(connect_sheet())
+st.title("UAE Warriors 59-60")
 
 # 🔍 Filtros no Sidebar
 with st.sidebar:

@@ -1,8 +1,9 @@
 # 📍 UAE Warriors App - v1.3.7
+
 # ✅ Alterações:
 # - Botões de edição para campos de status (badges)
 # - Somente visíveis quando edição estiver ativada
-# - Visual preservado
+# - Tabelas organizadas: Fight Info, Documentos, Logística
 
 import streamlit as st
 import pandas as pd
@@ -38,22 +39,19 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 .status-line { text-align: center; margin-bottom: 8px; }
-.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
-.wa-button { text-align: center; margin-bottom: 10px; }
-.header-container {
-    display: flex; align-items: center; justify-content: center;
-    gap: 16px; margin-top: 20px; margin-bottom: 10px;
-}
 table.custom-table td, table.custom-table th {
     text-align: center; padding: 6px; border: 1px solid #444;
 }
 table.custom-table {
     border-collapse: collapse; width: 100%; margin-bottom: 15px;
 }
+.header-container {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; margin-top: 20px; margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -97,9 +95,11 @@ def render_tabela(dados, colunas):
         html += "<tr>"
         for campo in linha:
             valor = colunas.get(campo, "")
-            if campo in ["Whatsapp", "Personal_Doc"]:
-                link = f"https://wa.me/{valor}" if campo == "Whatsapp" else valor
-                html += f"<td><a href='{link}' target='_blank'>{campo}</a></td>"
+            if campo == "Whatsapp":
+                valor = str(valor).replace("+", "").replace(" ", "")
+                html += f"<td><a href='https://wa.me/{valor}' target='_blank'>WhatsApp</a></td>"
+            elif campo == "Personal_Doc":
+                html += f"<td><a href='{valor}' target='_blank'>Doc</a></td>"
             else:
                 html += f"<td>{valor}</td>"
         html += "</tr>"
@@ -127,9 +127,8 @@ def renderizar_atleta(i, row, df):
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        # Tabelas organizadas em 3 colunas
         col1, col2, col3 = st.columns(3)
-        col1.markdown(render_tabela([["Fight_Order", "Corner", "Event", "Division"], ["Oponent", "Coach"]], row), unsafe_allow_html=True)
+        col1.markdown(render_tabela([["Fight_Order", "Corner", "Event"], ["Division", "Oponent", "Coach"]], row), unsafe_allow_html=True)
         col2.markdown(render_tabela([["Nationality_Passport", "Passport", "Personal_Doc"], ["DOB", "Whatsapp"]], row), unsafe_allow_html=True)
         col3.markdown(render_tabela([["Weight", "Height", "Reach"], ["Fightstyle", "Team", "Nationality_Fight"]], row), unsafe_allow_html=True)
 
@@ -166,7 +165,7 @@ def renderizar_atleta(i, row, df):
             target_col = cols[idx % 2]
             target_col.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
-        # Botões de alteração de status
+        # Botões de status
         if st.session_state[edit_key]:
             st.markdown("### Atualizar Status:")
             b1, b2, b3, b4 = st.columns(4)
@@ -197,7 +196,6 @@ corners = sorted(df["Corner"].dropna().unique())
 corner_sel = st.sidebar.multiselect("Selecionar Corner", options=corners, default=corners)
 status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
 
-# Aplicar filtros
 df = df[df["Role"] == "Fighter"]
 if evento_sel != "Todos":
     df = df[df["Event"] == evento_sel]

@@ -1,19 +1,19 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.18
+Versão: v1.1.19
 
 ### Mudanças nesta versão:
-- Terceira linha com pendências agora usa badges no estilo da versão 1.0.7
-- Layout do expander reorganizado:
+- O interior do `expander` agora recebe a cor do corner (vermelho ou azul)
+- Mantida organização com:
   1. Nome com alerta
   2. Linha de detalhes da luta
-  3. Linha com pendências
+  3. Linha com pendências no estilo visual da v1.0.7
 
 ### 🗓️ Última atualização: 2025-05-31
 """
 
-# 📦 Importações
+# 📆 Importações
 import streamlit as st
 import pandas as pd
 import gspread
@@ -54,8 +54,8 @@ st.markdown("""
     .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
     .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
-    .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
-    .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
+    .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
+    .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
     .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
     .badge-done { background-color: #2e4f2e; color: #5efc82; }
     .badge-required { background-color: #5c1a1a; color: #ff8080; }
@@ -90,7 +90,7 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🧷 Função para gerar badges
+# 🩿 Função para gerar badges
 def gerar_badge(valor, status):
     valor = valor.strip().lower()
     if valor == "done":
@@ -100,7 +100,7 @@ def gerar_badge(valor, status):
     else:
         return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-# 👩‍🏋️ Renderiza atletas
+# 🧕‍🏋️ Renderiza atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 

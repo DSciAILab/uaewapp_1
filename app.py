@@ -1,13 +1,12 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.30
+Versão: v1.1.31
 
 ### Novidades desta versão:
-- Centralização completa do nome e foto do atleta
-- Ajuste do layout das colunas internas com espaçamento equilibrado
-- Remoção de espaço lateral esquerdo para melhor alinhamento visual
-- Reorganização do espaço dos campos e botões
+- Correção de erro de codificação (UnicodeEncodeError) ao exibir emojis no markdown
+- Link do WhatsApp corrigido com 🔍 substituído diretamente por caractere UTF-8
+- Estrutura de layout preservada e ajustes de centralização mantidos
 """
 
 # 📆 Importações
@@ -86,7 +85,7 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🔹 Badges visuais
+# 📋 Badges visuais
 def gerar_badge(valor, status):
     valor = valor.strip().lower()
     if valor == "done":
@@ -114,7 +113,6 @@ for i, row in df.iterrows():
         with col_nome:
             st.markdown(nome_html, unsafe_allow_html=True)
 
-        # Linha de pendências e detalhes
         st.markdown(
             "<div class='athlete-sub'>" +
             f"{' '.join([gerar_badge(str(row.get(s, '')), s) for s in status_cols])}" +
@@ -127,7 +125,7 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>\ud83d\udce1 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center;'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
 
         with st.expander("Exibir detalhes"):
             col_edit, col_flex = st.columns([1, 8])

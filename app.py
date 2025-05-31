@@ -1,106 +1,163 @@
-# UAE Warriors App v1.1.60
+# 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
+"""
+Versão: v1.1.29
+
+### Mudanças nesta versão:
+- Centralização horizontal: imagem e nome lado a lado
+- Estilo do nome ajustado com tamanho maior e em negrito
+- Expander com bordas neutras
+- Divisor horizontal entre atletas mantido
+- Layout final consolidado
+
+### 🍛 Última atualização: 2025-05-31
+"""
+
+# 🏓️ Importações
 import streamlit as st
 import pandas as pd
-from utils import load_data, salvar_valor
+import gspread
+from google.oauth2.service_account import Credentials
+from streamlit_autorefresh import st_autorefresh
 
-# Carrega dados do Google Sheets
-df, sheet = load_data()
-headers = [h.strip() for h in sheet.row_values(1)]
-tarefas = [t for t in headers if t.upper() in ["PHOTOSHOOT", "BLOOD TEST", "UNIFORM", "MUSIC", "STATS"]]
+# 📱 Conexão com Google Sheets
+@st.cache_resource
+def connect_sheet():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("UAEW_App").worksheet("Sheet1")
+    return sheet
 
-# Sidebar com filtros
-st.sidebar.title("📂 Filtros")
-eventos = ["Todos"] + sorted(df["Event"].dropna().unique().tolist())
-corner_opts = ["Blue", "Red"]
-status_opts = ["Todos", "Somente Pendentes", "Somente Concluídos"]
+# 🔀 Carregamento de dados
+def load_data(sheet):
+    data = sheet.get_all_records()
+    return pd.DataFrame(data)
 
-selected_event = st.sidebar.selectbox("Event", eventos)
-selected_corner = st.sidebar.selectbox("Corner", corner_opts)
-selected_status = st.sidebar.selectbox("Status das Tarefas", status_opts)
+# 📂 Atualização de célula
+def salvar_valor(sheet, row, col_index, valor):
+    sheet.update_cell(row + 2, col_index + 1, valor)
 
-# Aplica filtros
-if selected_event != "Todos":
-    df = df[df["Event"] == selected_event]
-df = df[df["Corner"] == selected_corner]
+# ⚙️ Layout e Auto-refresh
+st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
+st_autorefresh(interval=10_000, key="datarefresh")
 
-if selected_status == "Somente Pendentes":
-    df = df[df[tarefas].apply(lambda row: any(str(row[t]).lower() == "required" for t in tarefas), axis=1)]
-elif selected_status == "Somente Concluídos":
-    df = df[df[tarefas].apply(lambda row: all(str(row[t]).lower() == "done" for t in tarefas), axis=1)]
+# 🎨 CSS
+st.markdown("""
+<style>
+body { background-color: #0e1117; color: white; }
+.stApp { background-color: #0e1117; }
+.stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
+.stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
+.name-vermelho, .name-azul {
+  font-weight: bold;
+  font-size: 1.6rem;
+  display: inline-block;
+}
+.name-vermelho { color: red; }
+.name-azul { color: #0099ff; }
+.circle-img { width: 70px; height: 70px; border-radius: 50%; overflow: hidden; }
+.circle-img img { width: 100%; height: 100%; object-fit: cover; }
+.badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin: 0 3px; text-transform: uppercase; display: inline-block; }
+.badge-done { background-color: #2e4f2e; color: #5efc82; }
+.badge-required { background-color: #5c1a1a; color: #ff8080; }
+.badge-neutral { background-color: #444; color: #ccc; }
+.corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
+.corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
+hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
+.status-line { text-align: center; margin-bottom: 8px; }
+.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
+.wa-button { text-align: center; margin-bottom: 10px; }
+.header-container { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 20px; margin-bottom: 10px; }
+</style>
+""", unsafe_allow_html=True)
 
-# Loop por atleta
-for _, row in df.iterrows():
-    lock = row.get("LockBy", "")
-    id_unico = f"lock_{row['original_index']}"
-    edicao_liberada = st.toggle("Editar", key=id_unico, value=(lock == "1724"), disabled=(lock not in ["", "1724"]))
+# 🏇 Título
+df = load_data(connect_sheet())
+st.title("UAE Warriors 59-60")
 
-    # Atualiza LockBy
-    if edicao_liberada and lock != "1724":
-        salvar_valor(sheet, row['original_index'], headers.index("LockBy"), "1724")
-    elif not edicao_liberada and lock == "1724":
-        salvar_valor(sheet, row['original_index'], headers.index("LockBy"), "")
+col_evento, col_corner = st.columns([6, 6])
+eventos = sorted(df['Event'].dropna().unique())
+corners = sorted(df['Corner'].dropna().unique())
 
-    # Cabeçalho
-    st.markdown("<hr>", unsafe_allow_html=True)
-    col1, col2 = st.columns([0.3, 0.7])
-    with col1:
-        st.image(row.get("Avatar"), width=100)
-    with col2:
-        st.markdown(f"<div class='name-tag'>{row.get('Name')}</div>", unsafe_allow_html=True)
-        st.markdown(
-            f"<p style='text-align: center;'>Fight {row.get('Fight Order')} | {row.get('Division')} | Opponent {row.get('Oponent')}</p>",
-            unsafe_allow_html=True
-        )
+evento_sel = col_evento.selectbox("Evento", ["Todos"] + eventos)
+corner_sel = col_corner.multiselect("Corner", corners)
 
-    # Informações em tabelas
-    info1, info2 = st.columns(2)
-    with info1:
-        st.markdown("<div class='section-label'>Detalhes Pessoais</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <table><tr><th>Event</th><td>{row.get('Event')}</td></tr>
-        <tr><th>Corner</th><td>{row.get('Corner')}</td></tr>
-        <tr><th>Weight</th><td>{row.get('Weight')}</td></tr></table>
-        """, unsafe_allow_html=True)
+if st.button("Atualizar Página"):
+    st.rerun()
+if evento_sel != "Todos":
+    df = df[df['Event'] == evento_sel]
+if corner_sel:
+    df = df[df['Corner'].isin(corner_sel)]
 
-        st.markdown("<div class='section-label'>Hotel</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <table><tr><th>Check-in</th><td>{row.get('Check-in')}</td></tr>
-        <tr><th>Check-out</th><td>{row.get('Check-out')}</td></tr>
-        <tr><th>Room</th><td>{row.get('Room')}</td></tr></table>
-        """, unsafe_allow_html=True)
+# 🔋 Campos
+campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
+status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-    with info2:
-        st.markdown("<div class='section-label'>Logística</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <table><tr><th>Flight</th><td>{row.get('Flight')}</td></tr>
-        <tr><th>Arrival</th><td>{row.get('Arrival')}</td></tr>
-        <tr><th>Coach</th><td>{row.get('Coach')}</td></tr></table>
-        """, unsafe_allow_html=True)
+def gerar_badge(valor, status):
+    valor = valor.strip().lower()
+    if valor == "done": return f"<span class='badge badge-done'>{status.upper()}</span>"
+    elif valor == "required": return f"<span class='badge badge-required'>{status.upper()}</span>"
+    else: return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
-        st.markdown("<div class='section-label'>Notas</div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <table><tr><th>Note</th><td>{row.get('Note')}</td></tr>
-        <tr><th>Comments</th><td>{row.get('Comments')}</td></tr></table>
-        """, unsafe_allow_html=True)
+# 🦉 Renderizar cada atleta
+for i, row in df.iterrows():
+    corner = str(row.get("Corner", "")).lower()
+    cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
+    nome_class = "name-vermelho" if corner == "red" else "name-azul"
+    tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
+    icone_alerta = "⚠️ " if tem_pendencia else ""
 
-    # Tarefas com status interativo
-    st.markdown("<div class='section-label'>Tarefas</div>", unsafe_allow_html=True)
-    badge_line = []
-    for t in tarefas:
-        valor_atual = str(row.get(t, "")).lower()
-        classe = "badge-neutral"
-        if valor_atual == "required":
-            classe = "badge-required"
-        elif valor_atual == "done":
-            classe = "badge-done"
+    # ✅ Nome + Imagem centralizados
+    nome_html = f"<div class='{nome_class}'>{icone_alerta}{row['Name']}</div>"
+    if row.get("Image"):
+        img_html = f"<div class='circle-img'><img src='{row['Image']}'></div>"
+    else:
+        img_html = ""
+    st.markdown(f"""
+    <div class='header-container'>
+        {img_html}
+        {nome_html}
+    </div>
+    """, unsafe_allow_html=True)
 
-        if edicao_liberada:
-            if st.button(t.upper(), key=f"{t}_{row['original_index']}"):
-                novo_valor = "done" if valor_atual == "required" else "required"
-                salvar_valor(sheet, row['original_index'], headers.index(t), novo_valor)
-                st.experimental_rerun()
+    with st.expander("Exibir detalhes"):
+        st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        badge_line.append(f"<span class='badge {classe}'>{t.upper()}</span>")
+        badges = "".join(gerar_badge(str(row.get(status, "")), status) for status in status_cols)
+        st.markdown(f"<div class='status-line'>{badges}</div>", unsafe_allow_html=True)
 
-    st.markdown(" ".join(badge_line), unsafe_allow_html=True)
+        luta_info = f"Fight {row['Fight Order']} | {row['Division']} | Opponent {row['Oponent']}"
+        st.markdown(f"<div class='fight-info'>{luta_info}</div>", unsafe_allow_html=True)
+
+        whatsapp = str(row.get("Whatsapp", "")).strip()
+        if whatsapp:
+            link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
+            st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 Enviar mensagem no WhatsApp</a></div>", unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 5])
+        edit_key = f"edit_mode_{i}"
+        if edit_key not in st.session_state:
+            st.session_state[edit_key] = False
+        editando = st.session_state[edit_key]
+        if col2.button("Salvar" if editando else "Editar", key=f"toggle_{i}"):
+            if editando:
+                for campo in campos_editaveis:
+                    novo_valor = st.session_state.get(f"{campo}_{i}", "")
+                    col_index = df.columns.get_loc(campo)
+                    salvar_valor(sheet, i, col_index, novo_valor)
+            st.session_state[edit_key] = not editando
+            st.rerun()
+
+        campo_1, campo_2 = col2.columns(2)
+        for idx, campo in enumerate(campos_editaveis):
+            valor_atual = str(row.get(campo, ""))
+            target = campo_1 if idx % 2 == 0 else campo_2
+            target.text_input(campo, value=valor_atual, key=f"{campo}_{i}", disabled=not editando)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<hr class='divisor'>", unsafe_allow_html=True)

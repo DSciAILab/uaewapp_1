@@ -176,12 +176,27 @@ def renderizar_atleta(i, row, df):
         cols = st.columns(3)
         for idx, campo in enumerate(campos_editaveis):
             target = cols[idx % 3]
+
             if campo == "Uniform":
-                target.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
-                                 index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(str(row.get(campo, "Medium"))),
-                                 key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
-            else:
-                target.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+                opcoes_uniform = ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"]
+                valor_atual = str(row.get(campo, "")).strip()
+                index_uniform = opcoes_uniform.index(valor_atual) if valor_atual in opcoes_uniform else None
+                target.selectbox(
+                    campo,
+                    options=opcoes_uniform,
+                    index=index_uniform if index_uniform is not None else 0,
+                    key=f"{campo}_{i}",
+                    disabled=not st.session_state[edit_key],
+                    placeholder="Selecione o tamanho"
+                )
+
+            
+            #if campo == "Uniform":
+            #    target.selectbox(campo, ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"],
+            #                     index=["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"].index(str(row.get(campo, "Medium"))),
+            #                     key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
+            #else:
+            #    target.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         if st.session_state[edit_key]:
             if st.button("Salvar alterações", key=f"salvar_{i}"):

@@ -1,12 +1,14 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.52
+Versão: v1.1.53
 
 ### Novidades desta versão:
 - Filtros de seleção movidos para o sidebar: Evento, Corner, Status das tarefas
 - Corrigido erro de KeyError quando colunas de tarefas não existem
 - Considerado que agora existem colunas 'Corner' e 'CORNER' -> a coluna 'CORNER' foi renomeada para 'Coach'
+- Mostra quantidade de atletas encontrados após filtro
+- Mostra aviso amigável quando nenhum resultado é encontrado
 """
 
 # 🔑 Importações
@@ -99,6 +101,13 @@ elif status_sel == "Somente completos":
 
 # Foco em lutadores
 df = df[df['ROLE'].str.lower() == 'fighter']
+
+# ✅ Avisos e contagem
+st.markdown(f"🔎 **{len(df)} atleta(s) encontrados para os filtros aplicados.**")
+
+if df.empty:
+    st.warning("Nenhum atleta encontrado com os filtros selecionados.")
+    st.stop()
 
 # ✌️ Continuidade do app (mantido)
 # [continua com os cards de atleta...]

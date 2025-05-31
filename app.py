@@ -167,7 +167,7 @@ def renderizar_atleta(i, row, df):
             {img_html}{nome_html}
         </div>""", unsafe_allow_html=True)
 
-    with st.expander("Exibir detalhes"):
+    with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)

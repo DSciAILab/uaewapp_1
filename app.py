@@ -1,13 +1,11 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.15
+Versão: v1.1.16
 
 ### Mudanças nesta versão:
-- Novo layout para o título dentro do `st.expander`:
-  - Linha 1: Nome do atleta (com ícone de pendência se aplicável)
-  - Linha 2: Informações da luta (Fight Order, Division, Opponent)
-  - Linha 3: Pendências como status
+- Correção de erro Unicode ao usar emoji no botão de WhatsApp
+- Substituído `\ud83d\udcde` por emoji UTF-8 diretamente (📞)
 
 ### Próximas melhorias sugeridas:
 - Paginação por evento
@@ -103,7 +101,7 @@ for i, row in df.iterrows():
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         st.markdown(f"<div style='font-size: 0.9rem; color: #ccc; margin-top: -5px;'>{detalhes_luta}</div>", unsafe_allow_html=True)
         if pendencias:
-            st.markdown(f"<div class='status-row'>\ud83d\udd39 Pendências: {pendencias}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='status-row'>🔹 Pendências: {pendencias}</div>", unsafe_allow_html=True)
 
         col1, col2 = st.columns([1, 5])
 
@@ -141,6 +139,6 @@ for i, row in df.iterrows():
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
-            col2.markdown(f"[\ud83d\udcde Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
+            col2.markdown(f"[📞 Enviar mensagem no WhatsApp]({link})", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)

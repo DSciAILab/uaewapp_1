@@ -1,5 +1,4 @@
-# 📍 UAE Warriors App - v1.3.7
-# ✅ Tabelas lado a lado com botões de edição de status
+# 📍 UAE Warriors App - v1.3.8
 
 import streamlit as st
 import pandas as pd
@@ -7,7 +6,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 🎯 Configuração
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
@@ -24,7 +22,7 @@ body, .stApp { background-color: #0e1117; color: white; }
 .circle-img img { width: 100%; height: 100%; object-fit: cover; }
 .badge {
     padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
-    margin: 0 5px; text-transform: uppercase; display: inline-block;
+    margin: 0 3px; text-transform: uppercase; display: inline-block;
 }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
@@ -41,16 +39,48 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
     width: 100%; border-collapse: collapse; margin-bottom: 10px;
 }
 .custom-table td {
-    border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem;
+    border: 1px solid #555; padding: 6px 10px; font-size: 0.85rem; text-align: center;
 }
 .custom-table td.title {
-    font-weight: bold; background-color: #222;
-    text-align: center; color: #ddd;
+    font-weight: bold; background-color: #222; color: #ddd; text-align: center;
+}
+
+/* 🎨 Botão de edição */
+.st-edit-button > button {
+    background-color: #6c3483;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-top: 12px;
+}
+.st-edit-button > button:hover {
+    background-color: #4a235a;
+}
+
+/* 🎨 Botão de ação geral */
+.st-action-button > button {
+    background-color: #117a65;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+.st-action-button > button:hover {
+    background-color: #0b5345;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conectar com o Google Sheets
+# 🔐 Conexão com o Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -75,15 +105,12 @@ campos_editaveis = [
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# 🔄 Atualizar célula
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
-        st.success("✅ Atualizado com sucesso!", icon="✅")
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-# 🏷️ Badge visual
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -91,7 +118,6 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# 📋 Tabelas organizadas
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -111,8 +137,8 @@ def render_tabela_documentos(row):
     <table class='custom-table'>
         <tr><td class='title'>Nationality</td><td class='title'>Passport</td><td class='title'>Document</td></tr>
         <tr><td>{row.get("Nationality_Passport", "")}</td><td>{row.get("Passport", "")}</td><td>{doc_link}</td></tr>
-        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'></td></tr>
-        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td></td></tr>
+        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'> </td></tr>
+        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td> </td></tr>
     </table>
     """
 
@@ -123,18 +149,18 @@ def render_tabela_voo(row):
     <table class='custom-table'>
         <tr><td class='title'>Arrivals</td><td class='title'>Departure</td></tr>
         <tr><td>{row.get("Arrivals", "")}</td><td>{row.get("Departure", "")}</td></tr>
-        <tr><td class='title'>Flight Ticket</td><td class='title'>Hotel</td></tr>
+        <tr><td class='title'>Flight_Ticket</td><td class='title'>Hotel</td></tr>
         <tr><td>{ticket_link}</td><td>{row.get("Hotel", "")}</td></tr>
     </table>
     """
 
-# 👤 Atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
     nome_class = "name-vermelho" if corner == "red" else "name-azul"
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
+
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
 
@@ -153,6 +179,7 @@ def renderizar_atleta(i, row, df):
         with col2: st.markdown(render_tabela_documentos(row), unsafe_allow_html=True)
         with col3: st.markdown(render_tabela_voo(row), unsafe_allow_html=True)
 
+        st.markdown("<div class='st-edit-button'>", unsafe_allow_html=True)
         if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
             if st.session_state[edit_key]:
                 for campo in campos_editaveis:
@@ -161,23 +188,10 @@ def renderizar_atleta(i, row, df):
                         salvar_valor(i, df.columns.get_loc(campo), novo_valor)
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
-            cols[idx % 2].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
-
-        if st.session_state[edit_key]:
-            st.markdown("### Atualizar Status:")
-            b1, b2, b3, b4 = st.columns(4)
-            def alternar_status(nome_status):
-                val_atual = str(row.get(nome_status, "")).strip().lower()
-                novo_valor = "done" if val_atual == "required" else "required"
-                salvar_valor(i, df.columns.get_loc(nome_status), novo_valor)
-                st.rerun()
-            if b1.button("📸 Photoshoot", key=f"ps_{i}"): alternar_status("Photoshoot")
-            if b2.button("🧪 Labs", key=f"labs_{i}"): alternar_status("Labs")
-            if b3.button("🎤 Interview", key=f"int_{i}"): alternar_status("Interview")
-            if b4.button("🖥️ Black Screen", key=f"bs_{i}"): alternar_status("Black_Screen")
+            st.columns(2)[idx % 2].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
@@ -200,8 +214,11 @@ elif status_sel == "Somente Completos":
 
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
 
-if st.sidebar.button("🔄 Atualizar Página"):
-    st.rerun()
+with st.sidebar:
+    st.markdown("<div class='st-action-button'>", unsafe_allow_html=True)
+    if st.button("🔄 Atualizar Página"):
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.title("UAE Warriors 59-60")
 for i, row in df.iterrows():

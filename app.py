@@ -39,9 +39,9 @@ def load_data():
     df = pd.DataFrame(data)
     df["original_index"] = df.index
     # Corrige duplicidade
-    if "CORNER" in df.columns:
-        df.rename(columns={"CORNER": "Coach"}, inplace=True)
-    return df, sheet
+    #if "CORNER" in df.columns:
+    #    df.rename(columns={"CORNER": "Coach"}, inplace=True)
+    #return df, sheet
 
 # 📂 Atualiza valores
 def salvar_valor(sheet, row, col_index, valor):
@@ -101,7 +101,7 @@ elif status_sel == "Somente completos":
     df = df[df[tarefas].apply(lambda row: all(str(row.get(t, '')).lower() == "done" for t in tarefas), axis=1)]
 
 # Foco em lutadores
-df = df[df['Role'].str.lower() == 'Fighter']
+df = df[df['Role'].str.lower() == 'fighter']
 
 # ✅ Avisos e contagem
 st.markdown(f"🔎 **{len(df)} atleta(s) encontrados para os filtros aplicados.**")

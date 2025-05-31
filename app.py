@@ -1,8 +1,7 @@
 # 📍 UAE Warriors App - v1.2.7
 # ✅ Alterações:
-# - Tabelas visuais com bordas para "Fight Details" e "Documentos Pessoais"
-# - Tabelas aparecem após os badges e antes dos campos editáveis
-# - Mantida estrutura e filtros anteriores
+# - Tabelas "Fight Details" e "Documentos Pessoais" foram adicionadas lado a lado, com layout tabular e visual consistente
+# - Interface ajustada com colunas para visualização compacta e clara
 
 import streamlit as st
 import pandas as pd
@@ -44,23 +43,13 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
 }
-.table-block {
-    border: 1px solid #444; border-radius: 10px; padding: 10px; margin-bottom: 20px;
+.tabela-info {
+    border: 1px solid #555; border-radius: 6px; padding: 10px;
+    font-size: 0.85rem; margin-bottom: 10px;
 }
-.table-block table {
-    width: 100%;
-    border-collapse: collapse;
-}
-.table-block td {
-    border: 1px solid #555;
-    padding: 6px 10px;
-    vertical-align: top;
-    font-size: 0.85rem;
-}
-.table-block th {
-    background: #222;
-    padding: 6px 10px;
-    text-align: left;
+.tabela-info th, .tabela-info td {
+    padding: 5px 10px; border: 1px solid #555;
+    text-align: center;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -88,18 +77,21 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
+# 🎯 Campos configuráveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
+# 💾 Atualizar célula
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
+# 🏷️ Badges de status
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -107,6 +99,23 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
+# 🧾 Função para gerar tabela HTML
+def gerar_tabela(campos, row, titulo):
+    linhas = ""
+    for linha in campos:
+        linhas += "<tr>" + "".join(
+            f"<td>{str(row.get(campo, '')).strip()}</td>" for campo in linha
+        ) + "</tr>"
+    return f"""
+    <div class='tabela-info'>
+    <b>{titulo}</b>
+    <table style='width: 100%; border-collapse: collapse;'>
+        {linhas}
+    </table>
+    </div>
+    """
+
+# 👤 Renderizar atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -126,51 +135,30 @@ def renderizar_atleta(i, row, df):
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
+        # Badges
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        # ▶️ Tabela 1 – Fight Details
-        st.markdown(f"""
-        <div class="table-block">
-        <table>
-            <tr>
-                <td><strong>Fight Order</strong><br>{row.get('Fight_Order', 'N/A')}</td>
-                <td><strong>Corner</strong><br>{row.get('Corner', 'N/A')}</td>
-                <td><strong>Event</strong><br>{row.get('Event', 'N/A')}</td>
-                <td><strong>Division</strong><br>{row.get('Division', 'N/A')}</td>
-            </tr>
-            <tr>
-                <td><strong>Opponent</strong><br>{row.get('Opponent', 'N/A')}</td>
-                <td><strong>Coach</strong><br>{row.get('Coach', 'N/A')}</td>
-                <td colspan="2"></td>
-            </tr>
-        </table>
-        </div>
-        """, unsafe_allow_html=True)
+        # Tabelas lado a lado
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(gerar_tabela(
+                [["Fight_Order", "Corner", "Event", "Division"],
+                 ["Opponent", "Coach"]],
+                row, "Fight Details"), unsafe_allow_html=True)
+        with col2:
+            st.markdown(gerar_tabela(
+                [["Nationality_Passport", "Passport", "Personal_Doc"],
+                 ["DOB", "Whatsapp"]],
+                row, "Documentos Pessoais"), unsafe_allow_html=True)
 
-        # ▶️ Tabela 2 – Documentos Pessoais
-        st.markdown(f"""
-        <div class="table-block">
-        <table>
-            <tr>
-                <td><strong>Nationality (Passport)</strong><br>{row.get('Nationality_Passport', 'N/A')}</td>
-                <td><strong>Passport</strong><br>{row.get('Passport', 'N/A')}</td>
-                <td><strong>Personal Doc</strong><br>{row.get('Personal_Doc', 'N/A')}</td>
-            </tr>
-            <tr>
-                <td><strong>Date of Birth</strong><br>{row.get('DOB', 'N/A')}</td>
-                <td><strong>Whatsapp</strong><br>{row.get('Whatsapp', 'N/A')}</td>
-                <td colspan="1"></td>
-            </tr>
-        </table>
-        </div>
-        """, unsafe_allow_html=True)
-
+        # WhatsApp
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 WhatsApp</a></div>", unsafe_allow_html=True)
 
+        # Botão editar/salvar
         if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
             if st.session_state[edit_key]:
                 with st.spinner('Salvando alterações...'):
@@ -183,6 +171,7 @@ def renderizar_atleta(i, row, df):
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
 
+        # Campos editáveis
         cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             target_col = cols[idx % 2]
@@ -191,29 +180,38 @@ def renderizar_atleta(i, row, df):
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
 
-# 🎛️ Filtros
+# 🧭 Filtros na barra lateral
 st.sidebar.title("Filtros")
+
 eventos = sorted(df["Event"].dropna().unique())
 evento_sel = st.sidebar.selectbox("Selecionar Evento", ["Todos"] + eventos)
+
 corners = sorted(df["Corner"].dropna().unique())
 corner_sel = st.sidebar.multiselect("Selecionar Corner", options=corners, default=corners)
+
 status_sel = st.sidebar.radio("Status", ["Todos", "Somente Pendentes", "Somente Completos"])
 
+# Aplicar filtros
 df = df[df["Role"] == "Fighter"]
 if evento_sel != "Todos":
     df = df[df["Event"] == evento_sel]
 if corner_sel:
     df = df[df["Corner"].isin(corner_sel)]
+
 if status_sel == "Somente Pendentes":
     df = df[df[status_cols].apply(lambda row: "required" in row.str.lower().values, axis=1)]
 elif status_sel == "Somente Completos":
     df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
+# Ordenação
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
 
+# Botão de atualizar
 if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 
 st.title("UAE Warriors 59-60")
+
+# Renderizar cada atleta
 for i, row in df.iterrows():
     renderizar_atleta(i, row, df)

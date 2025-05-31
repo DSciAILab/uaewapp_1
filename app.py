@@ -1,13 +1,14 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.9
+Versão: v1.1.0
 
 ### Novidades desta versão:
 - Corrigido erro de unicode no botão "Atualizar Página"
-- Mantido o sistema de status com badges coloridos
-- Emojis de alerta (⚠️) para atletas com pendências
-- Layout responsivo e otimizando performance com cache
+- Removido o uso de `unsafe_allow_html=True` no `st.expander`, evitando erro de `TypeError`
+- Substituídos os badges HTML por texto plano com emojis
+- Melhor responsividade dos campos editáveis
+- Adicionado alerta ⚠️ ao lado do nome do atleta com pendências
 """
 
 # 📦 Importações
@@ -50,20 +51,13 @@ st.markdown("""
     .stApp { background-color: #0e1117; }
     .stButton>button { background-color: #262730; color: white; border: 1px solid #555; }
     .stTextInput>div>div>input { background-color: #3a3b3c; color: white; border: 1px solid #888; }
-    .pending-label { background-color: #ffcccc; color: #8b0000; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
-    .done-label { background-color: #2b3e2b; color: #5efc82; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 600; text-transform: uppercase; }
-    .neutral-label { background-color: #444; color: #999; padding: 4px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; font-weight: 500; text-transform: uppercase; }
-    .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; text-transform: uppercase; display: inline-block; }
-    .badge-done { background-color: #2e4f2e; color: #5efc82; }
-    .badge-required { background-color: #5c1a1a; color: #ff8080; }
-    .badge-neutral { background-color: #444; color: #ccc; }
     .athlete-name { font-size: 1.8rem; font-weight: bold; text-align: center; padding: 0.5rem 0; }
     .corner-vermelho { border-top: 4px solid red; padding-top: 6px; }
     .corner-azul { border-top: 4px solid #0099ff; padding-top: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-# 🏷️ Título principal
+# 🏇 Título principal
 st.title("UAE Warriors 59-60")
 
 # 🗓️ Dados e filtros
@@ -89,30 +83,30 @@ if corner_sel:
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-def gerar_badge(valor, status):
+def gerar_badge_txt(valor, status):
     valor = valor.strip().lower()
     if valor == "done":
-        return f"<span class='badge badge-done'>{status.upper()}</span>"
+        return f"[{status.upper()} ✅]"
     elif valor == "required":
-        return f"<span class='badge badge-required'>{status.upper()}</span>"
+        return f"[{status.upper()} ⚠️]"
     else:
-        return f"<span class='badge badge-neutral'>{status.upper()}</span>"
+        return f"[{status.upper()}]"
 
-# 🠸 Renderiza atletas
+# 🡸 Renderiza atletas
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 
     status_tags = " ".join(
-        gerar_badge(str(row.get(status, "")), status)
+        gerar_badge_txt(str(row.get(status, "")), status)
         for status in status_cols
     )
 
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = " ⚠️" if tem_pendencia else ""
 
-    titulo = f"{row['Fighter ID']} - {row['Name']}{icone_alerta} {status_tags}"
+    titulo = f"{row['Fighter ID']} - {row['Name']}{icone_alerta}  {status_tags}"
 
-    with st.expander(titulo, unsafe_allow_html=True):
+    with st.expander(titulo):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])
 

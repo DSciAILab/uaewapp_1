@@ -1,10 +1,4 @@
-# 📍 UAE Warriors App - v1.2.5
-# ✅ Alterações:
-# - Filtros movidos para a barra lateral (evento, corner, status)
-# - Exibe apenas registros com Role == 'Fighter'
-# - Ordenação: Event > Fight_Order > Corner
-# - Interface ajustada com CSS e comentários aplicados
-# - Tabela superior dentro do expander com detalhes da luta (2 linhas, 2 colunas)
+# 📍 UAE Warriors App - v1.2.6
 
 import streamlit as st
 import pandas as pd
@@ -12,11 +6,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 🎯 Configuração da página
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
-# 🎨 Estilo visual
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -40,7 +32,6 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 .status-line { text-align: center; margin-bottom: 8px; }
-.fight-info { text-align: center; color: #ccc; font-size: 0.9rem; margin-bottom: 8px; }
 .wa-button { text-align: center; margin-bottom: 10px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
@@ -49,13 +40,9 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
@@ -63,7 +50,6 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
-# 📥 Carregar dados
 @st.cache_data(ttl=30)
 def load_data():
     return pd.DataFrame(sheet.get_all_records())
@@ -72,21 +58,18 @@ df = load_data()
 df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "").str.replace("-", "_")
 df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
 
-# 🎯 Campos configuráveis
 campos_editaveis = [
     "Music_1", "Music_2", "Music_3", "Stats", "Weight", "Height", "Reach",
     "Fightstyle", "Nationality_Fight", "Residence", "Team", "Uniform", "Notes"
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# 💾 Atualizar célula
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-# 🏷️ Badges de status
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -94,7 +77,6 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# 👤 Renderizar atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
@@ -104,7 +86,6 @@ def renderizar_atleta(i, row, df):
 
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
-
     st.markdown(f"<div class='header-container'>{img_html}{nome_html}</div>", unsafe_allow_html=True)
 
     edit_key = f"edit_mode_{i}"
@@ -114,36 +95,40 @@ def renderizar_atleta(i, row, df):
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
 
-        # 🧾 Tabela com informações principais
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Fight Details**")
-            st.markdown(f"- **Fight Order:** {row.get('Fight_Order', 'N/A')}")
-            st.markdown(f"- **Corner:** {row.get('Corner', 'N/A')}")
-        with col2:
-            st.markdown("**Match Info**")
-            st.markdown(f"- **Event:** {row.get('Event', 'N/A')}")
-            st.markdown(f"- **Division:** {row.get('Division', 'N/A')}")
-
-        col3, col4 = st.columns(2)
-        with col3:
-            st.markdown("**Opponent**")
-            st.markdown(f"- {row.get('Opponent', 'N/A')}")
-        with col4:
-            st.markdown("**Coach**")
-            st.markdown(f"- {row.get('Coach', 'N/A')}")
-
-        # 🔖 Badges de status
+        # 🔖 Badges
         badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
         st.markdown(f"<div class='status-line'>{badges_html}</div>", unsafe_allow_html=True)
 
-        # 📞 WhatsApp
+        # 🧾 Tabela com borda
+        st.markdown("""
+        <div style='display: flex; gap: 24px; margin-top: 10px; margin-bottom: 20px;'>
+            <div style='flex: 1; border: 1px solid #444; border-radius: 10px; padding: 12px;'>
+                <h4 style='margin-top: 0;'>Fight Details</h4>
+                <p><strong>Fight Order:</strong><br>{fight_order}</p>
+                <p><strong>Corner:</strong><br>{corner}</p>
+                <p><strong>Opponent:</strong><br>{opponent}</p>
+            </div>
+            <div style='flex: 1; border: 1px solid #444; border-radius: 10px; padding: 12px;'>
+                <h4 style='margin-top: 0;'>Match Info</h4>
+                <p><strong>Event:</strong><br>{event}</p>
+                <p><strong>Division:</strong><br>{division}</p>
+                <p><strong>Coach:</strong><br>{coach}</p>
+            </div>
+        </div>
+        """.format(
+            fight_order=row.get('Fight_Order', 'N/A'),
+            corner=row.get('Corner', 'N/A'),
+            opponent=row.get('Opponent', 'N/A'),
+            event=row.get('Event', 'N/A'),
+            division=row.get('Division', 'N/A'),
+            coach=row.get('Coach', 'N/A')
+        ), unsafe_allow_html=True)
+
         whatsapp = str(row.get("Whatsapp", "")).strip()
         if whatsapp:
             link = f"https://wa.me/{whatsapp.replace('+', '').replace(' ', '')}"
             st.markdown(f"<div class='wa-button'><a href='{link}' target='_blank'>📡 WhatsApp</a></div>", unsafe_allow_html=True)
 
-        # ✏️ Edição
         if st.button("Salvar" if st.session_state[edit_key] else "Editar", key=f"toggle_{i}"):
             if st.session_state[edit_key]:
                 with st.spinner('Salvando alterações...'):
@@ -156,7 +141,6 @@ def renderizar_atleta(i, row, df):
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
 
-        # 📝 Campos editáveis
         cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
             target_col = cols[idx % 2]
@@ -165,7 +149,7 @@ def renderizar_atleta(i, row, df):
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
 
-# 🧭 Filtros
+# 🎛️ Filtros
 st.sidebar.title("Filtros")
 eventos = sorted(df["Event"].dropna().unique())
 evento_sel = st.sidebar.selectbox("Selecionar Evento", ["Todos"] + eventos)
@@ -184,16 +168,12 @@ if status_sel == "Somente Pendentes":
 elif status_sel == "Somente Completos":
     df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
-# 🧮 Ordenação
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
 
-# 🔁 Botão para atualizar
 if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 
-# 📌 Título principal
 st.title("UAE Warriors 59-60")
 
-# ▶️ Renderizar atletas
 for i, row in df.iterrows():
     renderizar_atleta(i, row, df)

@@ -1,13 +1,15 @@
 # 📍 UAE Warriors App - Versão Corrigida v1.1.33
-# Configuração principal da página
-st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
-st_autorefresh(interval=10_000)
+
 
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
+
+# Configuração principal da página
+st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
+st_autorefresh(interval=10_000)
 
 # Conexão única ao Google Sheets
 @st.cache_resource

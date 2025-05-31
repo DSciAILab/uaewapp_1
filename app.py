@@ -1,12 +1,13 @@
 # 🔹 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.44
+Versão: v1.1.45
 
 ### Novidades desta versão:
 - Layout visual com 3 colunas mantido
 - Restaurado botão de edição/salvamento
 - Campos agora podem ser editáveis sob controle do usuário
+- Correção do erro de update_cell usando índice original da planilha
 """
 
 # 🔑 Importações
@@ -34,7 +35,9 @@ def connect_sheet():
 def load_data():
     sheet = connect_sheet()
     data = sheet.get_all_records()
-    return pd.DataFrame(data), sheet
+    df = pd.DataFrame(data)
+    df["original_index"] = df.index  # adiciona índice original
+    return df, sheet
 
 # 📂 Salvar valores
 def salvar_valor(sheet, row, col_index, valor):
@@ -92,7 +95,8 @@ def gerar_badge(valor, status):
         return f"<span class='badge badge-neutral'>{status.upper()}</span>"
 
 # 👥 Iterar atletas
-for i, row in df.iterrows():
+for j, row in df.iterrows():
+    i = int(row["original_index"])  # índice original da planilha
     with st.container():
         cor = "#ff4b4b" if row.get("Corner", "").lower() == "red" else "#0099ff"
         alerta = "⚠️ " if any(str(row.get(t, "")).lower() == "required" for t in tarefas) else ""

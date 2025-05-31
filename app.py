@@ -1,7 +1,7 @@
 # 📌 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.0.1
+Versão: v1.0.3
 
 Este script cria uma aplicação interativa utilizando Streamlit para visualizar e atualizar informações de atletas de MMA
 armazenadas em uma planilha do Google Sheets.
@@ -14,10 +14,11 @@ armazenadas em uma planilha do Google Sheets.
 - Filtros por evento e corner
 - Atualização automática da página a cada 10 segundos
 - Botão individual para salvar edições
-- Exibição de status resumido ao lado do nome do atleta
+- ❌ Novo: Exibição de status resumido ao lado do nome do atleta no cabeçalho do expander
 
 ### Atualizações nesta versão:
-- Corrigido: `st.expander()` agora recebe texto puro no cabeçalho e status são renderizados internamente.
+- ✅ `st.expander()` exibe ícones de status ao lado do nome do atleta:
+  - ✅ (Done), ⚠️ (Required), ➖ (Outro)
 """
 
 # 📦 Importações necessárias
@@ -27,7 +28,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 📡 Conexão com Google Sheets
+# 📱 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = [
@@ -45,7 +46,7 @@ def load_data(sheet):
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# 💾 Atualiza valor de célula
+# 📂 Atualiza valor de célula
 def salvar_valor(sheet, row, col_index, valor):
     sheet.update_cell(row + 2, col_index + 1, valor)
 
@@ -72,9 +73,8 @@ st.markdown("""
 # 🏷️ Título da página
 st.title("UAE Warriors 59-60")
 
-# 📥 Conecta e carrega
-sheet = connect_sheet()
-df = load_data(sheet)
+# 📅 Conecta e carrega
+df = load_data(connect_sheet())
 
 # 🔍 Filtros
 col_evento, col_corner = st.columns([6, 6])
@@ -92,15 +92,27 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
-# 🔧 Campos editáveis
+# ⚖️ Campos editáveis e status
 campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
-# 🧍 Exibição por atleta
+# 🧕 Exibição por atleta
 for i, row in df.iterrows():
     cor_class = "corner-vermelho" if str(row.get("Corner", "")).lower() == "red" else "corner-azul"
 
-    titulo = f"{row['Fighter ID']} - {row['Name']}"
+    # Gera cabeçalho com ícones de status
+    status_icons = ""
+    for status in status_cols:
+        valor = str(row.get(status, "")).strip().lower()
+        if valor == "done":
+            status_icons += "✅ "
+        elif valor == "required":
+            status_icons += "⚠️ "
+        else:
+            status_icons += "➖ "
+
+    titulo = f"{row['Fighter ID']} - {row['Name']}  {status_icons}"
+
     with st.expander(titulo):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 5])

@@ -1,4 +1,4 @@
-# 📍 UAE Warriors App - v1.1.36 com melhorias visuais e de usabilidade
+# 📍 UAE Warriors App - v1.1.36 com melhorias visuais e de usabilidade 
 
 import streamlit as st
 import pandas as pd

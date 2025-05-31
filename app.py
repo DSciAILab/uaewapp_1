@@ -1,17 +1,14 @@
-# 📍 UAE Warriors App - v1.3.7
-# ✅ Tabelas lado a lado com botões de edição de status
-
+# 📍 UAE Warriors App - v1.3.9
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_autorefresh import st_autorefresh
 
-# 🎯 Configuração
 st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
-# 🎨 Estilo visual
+# 🎨 Estilo
 st.markdown("""
 <style>
 body, .stApp { background-color: #0e1117; color: white; }
@@ -24,7 +21,7 @@ body, .stApp { background-color: #0e1117; color: white; }
 .circle-img img { width: 100%; height: 100%; object-fit: cover; }
 .badge {
     padding: 3px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
-    margin: 0 5px; text-transform: uppercase; display: inline-block;
+    margin: 0 3px; text-transform: uppercase; display: inline-block;
 }
 .badge-done { background-color: #2e4f2e; color: #5efc82; }
 .badge-required { background-color: #5c1a1a; color: #ff8080; }
@@ -32,7 +29,6 @@ body, .stApp { background-color: #0e1117; color: white; }
 .corner-vermelho { background-color: rgba(255, 0, 0, 0.1); border-radius: 10px; padding: 10px; }
 .corner-azul { background-color: rgba(0, 153, 255, 0.1); border-radius: 10px; padding: 10px; }
 hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
-.status-line { text-align: center; margin-bottom: 8px; }
 .header-container {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 20px; margin-bottom: 10px;
@@ -47,10 +43,21 @@ hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
     font-weight: bold; background-color: #222;
     text-align: center; color: #ddd;
 }
+.badge-container {
+    text-align: center;
+    margin: 10px 0;
+}
+.stButton>button {
+    background-color: #004488;
+    color: white;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: bold;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# 🔐 Conectar com o Google Sheets
+# 🔐 Conexão com planilha
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -75,15 +82,12 @@ campos_editaveis = [
 ]
 status_cols = ["Photoshoot", "Labs", "Interview", "Black_Screen"]
 
-# 🔄 Atualizar célula
 def salvar_valor(row, col_index, valor):
     try:
         sheet.update_cell(row + 2, col_index + 1, valor)
-        st.success("✅ Atualizado com sucesso!", icon="✅")
     except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
 
-# 🏷️ Badge visual
 def gerar_badge(valor, status):
     classe = {
         "done": "badge-done",
@@ -91,7 +95,6 @@ def gerar_badge(valor, status):
     }.get(str(valor).strip().lower(), "badge-neutral")
     return f"<span class='badge {classe}'>{status.upper()}</span>"
 
-# 📋 Tabelas organizadas
 def render_tabela_fight(row):
     return f"""
     <table class='custom-table'>
@@ -111,8 +114,8 @@ def render_tabela_documentos(row):
     <table class='custom-table'>
         <tr><td class='title'>Nationality</td><td class='title'>Passport</td><td class='title'>Document</td></tr>
         <tr><td>{row.get("Nationality_Passport", "")}</td><td>{row.get("Passport", "")}</td><td>{doc_link}</td></tr>
-        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'></td></tr>
-        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td></td></tr>
+        <tr><td class='title'>Date of Birth</td><td class='title'>Whatsapp</td><td class='title'> </td></tr>
+        <tr><td>{row.get("DOB", "")}</td><td>{whatsapp_link}</td><td> </td></tr>
     </table>
     """
 
@@ -123,18 +126,18 @@ def render_tabela_voo(row):
     <table class='custom-table'>
         <tr><td class='title'>Arrivals</td><td class='title'>Departure</td></tr>
         <tr><td>{row.get("Arrivals", "")}</td><td>{row.get("Departure", "")}</td></tr>
-        <tr><td class='title'>Flight Ticket</td><td class='title'>Hotel</td></tr>
+        <tr><td class='title'>Flight_Ticket</td><td class='title'>Hotel</td></tr>
         <tr><td>{ticket_link}</td><td>{row.get("Hotel", "")}</td></tr>
     </table>
     """
 
-# 👤 Atleta
 def renderizar_atleta(i, row, df):
     corner = row.get("Corner", "").lower()
     cor_class = "corner-vermelho" if corner == "red" else "corner-azul"
     nome_class = "name-vermelho" if corner == "red" else "name-azul"
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
+
     nome_html = f"<div class='{nome_class}'>{icone_alerta}{row.get('Name', '')}</div>"
     img_html = f"<div class='circle-img'><img src='{row.get('Image', '')}'></div>" if row.get("Image") else ""
 
@@ -146,7 +149,8 @@ def renderizar_atleta(i, row, df):
 
     with st.expander("Exibir detalhes", expanded=st.session_state[edit_key]):
         st.markdown(f"<div class='{cor_class}'>", unsafe_allow_html=True)
-        st.markdown("".join(gerar_badge(row.get(status, ""), status) for status in status_cols), unsafe_allow_html=True)
+        badges_html = "".join(gerar_badge(row.get(status, ""), status) for status in status_cols)
+        st.markdown(f"<div class='badge-container'>{badges_html}</div>", unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns(3)
         with col1: st.markdown(render_tabela_fight(row), unsafe_allow_html=True)
@@ -159,25 +163,23 @@ def renderizar_atleta(i, row, df):
                     novo_valor = st.session_state.get(f"{campo}_{i}", "")
                     if campo in df.columns:
                         salvar_valor(i, df.columns.get_loc(campo), novo_valor)
+                st.success("✅ Alterações salvas com sucesso!")
             st.session_state[edit_key] = not st.session_state[edit_key]
             st.rerun()
 
-        cols = st.columns(2)
         for idx, campo in enumerate(campos_editaveis):
-            cols[idx % 2].text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
-
-        if st.session_state[edit_key]:
-            st.markdown("### Atualizar Status:")
-            b1, b2, b3, b4 = st.columns(4)
-            def alternar_status(nome_status):
-                val_atual = str(row.get(nome_status, "")).strip().lower()
-                novo_valor = "done" if val_atual == "required" else "required"
-                salvar_valor(i, df.columns.get_loc(nome_status), novo_valor)
-                st.rerun()
-            if b1.button("📸 Photoshoot", key=f"ps_{i}"): alternar_status("Photoshoot")
-            if b2.button("🧪 Labs", key=f"labs_{i}"): alternar_status("Labs")
-            if b3.button("🎤 Interview", key=f"int_{i}"): alternar_status("Interview")
-            if b4.button("🖥️ Black Screen", key=f"bs_{i}"): alternar_status("Black_Screen")
+            col_target = st.columns(2)[idx % 2]
+            if campo == "Uniform":
+                opcoes = ["Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large"]
+                col_target.selectbox(
+                    "Uniform",
+                    options=opcoes,
+                    index=opcoes.index(row.get("Uniform", "Medium")) if row.get("Uniform", "Medium") in opcoes else 1,
+                    key=f"{campo}_{i}",
+                    disabled=not st.session_state[edit_key]
+                )
+            else:
+                col_target.text_input(campo, value=row.get(campo, ""), key=f"{campo}_{i}", disabled=not st.session_state[edit_key])
 
         st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr class='divisor'>", unsafe_allow_html=True)
@@ -199,7 +201,6 @@ elif status_sel == "Somente Completos":
     df = df[df[status_cols].apply(lambda row: all(val.strip().lower() == "done" for val in row.values), axis=1)]
 
 df = df.sort_values(by=["Event", "Fight_Order", "Corner"])
-
 if st.sidebar.button("🔄 Atualizar Página"):
     st.rerun()
 

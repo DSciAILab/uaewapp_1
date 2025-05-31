@@ -90,8 +90,9 @@ if evento_sel != "Todos":
 if corner_sel:
     df = df[df['Corner'].isin(corner_sel)]
 
+
 # Verifica colunas de tarefas válidas
-tarefas_todas = ["Black Screen", "Video Status", "Photoshoot", "Blood Test", "Interview", "Stats"]
+tarefas_todas = ["Black Screen", "Photoshoot", "Blood Test", "Interview", "Stats"]
 tarefas = [t for t in tarefas_todas if t in df.columns]
 
 if status_sel == "Somente pendentes":

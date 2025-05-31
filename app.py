@@ -103,7 +103,7 @@ st.set_page_config(page_title="Controle de Atletas MMA", layout="wide")
 st_autorefresh(interval=10_000)
 
 # Variáveis globais
-campos_editaveis = ["Nationality", "Residence", "Hight", "Range", "Weight"]
+campos_editaveis = ["Nationality", "Residence", "Height", "Reach", "Weight"]
 status_cols = ["Photoshoot", "Blood Test", "Interview", "Black Scheen"]
 
 # Interface de usuário principal

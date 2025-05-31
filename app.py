@@ -1,13 +1,14 @@
 # 📍 UAE Warriors App - Interface Interativa com Google Sheets via Streamlit
 
 """
-Versão: v1.1.24
+Versão: v1.1.25
 
 ### Mudanças nesta versão:
-- Status badges movidos para a primeira linha dentro do expander
-- Layout reorganizado para priorizar clareza visual
-- Estilo refinado com centralização de imagem e nome
-- Nome do atleta estilizado de acordo com o corner
+- Nome e imagem do atleta exibidos lado a lado acima do expander
+- Estilo visual do nome com cores por corner (vermelho ou azul)
+- Interior do expander recebe fundo diferenciado conforme corner
+- Linha divisória entre cada atleta
+- Badges de status colocados como primeira linha do expander
 
 ### 🗓️ Última atualização: 2025-05-31
 """
@@ -60,9 +61,10 @@ st.markdown("""
     .badge-required { background-color: #5c1a1a; color: #ff8080; }
     .badge-neutral { background-color: #444; color: #ccc; }
     .status-line { padding-top: 6px; margin-bottom: 5px; }
-    .name-vermelho { color: red; font-weight: bold; font-size: 1.8rem; }
-    .name-azul { color: #0099ff; font-weight: bold; font-size: 1.8rem; }
-    .row-header { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: -10px; }
+    .name-vermelho { color: red; font-weight: bold; font-size: 1.6rem; }
+    .name-azul { color: #0099ff; font-weight: bold; font-size: 1.6rem; }
+    .row-header { display: flex; align-items: center; justify-content: center; gap: 20px; padding-top: 10px; }
+    hr.divisor { border: none; height: 1px; background: #333; margin: 20px 0; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -111,12 +113,13 @@ for i, row in df.iterrows():
     tem_pendencia = any(str(row.get(status, "")).lower() == "required" for status in status_cols)
     icone_alerta = "⚠️ " if tem_pendencia else ""
 
+    # Nome + imagem
     st.markdown("<div class='row-header'>", unsafe_allow_html=True)
     if row.get("Image"):
         try:
-            st.image(row["Image"], width=80)
+            st.image(row["Image"], width=70)
         except:
-            st.warning("Imagem inválida")
+            pass
     st.markdown(f"{icone_alerta}<span class='{nome_class}'>{row['Name']}</span>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -162,3 +165,5 @@ for i, row in df.iterrows():
             col2.markdown(f"<a href='{link}' target='_blank'>📞 Enviar mensagem no WhatsApp</a>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr class='divisor'>", unsafe_allow_html=True)

@@ -8,14 +8,14 @@ st.set_page_config(layout="wide", page_title="Fightcard")
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
     df = pd.read_csv(url)
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("-", "_")
     df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
     df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
 # Função para renderizar a tabela em HTML
 def render_fightcard_html(df):
-    html = """
+    html = '''
     <style>
         .fightcard-table { width: 100%; border-collapse: collapse; margin-bottom: 50px; }
         .fightcard-table td, .fightcard-table th {
@@ -48,13 +48,13 @@ def render_fightcard_html(df):
             border-radius: 6px;
         }
     </style>
-    """
+    '''
 
     grouped = df.groupby("Event")
 
     for event, group in grouped:
         html += f"<div class='event-header'>{event}</div>"
-        html += """
+        html += '''
         <table class='fightcard-table'>
             <thead>
                 <tr>
@@ -64,22 +64,25 @@ def render_fightcard_html(df):
                 </tr>
             </thead>
             <tbody>
-        """
+        '''
 
         fights = group.groupby("FightOrder")
 
         for fight_order, fight_df in fights:
-            blue = fight_df[fight_df["Corner"] == "blue"].squeeze()
-            red = fight_df[fight_df["Corner"] == "red"].squeeze()
+            blue = fight_df[fight_df["Corner"] == "blue"]
+            red = fight_df[fight_df["Corner"] == "red"]
 
-            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if isinstance(blue, pd.Series) and blue.get("Picture", "") else ""
-            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if isinstance(red, pd.Series) and red.get("Picture", "") else ""
-            blue_name = blue.get("Fighter", "") if isinstance(blue, pd.Series) else ""
-            red_name = red.get("Fighter", "") if isinstance(red, pd.Series) else ""
-            division = blue.get("Division", "") if isinstance(blue, pd.Series) else red.get("Division", "")
+            blue = blue.iloc[0] if not blue.empty else {}
+            red = red.iloc[0] if not red.empty else {}
+
+            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue.get("Picture", "") else ""
+            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red.get("Picture", "") else ""
+            blue_name = blue.get("Fighter", "")
+            red_name = red.get("Fighter", "")
+            division = blue.get("Division", "") or red.get("Division", "")
             info = f"FIGHT #{int(fight_order)}<br>{division}"
 
-            html += f"""
+            html += f'''
             <tr>
                 <td class='blue'>{blue_img}</td>
                 <td class='blue'>{blue_name}</td>
@@ -87,7 +90,7 @@ def render_fightcard_html(df):
                 <td class='red'>{red_name}</td>
                 <td class='red'>{red_img}</td>
             </tr>
-            """
+            '''
 
         html += "</tbody></table>"
 

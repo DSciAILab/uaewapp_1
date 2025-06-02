@@ -1,4 +1,3 @@
-# 📍 UAE Warriors App - Fightcard Page
 import streamlit as st
 import pandas as pd
 import gspread
@@ -6,7 +5,35 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Fightcard", layout="wide")
 
-# 🔐 Conexão com a aba Fightcard
+# Estilo básico
+st.markdown("""
+<style>
+.fightcard-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+.fightcard-table td {
+    border: 1px solid #555;
+    padding: 8px;
+    text-align: center;
+    vertical-align: middle;
+}
+.fighter-img {
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+.fightorder-row {
+    background-color: #222;
+    font-weight: bold;
+    color: #fff;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 🔐 Conexão segura com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -17,41 +44,57 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
-@st.cache_data(ttl=30)
+# 📥 Carregar dados da aba Fightcard
+@st.cache_data(ttl=60)
 def load_data():
-    return pd.DataFrame(sheet.get_all_records())
+    df = pd.DataFrame(sheet.get_all_records())
+    df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "")
+    df["Fight_Order"] = pd.to_numeric(df["FightOrder"], errors="coerce")
+    return df
 
 df = load_data()
-df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("-", "_")
 
-# Agrupar os atletas por evento e FightOrder
-grouped = df.groupby(["Event", "FightOrder"])
+# 🔁 Agrupar por evento e ordem de luta
+grouped = df.groupby(["Event", "Fight_Order"])
 
-st.title("📝 Official Fightcard")
+st.title("🥊 Fightcard Visual")
 
-for (event, order), group in grouped:
-    if len(group) != 2:
-        continue  # Pula pares incompletos
+for (event, fight_order), group in grouped:
+    if group.shape[0] != 2:
+        st.warning(f"{event} - Fight {fight_order}: precisa ter 2 lutadores.")
+        continue
 
-    azul = group[group["Corner"].str.lower() == "blue"].iloc[0] if any(group["Corner"].str.lower() == "blue") else group.iloc[0]
-    vermelho = group[group["Corner"].str.lower() == "red"].iloc[0] if any(group["Corner"].str.lower() == "red") else group.iloc[1]
+    azul = group[group["Corner"].str.lower() == "blue"]
+    vermelho = group[group["Corner"].str.lower() == "red"]
 
-    col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 2, 2])
+    if azul.empty or vermelho.empty:
+        st.warning(f"{event} - Fight {fight_order}: corner azul ou vermelho ausente.")
+        continue
 
-    with col1:
-        st.image(azul["Picture"], width=150)
-    with col2:
-        st.markdown(f"### 🟦 {azul['Fighter']}")
-        st.markdown(f"**Division**: {azul['Division']}")
-    with col3:
-        st.markdown(f"### 🆚")
-        st.markdown(f"#### Fight {order}")
-        st.markdown(f"**Event**: {event}")
-    with col4:
-        st.markdown(f"### 🔴 {vermelho['Fighter']}")
-        st.markdown(f"**Division**: {vermelho['Division']}")
-    with col5:
-        st.image(vermelho["Picture"], width=150)
+    fighter_azul = azul.iloc[0]
+    fighter_vermelho = vermelho.iloc[0]
 
-    st.markdown("---")
+    table_html = f"""
+    <table class='fightcard-table'>
+        <tr class='fightorder-row'>
+            <td colspan='3'>Event: {event} | Fight {fight_order}</td>
+        </tr>
+        <tr>
+            <td><img src="{fighter_azul['Picture']}" class='fighter-img'></td>
+            <td></td>
+            <td><img src="{fighter_vermelho['Picture']}" class='fighter-img'></td>
+        </tr>
+        <tr>
+            <td>{fighter_azul['Fighter']}</td>
+            <td>VS</td>
+            <td>{fighter_vermelho['Fighter']}</td>
+        </tr>
+        <tr>
+            <td>{fighter_azul['Division']}</td>
+            <td></td>
+            <td>{fighter_vermelho['Division']}</td>
+        </tr>
+    </table>
+    """
 
+    st.markdown(table_html, unsafe_allow_html=True)

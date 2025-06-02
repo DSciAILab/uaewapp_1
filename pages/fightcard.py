@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(layout="wide", page_title="Fightcard")
 
-# 🔁 Carregar dados do Google Sheets
+# 🔁 Carrega os dados
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -13,7 +13,7 @@ def load_data():
     df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
-# 🖼️ Renderizar Fightcard HTML
+# 🧱 Gera HTML do fightcard
 def render_fightcard_html(df):
     style = """
     <style>
@@ -21,15 +21,10 @@ def render_fightcard_html(df):
         .fightcard-table {
             width: 100%;
             border-collapse: collapse;
-            border-spacing: 0;
             font-family: 'Inter', sans-serif;
         }
         .fightcard-table tr {
             border-bottom: 1px solid #444;
-            transition: background-color 0.2s ease-in-out;
-        }
-        .fightcard-table tr:hover {
-            background-color: #2a2a2a;
         }
         .fightcard-table td {
             padding: 12px;
@@ -68,8 +63,6 @@ def render_fightcard_html(df):
             font-weight: 700;
             font-size: 18px;
             padding: 10px;
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
         }
         .subheader {
             background-color: #0d2c47;
@@ -109,9 +102,7 @@ def render_fightcard_html(df):
             <tbody>
         """
 
-        fights = group.groupby("FightOrder")
-
-        for fight_order, fight_df in fights:
+        for fight_order, fight_df in group.groupby("FightOrder"):
             blue = fight_df[fight_df["Corner"] == "blue"].squeeze()
             red = fight_df[fight_df["Corner"] == "red"].squeeze()
 

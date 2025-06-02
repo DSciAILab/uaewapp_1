@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(layout="wide", page_title="Fightcard")
 
-# Função para carregar dados da aba "Fightcard"
+# 🔄 Carregar dados do Google Sheets
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -13,11 +13,11 @@ def load_data():
     df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
-# Função para renderizar a tabela em HTML
+# 🎨 Função para renderizar o fightcard
 def render_fightcard_html(df):
-    html = '''
+    html = """
     <style>
-        .fightcard-table { width: 100%; border-collapse: collapse; margin-bottom: 50px; }
+        .fightcard-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
         .fightcard-table td, .fightcard-table th {
             padding: 10px;
             text-align: center;
@@ -26,13 +26,13 @@ def render_fightcard_html(df):
             border: 1px solid #444;
         }
         .fightcard-table img.fightcard-img {
-            width: 100px;
-            border-radius: 8px;
+            width: 90px;
+            border-radius: 6px;
         }
-        .blue { background-color: #102B46; color: white; }
-        .red { background-color: #360D0D; color: white; }
+        .blue { background-color: #0a3d62; color: white; }
+        .red { background-color: #6a040f; color: white; }
         .middle-cell {
-            background-color: #2F2F2F;
+            background-color: #2e2e2e;
             color: white;
             font-weight: bold;
             font-size: 15px;
@@ -42,19 +42,19 @@ def render_fightcard_html(df):
             color: white;
             font-weight: bold;
             text-align: center;
-            font-size: 22px;
+            font-size: 24px;
             padding: 12px;
             margin-top: 40px;
-            border-radius: 6px;
+            border-radius: 4px;
         }
     </style>
-    '''
+    """
 
     grouped = df.groupby("Event")
 
     for event, group in grouped:
         html += f"<div class='event-header'>{event}</div>"
-        html += '''
+        html += """
         <table class='fightcard-table'>
             <thead>
                 <tr>
@@ -64,7 +64,7 @@ def render_fightcard_html(df):
                 </tr>
             </thead>
             <tbody>
-        '''
+        """
 
         fights = group.groupby("FightOrder")
 
@@ -75,14 +75,14 @@ def render_fightcard_html(df):
             blue = blue.iloc[0] if not blue.empty else {}
             red = red.iloc[0] if not red.empty else {}
 
-            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue.get("Picture", "") else ""
-            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red.get("Picture", "") else ""
+            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue.get("Picture") else ""
+            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red.get("Picture") else ""
             blue_name = blue.get("Fighter", "")
             red_name = red.get("Fighter", "")
             division = blue.get("Division", "") or red.get("Division", "")
             info = f"FIGHT #{int(fight_order)}<br>{division}"
 
-            html += f'''
+            html += f"""
             <tr>
                 <td class='blue'>{blue_img}</td>
                 <td class='blue'>{blue_name}</td>
@@ -90,13 +90,13 @@ def render_fightcard_html(df):
                 <td class='red'>{red_name}</td>
                 <td class='red'>{red_img}</td>
             </tr>
-            '''
+            """
 
         html += "</tbody></table>"
 
     return html
 
-# Execução da página
+# 🔽 Execução da página
 df = load_data()
 html = render_fightcard_html(df)
 st.markdown(html, unsafe_allow_html=True)

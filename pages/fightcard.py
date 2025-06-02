@@ -24,8 +24,13 @@ def render_fightcard_html(df):
             font-family: 'Poppins', sans-serif;
         }
 
+        .responsive-wrapper {
+            overflow-x: auto;
+        }
+
         .fightcard-table {
             width: 100%;
+            min-width: 600px;
             border-collapse: collapse;
             margin-bottom: 50px;
             table-layout: fixed;
@@ -80,11 +85,29 @@ def render_fightcard_html(df):
             letter-spacing: 1px;
             font-size: 13px;
         }
+
+        /* RESPONSIVE DESIGN */
+        @media screen and (max-width: 768px) {
+            .fightcard-img {
+                width: 70px;
+                height: 70px;
+            }
+
+            .fightcard-table th, .fightcard-table td {
+                font-size: 12px;
+                padding: 8px;
+            }
+
+            .event-header {
+                font-size: 16px;
+            }
+        }
     </style>
     """
 
     grouped = df.groupby("Event")
 
+    html += "<div class='responsive-wrapper'>"
     for event, group in grouped:
         html += f"<div class='event-header'>{event}</div>"
         html += """
@@ -123,10 +146,11 @@ def render_fightcard_html(df):
             """
 
         html += "</tbody></table>"
+    html += "</div>"
 
     return html
 
-# Execução da Página
+# Execução
 df = load_data()
 html = render_fightcard_html(df)
 st.components.v1.html(html, height=6000, scrolling=True)

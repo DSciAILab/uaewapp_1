@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(layout="wide", page_title="Fightcard")
-
 st.markdown("<h1 style='text-align:center; color:white;'>FIGHT CARDS</h1>", unsafe_allow_html=True)
 
 @st.cache_data
@@ -17,51 +16,69 @@ def load_data():
 def render_fightcard_html(df):
     html = """
     <style>
-        body, .main { background-color: #0e1117; color: white; }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+
+        body, .main {
+            background-color: #0e1117;
+            color: white;
+            font-family: 'Poppins', sans-serif;
+        }
+
         .fightcard-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 50px;
             table-layout: fixed;
         }
+
         .fightcard-table th, .fightcard-table td {
             padding: 12px;
             text-align: center;
             vertical-align: middle;
             font-size: 15px;
             color: white;
+            border-bottom: 1px solid #444;
         }
+
         .fightcard-img {
             width: 100px;
             height: 100px;
             object-fit: cover;
             border-radius: 8px;
         }
+
         .blue {
             background-color: #0d2d51;
-            font-weight: bold;
+            font-weight: 600;
         }
+
         .red {
             background-color: #3b1214;
-            font-weight: bold;
+            font-weight: 600;
         }
+
         .middle-cell {
             background-color: #2f2f2f;
-            font-weight: bold;
+            font-weight: 600;
             font-size: 14px;
         }
+
         .event-header {
             background-color: #111;
             color: white;
-            font-weight: bold;
+            font-weight: 700;
             text-align: center;
             font-size: 18px;
             padding: 10px;
+            margin-top: 40px;
+            border: 1px solid #333;
         }
+
         .fightcard-table th {
             background-color: #1c1c1c;
             text-transform: uppercase;
             letter-spacing: 1px;
+            font-size: 13px;
         }
     </style>
     """

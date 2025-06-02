@@ -1,102 +1,106 @@
-# 📍 UAE Warriors App - Fight Card Page
-# ✅ Layout unificado com colunas alinhadas e imagens centralizadas
-
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
 
-# 🔐 Autenticação com Google Sheets
-@st.cache_resource
-def connect_sheet():
-    scope = ["https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive"]
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    return client
+st.set_page_config(layout="wide")
 
-# 📥 Carrega a aba 'Fightcard'
-@st.cache_data(ttl=60)
+@st.cache_data
 def load_data():
-    sheet = connect_sheet().open("UAEW_App").worksheet("Fightcard")
-    df = pd.DataFrame(sheet.get_all_records())
-    df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "")
+    # Substitua pelo seu próprio método de carregamento do Google Sheets
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
+    df = pd.read_csv(url)
+    df.columns = df.columns.str.strip()
     df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
+    df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
-# 🎨 Estilos
-st.markdown("""
-<style>
-.fightcard-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin-top: 20px;
-}
-.fightcard-table td {
-    border: 1px solid #444;
-    padding: 10px;
-    text-align: center;
-    font-size: 0.9rem;
-}
-.fightcard-table td.middle-cell {
-    background-color: #333;
-    color: white;
-    font-weight: bold;
-    font-size: 1rem;
-}
-.fightcard-table td.blue {
-    background-color: #0a2342;
-    color: white;
-}
-.fightcard-table td.red {
-    background-color: #2c0f13;
-    color: white;
-}
-.fightcard-img {
-    width: 70px;
-    height: 70px;
-    border-radius: 50%;
-    object-fit: cover;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# 🧩 Renderiza o fightcard
 def render_fightcard_html(df):
-    html = "<table class='fightcard-table'>"
-    html += "<tr><td class='blue'>PICTURE</td><td class='blue'>FIGHTER</td><td class='middle-cell'>FIGHT</td><td class='red'>FIGHTER</td><td class='red'>PICTURE</td></tr>"
+    grouped = df.groupby(["Event", "FightOrder"], sort=False)
 
-    grouped = df.groupby("Event")
+    html = "<style>\n"
+    html += """
+    .fightcard-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+        font-family: Arial, sans-serif;
+    }
+    .fightcard-table td {
+        padding: 10px;
+        text-align: center;
+        vertical-align: middle;
+    }
+    .fightcard-img {
+        width: 100px;
+        height: 100px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 2px solid #ccc;
+    }
+    .blue {
+        background-color: #d0e7ff;
+        font-weight: bold;
+    }
+    .red {
+        background-color: #ffd4d4;
+        font-weight: bold;
+    }
+    .middle-cell {
+        background-color: #f4f4f4;
+        font-size: 14px;
+        font-weight: bold;
+    }
+    .event-header {
+        font-size: 20px;
+        font-weight: bold;
+        padding: 15px 0;
+        text-align: left;
+    }
+    """
+    html += "</style>\n"
 
-    for event, group in grouped:
-        group_sorted = group.sort_values("FightOrder")
-        fights = group_sorted.groupby("FightOrder")
-        for i, (_, fighters) in enumerate(fights):
-            blue = fighters[fighters["Corner"].str.lower() == "blue"].squeeze()
-            red = fighters[fighters["Corner"].str.lower() == "red"].squeeze()
+    current_event = None
+    html += "<table class='fightcard-table'>\n"
+    html += "<tr><th colspan='5' class='event-header'></th></tr>"
 
-            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue.get("Picture", "") else ""
-            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red.get("Picture", "") else ""
-
-            fight_number = f"FIGHT #{int(blue['FightOrder'])}" if not pd.isna(blue.get("FightOrder")) else ""
-            division = blue.get("Division", "") or red.get("Division", "")
-
-            html += f"""
+    for (event, order), fighters in grouped:
+        if event != current_event:
+            html += f"<tr><td colspan='5' class='event-header'>{event}</td></tr>"
+            html += """
             <tr>
-                <td class='blue'>{blue_img}</td>
-                <td class='blue'>{blue.get("Fighter", "")}</td>
-                <td class='middle-cell'>{fight_number}<br>{division}</td>
-                <td class='red'>{red.get("Fighter", "")}</td>
-                <td class='red'>{red_img}</td>
+                <th>Blue Corner</th><th>Fighter</th><th>Fight Info</th><th>Fighter</th><th>Red Corner</th>
             </tr>
             """
+            current_event = event
+
+        blue_row = fighters[fighters["Corner"] == "blue"]
+        red_row = fighters[fighters["Corner"] == "red"]
+
+        blue = blue_row.squeeze() if not blue_row.empty else {}
+        red = red_row.squeeze() if not red_row.empty else {}
+
+        blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue and blue.get("Picture") else ""
+        red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red and red.get("Picture") else ""
+
+        blue_name = blue.get("Fighter", "") if blue else ""
+        red_name = red.get("Fighter", "") if red else ""
+        division = blue.get("Division", "") or red.get("Division", "") or ""
+        fight_info = f"FIGHT #{int(order)}<br>{division}"
+
+        html += f"""
+        <tr>
+            <td class='blue'>{blue_img}</td>
+            <td class='blue'>{blue_name}</td>
+            <td class='middle-cell'>{fight_info}</td>
+            <td class='red'>{red_name}</td>
+            <td class='red'>{red_img}</td>
+        </tr>
+        """
 
     html += "</table>"
     return html
 
-# 🚀 Executa a página
-st.title("🥋 UAE Warriors - Fight Card")
+# Página principal
 df = load_data()
+st.markdown("<h2 style='text-align:center;'>Fight Card</h2>", unsafe_allow_html=True)
 html = render_fightcard_html(df)
 st.markdown(html, unsafe_allow_html=True)

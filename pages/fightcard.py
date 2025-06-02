@@ -3,49 +3,60 @@ import pandas as pd
 
 st.set_page_config(layout="wide", page_title="Fightcard")
 
-# 🔄 Carregar dados do Google Sheets
+# 📦 Carregar dados do Google Sheets
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
     df = pd.read_csv(url)
-    df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("-", "_")
+    df.columns = df.columns.str.strip()
     df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
     df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
-# 🎨 Função para renderizar o fightcard
+# 🎨 Função de renderização do HTML
 def render_fightcard_html(df):
     html = """
     <style>
-        .fightcard-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-        .fightcard-table td, .fightcard-table th {
+        .fightcard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+            table-layout: fixed;
+        }
+        .fightcard-table td {
             padding: 10px;
             text-align: center;
             vertical-align: middle;
             font-size: 16px;
-            border: 1px solid #444;
-        }
-        .fightcard-table img.fightcard-img {
-            width: 90px;
-            border-radius: 6px;
-        }
-        .blue { background-color: #0a3d62; color: white; }
-        .red { background-color: #6a040f; color: white; }
-        .middle-cell {
-            background-color: #2e2e2e;
-            color: white;
             font-weight: bold;
+        }
+        .fightcard-img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .blue {
+            background-color: #cce5ff;
+            color: #003366;
+        }
+        .red {
+            background-color: #f5c6cb;
+            color: #660000;
+        }
+        .middle-cell {
+            background-color: #f1f1f1;
+            color: #333;
             font-size: 15px;
         }
         .event-header {
-            background-color: #111;
+            background-color: #222;
             color: white;
             font-weight: bold;
             text-align: center;
-            font-size: 24px;
-            padding: 12px;
-            margin-top: 40px;
-            border-radius: 4px;
+            font-size: 20px;
+            padding: 10px;
+            margin-top: 30px;
         }
     </style>
     """
@@ -54,32 +65,19 @@ def render_fightcard_html(df):
 
     for event, group in grouped:
         html += f"<div class='event-header'>{event}</div>"
-        html += """
-        <table class='fightcard-table'>
-            <thead>
-                <tr>
-                    <th colspan='2' class='blue'>BLUE CORNER</th>
-                    <th class='middle-cell'>FIGHT</th>
-                    <th colspan='2' class='red'>RED CORNER</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
+        html += "<table class='fightcard-table'>"
 
         fights = group.groupby("FightOrder")
 
         for fight_order, fight_df in fights:
-            blue = fight_df[fight_df["Corner"] == "blue"]
-            red = fight_df[fight_df["Corner"] == "red"]
+            blue = fight_df[fight_df["Corner"] == "blue"].squeeze()
+            red = fight_df[fight_df["Corner"] == "red"].squeeze()
 
-            blue = blue.iloc[0] if not blue.empty else {}
-            red = red.iloc[0] if not red.empty else {}
-
-            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if blue.get("Picture") else ""
-            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if red.get("Picture") else ""
-            blue_name = blue.get("Fighter", "")
-            red_name = red.get("Fighter", "")
-            division = blue.get("Division", "") or red.get("Division", "")
+            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if isinstance(blue, pd.Series) and blue.get("Picture") else ""
+            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if isinstance(red, pd.Series) and red.get("Picture") else ""
+            blue_name = blue.get("Fighter", "") if isinstance(blue, pd.Series) else ""
+            red_name = red.get("Fighter", "") if isinstance(red, pd.Series) else ""
+            division = blue.get("Division", "") if isinstance(blue, pd.Series) else red.get("Division", "")
             info = f"FIGHT #{int(fight_order)}<br>{division}"
 
             html += f"""
@@ -92,11 +90,11 @@ def render_fightcard_html(df):
             </tr>
             """
 
-        html += "</tbody></table>"
+        html += "</table>"
 
     return html
 
-# 🔽 Execução da página
+# 🚀 Executar página
 df = load_data()
 html = render_fightcard_html(df)
-st.markdown(html, unsafe_allow_html=True)
+st.components.v1.html(html, height=6000, scrolling=True)

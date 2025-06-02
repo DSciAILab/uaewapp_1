@@ -3,7 +3,8 @@ import pandas as pd
 
 st.set_page_config(layout="wide", page_title="Fightcard")
 
-# 🔁 Carrega os dados
+st.markdown("<h1 style='text-align:center; color:white;'>FIGHT CARDS</h1>", unsafe_allow_html=True)
+
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -13,101 +14,82 @@ def load_data():
     df["Corner"] = df["Corner"].str.strip().str.lower()
     return df
 
-# 🧱 Gera HTML do fightcard
 def render_fightcard_html(df):
-    style = """
+    html = """
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body, .main { background-color: #0e1117; color: white; }
         .fightcard-table {
             width: 100%;
             border-collapse: collapse;
-            font-family: 'Inter', sans-serif;
+            margin-bottom: 50px;
+            table-layout: fixed;
         }
-        .fightcard-table tr {
-            border-bottom: 1px solid #444;
-        }
-        .fightcard-table td {
+        .fightcard-table th, .fightcard-table td {
             padding: 12px;
             text-align: center;
             vertical-align: middle;
             font-size: 15px;
+            color: white;
         }
         .fightcard-img {
-            width: 80px;
-            height: 80px;
-            border-radius: 8px;
+            width: 100px;
+            height: 100px;
             object-fit: cover;
-            border: 1px solid #555;
+            border-radius: 8px;
         }
         .blue {
-            background-color: #0d2c47;
-            color: white;
-            font-weight: 600;
+            background-color: #0d2d51;
+            font-weight: bold;
         }
         .red {
-            background-color: #440f0f;
-            color: white;
-            font-weight: 600;
+            background-color: #3b1214;
+            font-weight: bold;
         }
         .middle-cell {
-            background-color: #2b2b2b;
-            color: #f5f5f5;
-            font-size: 13px;
+            background-color: #2f2f2f;
             font-weight: bold;
-            line-height: 1.4;
+            font-size: 14px;
         }
-        .header {
+        .event-header {
             background-color: #111;
             color: white;
+            font-weight: bold;
             text-align: center;
-            font-weight: 700;
             font-size: 18px;
             padding: 10px;
         }
-        .subheader {
-            background-color: #0d2c47;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        .subheader-red {
-            background-color: #440f0f;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        .subheader-middle {
-            background-color: #2b2b2b;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
+        .fightcard-table th {
+            background-color: #1c1c1c;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
     </style>
     """
 
-    html = style
     grouped = df.groupby("Event")
 
     for event, group in grouped:
-        html += f"<div class='header'>{event}</div>"
+        html += f"<div class='event-header'>{event}</div>"
         html += """
         <table class='fightcard-table'>
             <thead>
                 <tr>
-                    <td class='subheader' colspan='2'>BLUE CORNER</td>
-                    <td class='subheader-middle'>FIGHT DETAILS</td>
-                    <td class='subheader-red' colspan='2'>RED CORNER</td>
+                    <th colspan='2'>Blue Corner</th>
+                    <th>Fight Details</th>
+                    <th colspan='2'>Red Corner</th>
                 </tr>
             </thead>
             <tbody>
         """
+        fights = group.groupby("FightOrder")
 
-        for fight_order, fight_df in group.groupby("FightOrder"):
+        for fight_order, fight_df in fights:
             blue = fight_df[fight_df["Corner"] == "blue"].squeeze()
             red = fight_df[fight_df["Corner"] == "red"].squeeze()
 
-            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if isinstance(blue, pd.Series) and blue.get("Picture", "") else ""
-            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if isinstance(red, pd.Series) and red.get("Picture", "") else ""
+            blue_img = f"<img src='{blue.get('Picture', '')}' class='fightcard-img'>" if isinstance(blue, pd.Series) and blue.get("Picture") else "<div style='width:100px; height:100px; background:#ccc; border-radius:8px;'></div>"
+            red_img = f"<img src='{red.get('Picture', '')}' class='fightcard-img'>" if isinstance(red, pd.Series) and red.get("Picture") else "<div style='width:100px; height:100px; background:#ccc; border-radius:8px;'></div>"
+
             blue_name = blue.get("Fighter", "") if isinstance(blue, pd.Series) else ""
             red_name = red.get("Fighter", "") if isinstance(red, pd.Series) else ""
             division = blue.get("Division", "") if isinstance(blue, pd.Series) else red.get("Division", "")
@@ -123,12 +105,11 @@ def render_fightcard_html(df):
             </tr>
             """
 
-        html += "</tbody></table><br>"
+        html += "</tbody></table>"
 
     return html
 
-# ▶️ Executar
-st.title("🥋 FIGHT CARDS")
+# Execução da Página
 df = load_data()
 html = render_fightcard_html(df)
-st.markdown(html, unsafe_allow_html=True)
+st.components.v1.html(html, height=6000, scrolling=True)

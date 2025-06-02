@@ -1,39 +1,13 @@
+# 📄 fightcard.py — UAE Warriors App
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Fightcard", layout="wide")
+# 🎛️ Configuração da página
+st.set_page_config(page_title="FightCard", layout="wide")
 
-# Estilo básico
-st.markdown("""
-<style>
-.fightcard-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}
-.fightcard-table td {
-    border: 1px solid #555;
-    padding: 8px;
-    text-align: center;
-    vertical-align: middle;
-}
-.fighter-img {
-    width: 100px;
-    height: 100px;
-    border-radius: 8px;
-    object-fit: cover;
-}
-.fightorder-row {
-    background-color: #222;
-    font-weight: bold;
-    color: #fff;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# 🔐 Conexão segura com Google Sheets
+# 🔐 Autenticação e conexão com a aba Fightcard
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -44,55 +18,73 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
-# 📥 Carregar dados da aba Fightcard
+# 🔄 Carregar dados
 @st.cache_data(ttl=60)
 def load_data():
     df = pd.DataFrame(sheet.get_all_records())
     df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("\u00a0", "")
-    df["Fight_Order"] = pd.to_numeric(df["FightOrder"], errors="coerce")
+    df["Fight_Order"] = pd.to_numeric(df["Fight_Order"], errors="coerce")
     return df
 
 df = load_data()
 
-# 🔁 Agrupar por evento e ordem de luta
+# 🎨 Estilo CSS para centralizar e exibir imagens
+st.markdown("""
+<style>
+.card-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    background-color: #111;
+    border: 1px solid #333;
+    font-size: 0.9rem;
+}
+.card-table th, .card-table td {
+    border: 1px solid #444;
+    padding: 10px;
+    text-align: center;
+    vertical-align: middle;
+    color: white;
+}
+.card-table img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.card-table th {
+    background-color: #222;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 👥 Agrupamento por evento e luta
 grouped = df.groupby(["Event", "Fight_Order"])
 
-st.title("🥊 Fightcard Visual")
+st.title("🧾 FightCard - UAE Warriors")
 
 for (event, fight_order), group in grouped:
-    if group.shape[0] != 2:
-        st.warning(f"{event} - Fight {fight_order}: precisa ter 2 lutadores.")
-        continue
+    if len(group) != 2:
+        continue  # ignorar entradas incompletas
 
-    azul = group[group["Corner"].str.lower() == "blue"]
-    vermelho = group[group["Corner"].str.lower() == "red"]
+    azul = group[group["Corner"].str.lower() == "blue"].iloc[0]
+    vermelho = group[group["Corner"].str.lower() == "red"].iloc[0]
 
-    if azul.empty or vermelho.empty:
-        st.warning(f"{event} - Fight {fight_order}: corner azul ou vermelho ausente.")
-        continue
-
-    fighter_azul = azul.iloc[0]
-    fighter_vermelho = vermelho.iloc[0]
+    st.markdown(f"### 🥊 {event} — Fight #{int(fight_order)}")
 
     table_html = f"""
-    <table class='fightcard-table'>
-        <tr class='fightorder-row'>
-            <td colspan='3'>Event: {event} | Fight {fight_order}</td>
+    <table class="card-table">
+        <tr>
+            <th>Picture</th><th>Fighter</th><th>Division</th>
+            <th>Picture</th><th>Fighter</th><th>Division</th>
         </tr>
         <tr>
-            <td><img src="{fighter_azul['Picture']}" class='fighter-img'></td>
-            <td></td>
-            <td><img src="{fighter_vermelho['Picture']}" class='fighter-img'></td>
-        </tr>
-        <tr>
-            <td>{fighter_azul['Fighter']}</td>
-            <td>VS</td>
-            <td>{fighter_vermelho['Fighter']}</td>
-        </tr>
-        <tr>
-            <td>{fighter_azul['Division']}</td>
-            <td></td>
-            <td>{fighter_vermelho['Division']}</td>
+            <td><img src="{azul['Picture']}" /></td>
+            <td>{azul['Fighter']}</td>
+            <td>{azul['Division']}</td>
+            <td><img src="{vermelho['Picture']}" /></td>
+            <td>{vermelho['Fighter']}</td>
+            <td>{vermelho['Division']}</td>
         </tr>
     </table>
     """

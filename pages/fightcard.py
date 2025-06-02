@@ -3,14 +3,16 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
+# 🔧 Configuração da página
 st.set_page_config(page_title="Fightcard", layout="wide")
 
-# Estilo para centralizar imagens e tabelas
+# 🎨 Estilo visual
 st.markdown("""
     <style>
         .fightcard-table {
             width: 100%;
             border-collapse: collapse;
+            margin-bottom: 20px;
         }
         .fightcard-table th, .fightcard-table td {
             border: 1px solid #444;
@@ -19,9 +21,9 @@ st.markdown("""
             color: white;
         }
         .fightcard-header {
-            background-color: #111;
+            background-color: #333;
             font-weight: bold;
-            font-size: 1.2rem;
+            font-size: 1.1rem;
         }
         .fightcard-img {
             height: 100px;
@@ -32,7 +34,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Google Sheets
+# 🔐 Conexão com Google Sheets
 @st.cache_resource
 def connect_sheet():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -43,7 +45,7 @@ def connect_sheet():
 
 sheet = connect_sheet()
 
-# Carregamento dos dados
+# 📥 Carregar dados da aba Fightcard
 @st.cache_data(ttl=30)
 def load_data():
     df = pd.DataFrame(sheet.get_all_records())
@@ -53,41 +55,39 @@ def load_data():
 
 df = load_data()
 
-# Agrupar por Evento e Ordem de Luta
-agrupado = df.groupby(["Event", "FightOrder"])
-
+# Agrupar por evento e número da luta
+grouped = df.groupby(["Event", "FightOrder"])
 st.title("📋 Fightcard Oficial")
 
-# Renderizar os pares de lutadores lado a lado
-for (evento, ordem), grupo in agrupado:
-    if grupo.shape[0] != 2:
-        continue  # pula se não houver dois lutadores na luta
+last_event = None
 
-    lutadores = grupo.sort_values(by="Corner", ascending=False)  # Azul primeiro, depois Vermelho
+for (event, order), group in grouped:
+    if group.shape[0] != 2:
+        continue  # Ignora lutas incompletas
 
-    azul = lutadores[lutadores["Corner"].str.lower() == "blue"].iloc[0]
-    vermelho = lutadores[lutadores["Corner"].str.lower() == "red"].iloc[0]
+    group = group.sort_values(by="Corner", ascending=False)  # Azul vem primeiro
+    blue = group[group["Corner"].str.lower() == "blue"].iloc[0]
+    red = group[group["Corner"].str.lower() == "red"].iloc[0]
 
-    st.markdown(f"<h4 style='text-align:center; margin-top:30px;'>{evento} — Fight #{int(ordem)}</h4>", unsafe_allow_html=True)
+    if event != last_event:
+        st.subheader(f"📌 {event}")
+        last_event = event
+
     st.markdown(f"""
     <table class='fightcard-table'>
         <tr class='fightcard-header'>
-            <td class='blue'>Picture</td>
-            <td class='blue'>Fighter</td>
-            <td class='blue'>Division</td>
-            <td>VS</td>
-            <td class='red'>Division</td>
-            <td class='red'>Fighter</td>
-            <td class='red'>Picture</td>
+            <td class='blue'>PICTURE</td>
+            <td class='blue'>FIGHTER</td>
+            <td class='fightcard-header'>FIGHT #{int(order)}<br>{blue.Division}</td>
+            <td class='red'>FIGHTER</td>
+            <td class='red'>PICTURE</td>
         </tr>
         <tr>
-            <td class='blue'><img src="{azul.Picture}" class="fightcard-img"></td>
-            <td class='blue'>{azul.Fighter}</td>
-            <td class='blue'>{azul.Division}</td>
-            <td><strong>X</strong></td>
-            <td class='red'>{vermelho.Division}</td>
-            <td class='red'>{vermelho.Fighter}</td>
-            <td class='red'><img src="{vermelho.Picture}" class="fightcard-img"></td>
+            <td class='blue'><img src="{blue.Picture}" class="fightcard-img"></td>
+            <td class='blue'>{blue.Fighter}</td>
+            <td class='fightcard-header'>x</td>
+            <td class='red'>{red.Fighter}</td>
+            <td class='red'><img src="{red.Picture}" class="fightcard-img"></td>
         </tr>
     </table>
     """, unsafe_allow_html=True)

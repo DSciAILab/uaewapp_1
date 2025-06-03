@@ -128,6 +128,6 @@ for idx, row in df.iterrows():
     if not is_registered:
         if st.button(f"Registrar Presença: {name}", key=f"btn_{idx}"):
             st.session_state.attendance[name] = selected_action
-            st.experimental_rerun()
+            st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)

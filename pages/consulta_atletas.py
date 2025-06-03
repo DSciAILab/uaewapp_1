@@ -1,133 +1,96 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Consulta de Atletas")
+# Configurações iniciais
+st.set_page_config(page_title="Consulta de Atletas", layout="wide")
 
-st.markdown("<h2 style='text-align:center; color:white;'>📋 Consulta de Atletas Ativos</h2>", unsafe_allow_html=True)
+# 🔐 Conectar ao Google Sheets
+@st.cache_resource
+def connect_gsheet(sheet_name, tab_name):
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    client = gspread.authorize(creds)
+    worksheet = client.open(sheet_name).worksheet(tab_name)
+    return worksheet
 
-# 🔄 Cache de dados
+# Carregar dados dos atletas
 @st.cache_data
-def load_fighters():
+def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
     df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)]
-    df = df.sort_values(by=["EVENT", "NAME"])
-    
-    # Formatando datas
-    for col in ["DOB", "PASSPORT EXPIRE DATE"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime('%d/%m/%Y')
+    df["EVENT"] = df["EVENT"].fillna("Z")
+    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce").dt.strftime("%d/%m/%Y")
+    df["PASSPORT EXPIRE DATE"] = pd.to_datetime(df["PASSPORT EXPIRE DATE"], errors="coerce").dt.strftime("%d/%m/%Y")
+    return df.sort_values(by=["EVENT", "NAME"])
 
-    return df.reset_index(drop=True)
+# Função para registrar log
+def registrar_log(nome, tipo, user_id):
+    sheet = connect_gsheet("UAEW_App", "Attendance")
+    data_registro = datetime.now().strftime("%d/%m/%Y %H:%M")
+    nova_linha = [nome, data_registro, tipo, user_id]
+    sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
 
-# Estado da presença
-if "attendance" not in st.session_state:
-    st.session_state.attendance = {}
+# Interface
+st.title("Consulta de Atletas")
+user_id = st.text_input("Informe seu PS (ID de usuário)", max_chars=15)
+tipo = st.selectbox("Tipo de verificação", ["Blood Test", "PhotoShoot"])
+status_view = st.radio("Filtro", ["Todos", "Feitos", "Restantes"], horizontal=True)
 
-# 🔎 ID do usuário
-user_id = st.text_input("🔍 Digite o ID do usuário para consulta:", placeholder="Ex: 123456")
+df = load_data()
 
-# Dropdown de ação
-selected_action = st.selectbox("Selecionar Tipo:", ["Blood Test", "PhotoShoot"], index=0)
+# Simular presença registrada em cache
+if "presencas" not in st.session_state:
+    st.session_state["presencas"] = {}
 
-# Filtro por presença
-status_filter = st.radio("Mostrar:", ["Restantes", "Feitos", "Todos"], horizontal=True)
+for i, row in df.iterrows():
+    presenca_id = f"{row['NAME']}_{tipo}"
+    presenca_registrada = st.session_state["presencas"].get(presenca_id, False)
 
-# Carrega dados
-df = load_fighters()
+    if status_view == "Feitos" and not presenca_registrada:
+        continue
+    if status_view == "Restantes" and presenca_registrada:
+        continue
 
-# Aplica filtro do slider
-if status_filter == "Restantes":
-    df = df[~df["NAME"].isin(st.session_state.attendance.keys())]
-elif status_filter == "Feitos":
-    df = df[df["NAME"].isin(st.session_state.attendance.keys())]
-
-# Render HTML
-html = """
-<style>
-    .athlete-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border: 1px solid #444;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 10px;
-    }
-    .athlete-info {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-    }
-    .athlete-img {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 2px solid white;
-    }
-    .athlete-name {
-        font-size: 18px;
-        font-weight: bold;
-    }
-    .registered {
-        color: lightgreen;
-        font-weight: bold;
-        font-size: 14px;
-        margin-left: 10px;
-    }
-    .athlete-table {
-        width: 100%;
-        margin-top: 10px;
-        border-collapse: collapse;
-        font-size: 14px;
-    }
-    .athlete-table td {
-        padding: 4px 8px;
-        border: 1px solid #333;
-    }
-</style>
-"""
-
-st.markdown(html, unsafe_allow_html=True)
-
-for idx, row in df.iterrows():
-    name = row["NAME"]
-    event = row.get("EVENT", "")
-    picture_url = row["PICTURE"] if "PICTURE" in row and pd.notna(row["PICTURE"]) else None
-    picture_html = f"<img src='{picture_url}' class='athlete-img'>" if picture_url else "<div class='athlete-img' style='background:#999;'></div>"
-
-    is_registered = name in st.session_state.attendance
-
-    bg_color = "#1c3b1c" if is_registered else "#1c1c1c"
-    registration_status = "<span class='registered'>Attendance registrada</span>" if is_registered else ""
-
-    st.markdown(f"<div class='athlete-row' style='background-color:{bg_color};'>", unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <div class='athlete-info'>
-            {picture_html}
-            <div class='athlete-name'>{name} {registration_status}<br><span style='font-size:13px; font-weight:normal;'>Evento: {event}</span></div>
+    with st.container():
+        st.markdown(f"""
+        <div style='display:flex; align-items:center; justify-content:space-between; background-color:{"#143d14" if presenca_registrada else "#1e1e1e"}; padding:15px; border-radius:10px; margin-bottom:10px;'>
+            <div style='display:flex; align-items:center; gap:20px;'>
+                <img src='{row["PICTURE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
+                <div>
+                    <h4 style='margin:0;'>{row["NAME"]}</h4>
+                    <p style='margin:0; font-size:14px;'>Evento: <b>{row["EVENT"]}</b></p>
+                </div>
+            </div>
+            <div style='font-size:14px; text-align:right;'>
+                <p><b>Gênero:</b> {row["GENDER"]}</p>
+                <p><b>Nascimento:</b> {row["DOB"]}</p>
+                <p><b>Nacionalidade:</b> {row["NATIONALITY"]}</p>
+                <p><b>Passaporte:</b> {row["PASSPORT"]}</p>
+                <p><b>Expira em:</b> {row["PASSPORT EXPIRE DATE"]}</p>
+            </div>
+            <div style='text-align:right;'>
+                {f"<p style='color:#5efc82; font-weight:bold;'>Attendance registrada</p>" if presenca_registrada else ""}
+                <form method='post'>
+                    <input type='hidden' name='index' value='{i}'>
+                    <button type='submit' name='attend_{i}' style='padding:10px 20px; background-color:#00b300; color:white; border:none; border-radius:5px;'>Attendance</button>
+                </form>
+            </div>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+        """, unsafe_allow_html=True)
 
-    cols = st.columns([1, 1, 1, 1, 1, 2])
-    cols[0].markdown(f"**Gênero:** {row.get('GENDER', '')}")
-    cols[1].markdown(f"**Nascimento:** {row.get('DOB', '')}")
-    cols[2].markdown(f"**Nacionalidade:** {row.get('NATIONALITY', '')}")
-    cols[3].markdown(f"**Passaporte:** {row.get('PASSPORT', '')}")
-    cols[4].markdown(f"**Expira em:** {row.get('PASSPORT EXPIRE DATE', '')}")
-    if isinstance(row.get("PASSPORT IMAGE"), str) and row["PASSPORT IMAGE"].startswith("http"):
-        cols[5].markdown(f"[Ver Imagem]({row['PASSPORT IMAGE']})")
-    else:
-        cols[5].markdown("—")
+        if st.session_state.get(f"clicked_{i}", False):
+            continue
 
-    if not is_registered:
-        if st.button(f"Registrar Presença: {name}", key=f"btn_{idx}"):
-            st.session_state.attendance[name] = selected_action
-            st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
+        if st.button(f"Registrar presença de {row['NAME']}", key=f"attend_{i}"):
+            if not user_id.strip():
+                st.warning("⚠️ Informe seu PS antes de registrar a presença.")
+            else:
+                st.session_state["presencas"][presenca_id] = True
+                registrar_log(row["NAME"], tipo, user_id)
+                st.success("✅ Presença registrada com sucesso!")
+                st.rerun()

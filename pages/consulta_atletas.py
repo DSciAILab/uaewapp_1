@@ -60,7 +60,7 @@ for i, row in df.iterrows():
         st.markdown(f"""
         <div style='display:flex; align-items:center; justify-content:space-between; background-color:{"#143d14" if presenca_registrada else "#1e1e1e"}; padding:15px; border-radius:10px; margin-bottom:10px;'>
             <div style='display:flex; align-items:center; gap:20px;'>
-                <img src='{row["PICTURE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
+                <img src='{row["IMAGE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
                 <div>
                     <h4 style='margin:0;'>{row["NAME"]}</h4>
                     <p style='margin:0; font-size:14px;'>Evento: <b>{row["EVENT"]}</b></p>

@@ -1,110 +1,115 @@
 import streamlit as st
 import pandas as pd
-import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Consulta Atletas")
-
-# --- Autenticação Google Sheets ---
+# --- Autenticação com Google Sheets ---
 @st.cache_resource
 def authenticate_gsheet():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    credentials = ServiceAccountCredentials.from_json_keyfile_name("gs_credentials.json", scope)
-    gc = gspread.authorize(credentials)
-    return gc
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    credentials = Credentials.from_service_account_file("gs_credentials.json", scopes=scope)
+    return gspread.authorize(credentials)
 
-gc = authenticate_gsheet()
-sheet = gc.open_by_url("https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/edit")
-ws_df = sheet.worksheet("df")
-df = pd.DataFrame(ws_df.get_all_records())
+# --- Carregar dados da aba "df" ---
+@st.cache_data
+def load_data():
+    url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
+    df = pd.read_csv(url)
+    df.columns = df.columns.str.strip()
+    df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)]
+    df["EVENT"] = df["EVENT"].fillna("No Event")
+    df["NAME"] = df["NAME"].fillna("Unknown")
+    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce").dt.strftime("%d/%m/%Y")
+    df["PASSPORT EXPIRE DATE"] = pd.to_datetime(df["PASSPORT EXPIRE DATE"], errors="coerce").dt.strftime("%d/%m/%Y")
+    return df.sort_values(by=["EVENT", "NAME"])
 
-# --- Formatando datas ---
-def format_date(date_str):
-    try:
-        return pd.to_datetime(date_str).strftime("%d/%m/%Y")
-    except:
-        return ""
+# --- Registrar presença na aba Attendance ---
+def log_attendance(gclient, name, user_id, tipo):
+    sheet = gclient.open_by_key("1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58")
+    worksheet = sheet.worksheet("Attendance")
+    now = datetime.now().strftime("%d/%m/%Y %H:%M")
+    worksheet.append_row([name, now, tipo, user_id])
 
-df["DOB"] = df["DOB"].apply(format_date)
-df["PASSPORT EXPIRE DATE"] = df["PASSPORT EXPIRE DATE"].apply(format_date)
+# --- Página Streamlit ---
+st.set_page_config(layout="wide", page_title="Athlete Check")
 
-# --- Filtros iniciais ---
-st.markdown("<h2 style='text-align:center; color:white;'>Consulta de Atletas Ativos</h2>", unsafe_allow_html=True)
-col1, col2, col3 = st.columns([2, 2, 2])
+st.markdown("<h2 style='text-align:center; color:white;'>ATHLETE ATTENDANCE SYSTEM</h2>", unsafe_allow_html=True)
+st.markdown("---")
 
-with col1:
-    selected_type = st.selectbox("Selecionar tipo:", ["Blood Test", "PhotoShoot"])
+user_id = st.text_input("🔐 Enter your PS ID to proceed:")
+tipo = st.selectbox("📋 Select Check Type:", ["Blood Test", "PhotoShoot"])
+status_filter = st.radio("📊 Show:", ["Restantes", "Feitos", "Todos"], horizontal=True)
 
-with col2:
-    user_id = st.text_input("Insira seu ID (PS)", placeholder="Ex: PS-123")
+df = load_data()
+gclient = authenticate_gsheet()
 
-with col3:
-    filter_slider = st.radio("Mostrar:", ["Restantes", "Feitos", "Todos"], horizontal=True)
+if "checked" not in st.session_state:
+    st.session_state.checked = {}
 
-# --- Filtrar lutadores ativos ---
-df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == "FALSE")]
-df = df.sort_values(by=["EVENT", "NAME"])
-
-# --- Sessão de estado local ---
-if "attendance" not in st.session_state:
-    st.session_state.attendance = {}
-
-# --- Layout por lutador ---
 for idx, row in df.iterrows():
-    fighter_key = f"{row['NAME']}_{selected_type}"
-    attendance_done = st.session_state.attendance.get(fighter_key, False)
+    name = row["NAME"]
+    event = row["EVENT"]
 
-    if filter_slider == "Feitos" and not attendance_done:
+    if status_filter == "Feitos" and not st.session_state.checked.get(name):
         continue
-    if filter_slider == "Restantes" and attendance_done:
+    if status_filter == "Restantes" and st.session_state.checked.get(name):
         continue
+
+    pic = row.get("PICTURE", "")
+    whatsapp = row.get("MOBILE", "")
+    passport = row.get("PASSPORT IMAGE", "")
+
+    # Estilo visual
+    style = """
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px;
+        margin-bottom: 10px;
+        background-color: #111;
+        border: 1px solid #444;
+        border-radius: 10px;
+    """
+    if st.session_state.checked.get(name):
+        style += "border: 2px solid green; background-color: #123212;"
 
     with st.container():
-        st.markdown("<hr style='border-top: 1px solid gray;'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='{style}'>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns([1, 5])
+        col1, col2, col3, col4 = st.columns([1, 2, 3, 2])
 
         with col1:
-            if row["PICTURE"]:
-                st.image(row["PICTURE"], width=80, caption="", use_column_width=False)
+            if pic:
+                st.markdown(f"<img src='{pic}' style='width:80px; height:80px; border-radius:50%; border:2px solid white; object-fit:cover;'>", unsafe_allow_html=True)
             else:
-                st.markdown("<div style='width:80px; height:80px; border-radius:50%; background:#ccc;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='width:80px; height:80px; background:#555; border-radius:50%;'></div>", unsafe_allow_html=True)
 
         with col2:
-            name_line = f"### {row['NAME']}"
-            if attendance_done:
-                name_line += " ✅ *Attendance registrada*"
-            st.markdown(name_line)
+            st.markdown(f"**{name}**")
+            st.markdown(f"**Event**: {event}")
+            st.markdown(f"**Gender**: {row.get('GENDER', '')}")
+            st.markdown(f"**DOB**: {row.get('DOB', '')}")
+            st.markdown(f"**Nationality**: {row.get('NATIONALITY', '')}")
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.markdown(f"**Evento:** {row['EVENT']}")
-                st.markdown(f"**Gênero:** {row['GENDER']}")
-                st.markdown(f"**Nascimento:** {row['DOB']}")
-                st.markdown(f"**Passaporte:** {row['PASSPORT']}")
-                if row["PASSPORT IMAGE"]:
-                    st.markdown(f"[📎 Ver Passaporte]({row['PASSPORT IMAGE']})", unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"**Passport**: {row.get('PASSPORT', '')}")
+            st.markdown(f"**Expires**: {row.get('PASSPORT EXPIRE DATE', '')}")
+            if passport:
+                st.markdown(f"[📄 View Passport]({passport})", unsafe_allow_html=True)
+            if whatsapp:
+                st.markdown(f"[📲 WhatsApp](https://wa.me/{whatsapp})", unsafe_allow_html=True)
 
-            with col_b:
-                st.markdown(f"**Nacionalidade:** {row['NATIONALITY']}")
-                st.markdown(f"**Expira:** {row['PASSPORT EXPIRE DATE']}")
-                if row.get("MOBILE"):
-                    number = row["MOBILE"].replace(" ", "").replace("+", "")
-                    st.markdown(f"[📱 Enviar WhatsApp](https://wa.me/{number})", unsafe_allow_html=True)
-
-            # --- Botão de presença ---
-            if not attendance_done:
-                if st.button(f"Registrar presença - {row['NAME']}", key=fighter_key):
-                    if not user_id:
-                        st.warning("⚠️ Informe seu PS (ID) antes de registrar a presença.")
+        with col4:
+            if st.session_state.checked.get(name):
+                st.success("✔ Attendance recorded")
+            else:
+                if st.button(f"Mark Attendance - {name}"):
+                    if not user_id.strip():
+                        st.warning("⚠ Please enter your PS ID to register attendance.")
                     else:
-                        st.session_state.attendance[fighter_key] = True
+                        st.session_state.checked[name] = True
+                        log_attendance(gclient, name, user_id, tipo)
+                        st.rerun()
 
-                        # Gravação na aba "Attendance"
-                        ws_attendance = sheet.worksheet("Attendance")
-                        last_row = len(ws_attendance.get_all_values()) + 1
-                        today = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-                        ws_attendance.append_row([row["NAME"], today, selected_type, user_id])
-
-                        st.success("✅ Presença registrada com sucesso.")
+        st.markdown("</div>", unsafe_allow_html=True)

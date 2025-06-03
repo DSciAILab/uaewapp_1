@@ -1,79 +1,133 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Fighters Attendance")
+st.set_page_config(layout="wide", page_title="Consulta de Atletas")
 
-st.markdown("<h2 style='text-align:center; color:white;'>🧾 FIGHTERS ATTENDANCE</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align:center; color:white;'>📋 Consulta de Atletas Ativos</h2>", unsafe_allow_html=True)
 
+# 🔄 Cache de dados
 @st.cache_data
-def load_data():
+def load_fighters():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
     df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)]
-    df["EVENT"] = df["EVENT"].fillna("Unknown")
-    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce").dt.strftime('%d/%m/%Y')
-    df["PASSPORT EXPIRE DATE"] = pd.to_datetime(df["PASSPORT EXPIRE DATE"], errors="coerce").dt.strftime('%d/%m/%Y')
     df = df.sort_values(by=["EVENT", "NAME"])
+    
+    # Formatando datas
+    for col in ["DOB", "PASSPORT EXPIRE DATE"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime('%d/%m/%Y')
+
     return df.reset_index(drop=True)
 
-df = load_data()
-
-# Interface de filtro
-col1, col2 = st.columns([3, 2])
-with col1:
-    selected_type = st.selectbox("🔽 Select Type", ["Blood Test", "PhotoShoot"])
-
-with col2:
-    filter_status = st.radio("🔄 Filter By", ["Todos", "Feitos", "Restantes"], horizontal=True)
-
-# Sessão de presença temporária
+# Estado da presença
 if "attendance" not in st.session_state:
     st.session_state.attendance = {}
 
-# Campo de ID (ainda não usado funcionalmente, mas visível)
-user_id = st.text_input("🔑 Enter Your ID", "")
+# 🔎 ID do usuário
+user_id = st.text_input("🔍 Digite o ID do usuário para consulta:", placeholder="Ex: 123456")
 
-# Renderizar os lutadores
+# Dropdown de ação
+selected_action = st.selectbox("Selecionar Tipo:", ["Blood Test", "PhotoShoot"], index=0)
+
+# Filtro por presença
+status_filter = st.radio("Mostrar:", ["Restantes", "Feitos", "Todos"], horizontal=True)
+
+# Carrega dados
+df = load_fighters()
+
+# Aplica filtro do slider
+if status_filter == "Restantes":
+    df = df[~df["NAME"].isin(st.session_state.attendance.keys())]
+elif status_filter == "Feitos":
+    df = df[df["NAME"].isin(st.session_state.attendance.keys())]
+
+# Render HTML
+html = """
+<style>
+    .athlete-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid #444;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    .athlete-info {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    .athlete-img {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid white;
+    }
+    .athlete-name {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .registered {
+        color: lightgreen;
+        font-weight: bold;
+        font-size: 14px;
+        margin-left: 10px;
+    }
+    .athlete-table {
+        width: 100%;
+        margin-top: 10px;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+    .athlete-table td {
+        padding: 4px 8px;
+        border: 1px solid #333;
+    }
+</style>
+"""
+
+st.markdown(html, unsafe_allow_html=True)
+
 for idx, row in df.iterrows():
-    fighter_id = str(row["ID"])
-    is_present = st.session_state.attendance.get(fighter_id, False)
+    name = row["NAME"]
+    event = row.get("EVENT", "")
+    picture_url = row["PICTURE"] if "PICTURE" in row and pd.notna(row["PICTURE"]) else None
+    picture_html = f"<img src='{picture_url}' class='athlete-img'>" if picture_url else "<div class='athlete-img' style='background:#999;'></div>"
 
-    # Filtragem por slider
-    if filter_status == "Feitos" and not is_present:
-        continue
-    if filter_status == "Restantes" and is_present:
-        continue
+    is_registered = name in st.session_state.attendance
 
-    row_color = "#1f5121" if is_present else "#0e1117"
+    bg_color = "#1c3b1c" if is_registered else "#1c1c1c"
+    registration_status = "<span class='registered'>Attendance registrada</span>" if is_registered else ""
 
-    with st.container():
-        st.markdown(f"""
-            <div style='background:{row_color}; padding:15px; border-radius:10px; margin-bottom:10px; color:white;'>
-                <div style='display:flex; align-items:center; gap:20px;'>
-                    <img src='{row["PICTURE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
-                    <div style='flex-grow:1;'>
-                        <h4 style='margin:0;'>{row["NAME"]} {"✅ Attendance registrada" if is_present else ""}</h4>
-                        <p style='margin:0; font-size:13px;'>Event: {row["EVENT"]}</p>
-                    </div>
-                    <form action='/{selected_type}/{fighter_id}' method='post'>
-                        <button type='submit' name='attendance' style='padding:8px 16px; background:#4CAF50; color:white; border:none; border-radius:6px; cursor:pointer;'>Attendance</button>
-                    </form>
-                </div>
-                <hr style='border:1px solid #444;'>
-                <table style='width:100%; color:white; font-size:14px;'>
-                    <tr><td><b>Gender:</b></td><td>{row["GENDER"]}</td></tr>
-                    <tr><td><b>DOB:</b></td><td>{row["DOB"]}</td></tr>
-                    <tr><td><b>Nationality:</b></td><td>{row["NATIONALITY"]}</td></tr>
-                    <tr><td><b>Passport:</b></td><td>{row["PASSPORT"]}</td></tr>
-                    <tr><td><b>Expiry:</b></td><td>{row["PASSPORT EXPIRE DATE"]}</td></tr>
-                    <tr><td><b>Passport Image:</b></td><td><a href="{row["PASSPORT IMAGE"]}" target="_blank">📎 View</a></td></tr>
-                </table>
-            </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"<div class='athlete-row' style='background-color:{bg_color};'>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class='athlete-info'>
+            {picture_html}
+            <div class='athlete-name'>{name} {registration_status}<br><span style='font-size:13px; font-weight:normal;'>Evento: {event}</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        # Botão funcional
-        if st.button(f"Registrar presença para {row['NAME']}", key=f"btn_{fighter_id}"):
-            st.session_state.attendance[fighter_id] = True
+    cols = st.columns([1, 1, 1, 1, 1, 2])
+    cols[0].markdown(f"**Gênero:** {row.get('GENDER', '')}")
+    cols[1].markdown(f"**Nascimento:** {row.get('DOB', '')}")
+    cols[2].markdown(f"**Nacionalidade:** {row.get('NATIONALITY', '')}")
+    cols[3].markdown(f"**Passaporte:** {row.get('PASSPORT', '')}")
+    cols[4].markdown(f"**Expira em:** {row.get('PASSPORT EXPIRE DATE', '')}")
+    if isinstance(row.get("PASSPORT IMAGE"), str) and row["PASSPORT IMAGE"].startswith("http"):
+        cols[5].markdown(f"[Ver Imagem]({row['PASSPORT IMAGE']})")
+    else:
+        cols[5].markdown("—")
+
+    if not is_registered:
+        if st.button(f"Registrar Presença: {name}", key=f"btn_{idx}"):
+            st.session_state.attendance[name] = selected_action
             st.experimental_rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)

@@ -1,92 +1,79 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Consulta de Atletas Ativos")
-st.markdown("<h1 style='text-align:center;'>🎯 Consulta de Atletas Ativos</h1>", unsafe_allow_html=True)
+st.set_page_config(layout="wide", page_title="Fighters Attendance")
+
+st.markdown("<h2 style='text-align:center; color:white;'>🧾 FIGHTERS ATTENDANCE</h2>", unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
-    df["INACTIVE"] = df["INACTIVE"].astype(str).str.lower() == "true"
-    return df
+    df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)]
+    df["EVENT"] = df["EVENT"].fillna("Unknown")
+    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce").dt.strftime('%d/%m/%Y')
+    df["PASSPORT EXPIRE DATE"] = pd.to_datetime(df["PASSPORT EXPIRE DATE"], errors="coerce").dt.strftime('%d/%m/%Y')
+    df = df.sort_values(by=["EVENT", "NAME"])
+    return df.reset_index(drop=True)
 
 df = load_data()
 
-# Filtro: somente fighters ativos
-filtered = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-filtered = filtered.sort_values(by=["EVENT", "NAME"])
+# Interface de filtro
+col1, col2 = st.columns([3, 2])
+with col1:
+    selected_type = st.selectbox("🔽 Select Type", ["Blood Test", "PhotoShoot"])
 
-# Estilo CSS
-st.markdown("""
-    <style>
-    .circle-img {
-        width: 70px;
-        height: 70px;
-        border-radius: 50%;
-        overflow: hidden;
-        margin-right: 15px;
-        display: inline-block;
-        vertical-align: middle;
-    }
-    .circle-img img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .fighter-name {
-        font-weight: bold;
-        font-size: 1.2rem;
-        display: inline-block;
-        vertical-align: middle;
-    }
-    .info-table {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 10px;
-    }
-    .info-table td {
-        padding: 6px 10px;
-        border: 1px solid #555;
-    }
-    .info-table td.title {
-        background-color: #222;
-        font-weight: bold;
-        color: white;
-        width: 250px;
-    }
-    .box {
-        border: 1px solid #333;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 25px;
-        background-color: #1c1c1c;
-    }
-    </style>
-""", unsafe_allow_html=True)
+with col2:
+    filter_status = st.radio("🔄 Filter By", ["Todos", "Feitos", "Restantes"], horizontal=True)
 
-for _, row in filtered.iterrows():
-    img_url = row.get("PICTURE", "")
-    nome = row.get("NAME", "")
-    st.markdown(f"<div class='box'>", unsafe_allow_html=True)
+# Sessão de presença temporária
+if "attendance" not in st.session_state:
+    st.session_state.attendance = {}
 
-    # Nome + imagem
-    st.markdown(f"""
-        <div class='circle-img'><img src='{img_url}'></div>
-        <span class='fighter-name'>{nome}</span>
-    """, unsafe_allow_html=True)
+# Campo de ID (ainda não usado funcionalmente, mas visível)
+user_id = st.text_input("🔑 Enter Your ID", "")
 
-    # Tabela com dados
-    st.markdown(f"""
-        <table class='info-table'>
-            <tr><td class='title'>Gender</td><td>{row.get("GENDER", "—")}</td></tr>
-            <tr><td class='title'>Date of Birth</td><td>{row.get("DOB", "—")}</td></tr>
-            <tr><td class='title'>Nationality</td><td>{row.get("NATIONALITY", "—")}</td></tr>
-            <tr><td class='title'>Passport</td><td>{row.get("PASSPORT", "—")}</td></tr>
-            <tr><td class='title'>Passport Expire Date</td><td>{row.get("PASSPORT EXPIRE DATE", "—")}</td></tr>
-            <tr><td class='title'>Passport Image</td><td><a href='{row.get("PASSPORT IMAGE", "#")}' target='_blank'>Visualizar</a></td></tr>
-        </table>
-    """, unsafe_allow_html=True)
+# Renderizar os lutadores
+for idx, row in df.iterrows():
+    fighter_id = str(row["ID"])
+    is_present = st.session_state.attendance.get(fighter_id, False)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Filtragem por slider
+    if filter_status == "Feitos" and not is_present:
+        continue
+    if filter_status == "Restantes" and is_present:
+        continue
+
+    row_color = "#1f5121" if is_present else "#0e1117"
+
+    with st.container():
+        st.markdown(f"""
+            <div style='background:{row_color}; padding:15px; border-radius:10px; margin-bottom:10px; color:white;'>
+                <div style='display:flex; align-items:center; gap:20px;'>
+                    <img src='{row["PICTURE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
+                    <div style='flex-grow:1;'>
+                        <h4 style='margin:0;'>{row["NAME"]} {"✅ Attendance registrada" if is_present else ""}</h4>
+                        <p style='margin:0; font-size:13px;'>Event: {row["EVENT"]}</p>
+                    </div>
+                    <form action='/{selected_type}/{fighter_id}' method='post'>
+                        <button type='submit' name='attendance' style='padding:8px 16px; background:#4CAF50; color:white; border:none; border-radius:6px; cursor:pointer;'>Attendance</button>
+                    </form>
+                </div>
+                <hr style='border:1px solid #444;'>
+                <table style='width:100%; color:white; font-size:14px;'>
+                    <tr><td><b>Gender:</b></td><td>{row["GENDER"]}</td></tr>
+                    <tr><td><b>DOB:</b></td><td>{row["DOB"]}</td></tr>
+                    <tr><td><b>Nationality:</b></td><td>{row["NATIONALITY"]}</td></tr>
+                    <tr><td><b>Passport:</b></td><td>{row["PASSPORT"]}</td></tr>
+                    <tr><td><b>Expiry:</b></td><td>{row["PASSPORT EXPIRE DATE"]}</td></tr>
+                    <tr><td><b>Passport Image:</b></td><td><a href="{row["PASSPORT IMAGE"]}" target="_blank">📎 View</a></td></tr>
+                </table>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Botão funcional
+        if st.button(f"Registrar presença para {row['NAME']}", key=f"btn_{fighter_id}"):
+            st.session_state.attendance[fighter_id] = True
+            st.experimental_rerun()

@@ -25,10 +25,12 @@ def get_gspread_client():
         st.error(f"Error connecting to Google API: {e}", icon="🚨")
         st.stop()
 
-def connect_gsheet_tab(client, sheet_name: str, tab_name: str):
-    """Conecta-se a uma aba específica de uma planilha."""
+# Esta função não precisa mais de client como argumento se chamada por funções que já têm acesso a ele
+# ou se as funções que a usam obtêm o cliente por si mesmas.
+def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
+    """Conecta-se a uma aba específica de uma planilha usando um cliente gspread fornecido."""
     try:
-        spreadsheet = client.open(sheet_name)
+        spreadsheet = gspread_client.open(sheet_name)
         worksheet = spreadsheet.worksheet(tab_name)
         return worksheet
     except gspread.exceptions.SpreadsheetNotFound:
@@ -71,21 +73,22 @@ def load_athlete_data():
 
 # --- 3.5. User Data Loading and Validation ---
 @st.cache_data(ttl=300) # Cache da lista de usuários por 5 minutos
-def load_users_data(gspread_client, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
+def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users"): # Não recebe mais gspread_client
     """Carrega todos os dados da aba 'Users'."""
     try:
-        users_worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
-        users_data = users_worksheet.get_all_records() # Lista de dicionários
+        # Obtém o cliente gspread aqui dentro
+        gspread_client_internal = get_gspread_client() 
+        users_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, users_tab_name)
+        users_data = users_worksheet.get_all_records()
         if not users_data:
             st.warning(f"A aba '{users_tab_name}' está vazia ou não pôde ser lida.", icon="⚠️")
-            return [] # Retorna lista vazia
+            return []
         return users_data
     except Exception as e:
         st.error(f"Erro ao carregar dados da aba de usuários '{users_tab_name}': {e}", icon="🚨")
-        return [] # Retorna lista vazia em caso de erro
+        return []
 
-# Esta função NÃO é mais cacheada diretamente com @st.cache_data
-def get_valid_user_info(gspread_client, user_ps_id: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
+def get_valid_user_info(user_ps_id: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
     """
     Valida o PS ID do usuário contra os dados carregados da aba 'Users'.
     Retorna um dicionário com dados do usuário se encontrado, None caso contrário.
@@ -94,10 +97,10 @@ def get_valid_user_info(gspread_client, user_ps_id: str, sheet_name: str = "UAEW
         return None
     
     # Carrega os dados dos usuários (usará o cache se disponível)
-    all_users = load_users_data(gspread_client, sheet_name, users_tab_name)
+    # Não passa gspread_client aqui, pois load_users_data o obtém internamente
+    all_users = load_users_data(sheet_name, users_tab_name) 
     
-    if not all_users: # Se all_users for None ou lista vazia
-        # A mensagem de erro/aviso já foi dada por load_users_data
+    if not all_users:
         return None
 
     for user_record in all_users:
@@ -106,13 +109,14 @@ def get_valid_user_info(gspread_client, user_ps_id: str, sheet_name: str = "UAEW
             return user_record
     return None
 
-
 # --- 4. Logging Function ---
-def registrar_log(gspread_client, athlete_id: str, nome: str, tipo: str, user_id: str,
+def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
                   sheet_name: str = "UAEW_App", attendance_tab_name: str = "Attendance"):
     """Registers an attendance log entry."""
     try:
-        log_sheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
+        # Obtém o cliente gspread aqui dentro para registrar o log
+        gspread_client_internal = get_gspread_client()
+        log_sheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
         data_registro = datetime.now()
         nova_linha = [
             str(athlete_id), nome, tipo, user_id,
@@ -137,7 +141,7 @@ def is_blood_test_expired(blood_test_date_str: str) -> bool:
 # --- 6. Main Application Logic ---
 st.title("Consulta de Atletas")
 
-gspread_client = get_gspread_client()
+# Removido gspread_client daqui, pois as funções o obterão internamente
 
 for key, default_val in [
     ("presencas", {}), ("warning_message", None), ("user_confirmed", False),
@@ -159,7 +163,8 @@ with st.container():
         if st.button("Confirmar Usuário", key="confirm_user_btn", use_container_width=True):
             user_input_stripped = st.session_state['user_id_input'].strip()
             if user_input_stripped:
-                user_info = get_valid_user_info(gspread_client, user_input_stripped) # Chama a função não cacheada
+                # Não passa gspread_client para get_valid_user_info
+                user_info = get_valid_user_info(user_input_stripped) 
                 if user_info:
                     st.session_state['current_user_id'] = user_input_stripped
                     st.session_state['current_user_name'] = str(user_info.get("NOME", user_input_stripped)).strip()
@@ -193,7 +198,8 @@ user_id_for_ops = st.session_state['current_user_id']
 
 if st.session_state['user_confirmed'] and user_id_for_ops:
     if st.button("🔄 Atualizar Dados (Atletas e Usuários)", key="refresh_data_button", help="Recarrega os dados da planilha do Google."):
-        st.cache_data.clear() # Limpa o cache de load_athlete_data e load_users_data
+        st.cache_data.clear()
+        st.cache_resource.clear() # Também limpar o cache do cliente gspread para forçar uma nova autenticação se necessário
         st.toast("Dados atualizados! Recarregando...", icon="🔄")
         st.rerun()
 
@@ -206,14 +212,12 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         horizontal=True, help="Filtre os atletas por status de verificação para o TIPO selecionado."
     )
     
-    df_athletes = load_athlete_data() # Usa dados cacheados dos atletas
+    df_athletes = load_athlete_data()
     
     if df_athletes.empty:
         st.info("Nenhum dado de atleta para exibir no momento.")
     else:
         st.markdown(f"Exibindo **{len(df_athletes)}** atletas.")
-        # O restante do loop para exibir os cards dos atletas permanece o mesmo
-        # ... (código dos cards omitido para brevidade, mas é o mesmo de antes) ...
         for i, row in df_athletes.iterrows():
             presenca_id_para_tipo_atual = f"{row['NAME']}_{tipo}"
             presenca_registrada_para_tipo_atual = st.session_state["presencas"].get(presenca_id_para_tipo_atual, False)
@@ -294,16 +298,11 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             </div>
             """, unsafe_allow_html=True)
 
-            button_text = f"Marcar '{tipo}' como FEITO"
-            if presenca_registrada_para_tipo_atual:
-                button_text = f"'{tipo}' já foi feito (Refazer?)"
-
-            # Corrigindo a chamada do on_click para registrar_log
             st.button(
-                button_text,
+                f"Marcar '{tipo}' como FEITO{' (Refazer?)' if presenca_registrada_para_tipo_atual else ''}",
                 key=f"attend_button_{row['ID']}_{tipo.replace(' ', '_')}_{i}",
                 on_click=registrar_log,
-                args=(gspread_client, str(row['ID']), row['NAME'], tipo, st.session_state['current_user_id']), # Passando gspread_client e outros args
+                args=(str(row['ID']), row['NAME'], tipo, st.session_state['current_user_id']), # Não precisa mais passar gspread_client
                 type="secondary" if presenca_registrada_para_tipo_atual else "primary",
                 use_container_width=True
             )

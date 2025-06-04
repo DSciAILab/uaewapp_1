@@ -46,9 +46,18 @@ def load_data():
             df[col] = pd.to_datetime(df[col], errors="coerce")
             df[col] = df[col].dt.strftime("%d/%m/%Y").fillna("")
 
+        # Ensure 'IMAGE', 'PASSPORT IMAGE', and 'MOBILE' columns exist
         if "IMAGE" not in df.columns:
             df["IMAGE"] = ""
         df["IMAGE"] = df["IMAGE"].fillna("")
+
+        if "PASSPORT IMAGE" not in df.columns:
+            df["PASSPORT IMAGE"] = ""
+        df["PASSPORT IMAGE"] = df["PASSPORT IMAGE"].fillna("") # Ensure empty string for missing links
+
+        if "MOBILE" not in df.columns:
+            df["MOBILE"] = ""
+        df["MOBILE"] = df["MOBILE"].fillna("") # Ensure empty string for missing numbers
 
         st.success("Athlete data loaded and processed successfully.", icon="✅")
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
@@ -58,14 +67,16 @@ def load_data():
         st.stop()
 
 # --- Logging Function ---
-def registrar_log(nome: str, tipo: str, user_id: str):
+def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str): # Added athlete_id
     """
     Registers an attendance log entry in the 'Attendance' Google Sheet.
+    Order: ID, NAME, Tipo de verificação, usuário.
     """
     try:
         sheet = connect_gsheet("UAEW_App", "Attendance")
         data_registro = datetime.now().strftime("%d/%m/%Y %H:%M")
-        nova_linha = [nome, data_registro, tipo, user_id]
+        # Ensure the order is ID, NAME, Tipo de verificação, usuário
+        nova_linha = [athlete_id, nome, tipo, user_id, data_registro] # Changed order
         sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"Attendance registered for {nome} ({tipo}).", icon="✍️")
     except Exception as e:
@@ -82,8 +93,7 @@ def is_blood_test_expired(blood_test_date_str: str) -> bool:
         return True
     try:
         blood_test_date = datetime.strptime(blood_test_date_str, "%d/%m/%Y")
-        # Define 6 months as 182 days (approx. average for 6 months)
-        six_months_ago = datetime.now() - timedelta(days=182)
+        six_months_ago = datetime.now() - timedelta(days=182) # Approximately 6 months
         return blood_test_date < six_months_ago
     except ValueError:
         return True
@@ -101,16 +111,19 @@ df = load_data()
 # Initialize session state for attendance tracking
 if "presencas" not in st.session_state:
     st.session_state["presencas"] = {}
+if 'warning_message' not in st.session_state:
+    st.session_state['warning_message'] = None
+
 
 # Function to handle button clicks
-def handle_attendance_click(athlete_name, current_tipo, user_id_val):
+def handle_attendance_click(athlete_id_val, athlete_name, current_tipo, user_id_val):
     """Callback function for attendance button clicks."""
     presenca_id = f"{athlete_name}_{current_tipo}"
     if not user_id_val.strip():
         st.session_state['warning_message'] = "⚠️ Informe seu PS antes de registrar a presença."
     else:
-        st.session_state["presencas"][presenca_id] = True
-        registrar_log(athlete_name, current_tipo, user_id_val)
+        registrar_log(athlete_id_val, athlete_name, current_tipo, user_id_val) # Pass athlete_id
+        st.session_state["presencas"][presenca_id] = True # Mark as attended after successful log
         st.session_state['warning_message'] = None # Clear any previous warning
         st.rerun()
 
@@ -119,9 +132,8 @@ if df.empty:
     st.info("No athletes found matching the criteria.", icon="ℹ️")
 else:
     # Display warning if present (cleared on successful action or input)
-    if 'warning_message' in st.session_state and st.session_state['warning_message']:
+    if st.session_state['warning_message']:
         st.warning(st.session_state['warning_message'], icon="🚨")
-
 
     for i, row in df.iterrows():
         presenca_id = f"{row['NAME']}_{tipo}"
@@ -134,28 +146,54 @@ else:
 
         blood_info = ""
         blood_test_date_display = row.get("BLOOD TEST", "")
+        has_blood_test_info = pd.notna(blood_test_date_display) and str(blood_test_date_display).strip() != ""
         is_expired = False
 
         if tipo == "Blood Test":
-            if pd.notna(blood_test_date_display) and str(blood_test_date_display).strip() != "":
+            if has_blood_test_info:
                 is_expired = is_blood_test_expired(blood_test_date_display)
                 color = "red" if is_expired else "#A0F0A0" # Lighter green for valid, red for expired
                 blood_info = f"<p style='margin:0; font-size:13px; color:{color};'>Blood Test in: {blood_test_date_display}{' <span style=\"font-weight:bold;\">(Expired)</span>' if is_expired else ''}</p>"
             else:
                 blood_info = "<p style='margin:0; font-size:13px; color:red;'>Blood Test: Not Recorded</p>"
 
-        button_text = "Subscrever attendance por uma nova?" if presenca_registrada else "Registrar Attendance"
-        button_color = "darkgreen" if presenca_registrada else "#007bff" # Original dark green / blue
+        # Determine card background color
+        card_bg_color = "#1e1e1e" # Default dark grey
+        if presenca_registrada:
+            card_bg_color = "#143d14" # Dark green if attended
+        elif has_blood_test_info and tipo == "Blood Test": # Highlight yellow only if Blood Test type is selected and data exists
+            card_bg_color = "#4D4600" # A darker yellow/gold for highlight
 
-        # Main athlete card using markdown
+        # Prepare Passport Image Link
+        passport_image_link = ""
+        if row.get("PASSPORT IMAGE") and str(row["PASSPORT IMAGE"]).strip():
+            passport_image_link = f"<tr><td style='padding-right:10px;'><b>Passaporte Imagem:</b></td><td><a href='{row['PASSPORT IMAGE']}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>"
+
+        # Prepare WhatsApp Link
+        whatsapp_link = ""
+        # Assuming mobile numbers might start with '+', if not, you might need to prepend '+971' or relevant country code
+        mobile_number = str(row.get("MOBILE", "")).strip().replace(" ", "").replace("-", "")
+        if mobile_number:
+            # WhatsApp link format: https://wa.me/NUMBER_WITH_COUNTRY_CODE (e.g., +971501234567)
+            # You might need to adjust the country code if it's not present in the sheet
+            # Example: if numbers are like 501234567 and UAE country code is +971
+            if not mobile_number.startswith('+'):
+                # Heuristic: if it's 9 digits or more, assume a common local format and prepend country code
+                if len(mobile_number) >= 9: # Common length for mobile numbers
+                    mobile_number = "+971" + mobile_number # Prepend UAE country code
+            whatsapp_link = f"<tr><td style='padding-right:10px;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{mobile_number}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
+
+
+        # HTML for the athlete card
         st.markdown(f"""
-        <div style='background-color:{"#143d14" if presenca_registrada else "#1e1e1e"}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
+        <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
             <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
                 <div style='display:flex; align-items:center; gap:15px;'>
                     <img src='{row["IMAGE"] if row["IMAGE"] else "https://via.placeholder.com/80?text=No+Image"}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
                     <div>
                         <h4 style='margin:0;'>{row["NAME"]}</h4>
                         <p style='margin:0; font-size:14px; color:#cccccc;'>{row["EVENT"]}</p>
+                        <p style='margin:0; font-size:13px; color:#cccccc;'>ID: {row["ID"]}</p>
                         {blood_info}
                     </div>
                 </div>
@@ -165,21 +203,22 @@ else:
                     <tr><td style='padding-right:10px;'><b>Nacionalidade:</b></td><td>{row["NATIONALITY"]}</td></tr>
                     <tr><td style='padding-right:10px;'><b>Passaporte:</b></td><td>{row["PASSPORT"]}</td></tr>
                     <tr><td style='padding-right:10px;'><b>Expira em:</b></td><td>{row["PASSPORT EXPIRE DATE"]}</td></tr>
+                    {passport_image_link}
+                    {whatsapp_link}
                 </table>
             </div>
-            </div>
+        </div>
         """, unsafe_allow_html=True)
 
-        # Directly place the Streamlit button OUTSIDE the markdown, after the card div
-        # This button will now be styled by Streamlit and trigger the callback
+        # Streamlit button after the card
+        button_text = "Subscrever attendance por uma nova?" if presenca_registrada else "Registrar Attendance"
         st.button(
             button_text,
             key=f"attend_button_{i}",
             on_click=handle_attendance_click,
-            args=(row['NAME'], tipo, user_id), # Pass arguments to the callback
-            type="secondary" if presenca_registrada else "primary", # Uses Streamlit's default styling types
-            use_container_width=True # Make button take full width of its column
+            args=(row['ID'], row['NAME'], tipo, user_id), # Pass ID as the first argument
+            type="secondary" if presenca_registrada else "primary",
+            use_container_width=True
         )
 
-        # Add a small separator for visual clarity between athlete cards and their buttons
-        st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True) # Increased space
+        st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)

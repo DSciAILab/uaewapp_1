@@ -118,24 +118,25 @@ if 'user_confirmed' not in st.session_state:
     st.session_state['user_confirmed'] = False
 if 'current_user_id' not in st.session_state:
     st.session_state['current_user_id'] = ""
+if 'user_id_input' not in st.session_state: # To store the text input field's content
+    st.session_state['user_id_input'] = st.session_state['current_user_id']
+
 
 # --- 6.2. User ID Confirmation Section ---
 with st.container():
     col1, col2 = st.columns([0.7, 0.3])
     with col1:
-        temp_user_id = st.text_input(
+        # Store the text input's current value in 'user_id_input' to track changes
+        st.session_state['user_id_input'] = st.text_input(
             "Informe seu PS (ID de usuário)",
-            value=st.session_state.get('user_id_input', st.session_state['current_user_id']), # Use a separate key for input field
+            value=st.session_state['user_id_input'], # Bind to its own session state variable
             max_chars=15,
             help="Seu ID de usuário para registrar a presença.",
-            key="user_id_input_field" # Ensure a unique key for this specific input
+            key="user_id_input_field"
         )
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Confirmar Usuário", key="confirm_user_btn", use_container_width=True):
-            # Update the 'user_id_input' in session state from the text input field
-            st.session_state['user_id_input'] = temp_user_id
-
             if st.session_state['user_id_input'].strip():
                 st.session_state['current_user_id'] = st.session_state['user_id_input'].strip()
                 st.session_state['user_confirmed'] = True
@@ -143,22 +144,28 @@ with st.container():
                 st.success(f"Usuário '{st.session_state['current_user_id']}' confirmado!", icon="✅")
             else:
                 st.session_state['warning_message'] = "⚠️ O ID do usuário não pode ser vazio."
-                st.session_state['user_confirmed'] = False
+                st.session_state['user_confirmed'] = False # Ensure this is reset
                 st.warning(st.session_state['warning_message'], icon="🚨")
 
 # Display confirmed user ID or prompt
 if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
     st.info(f"**Usuário atual confirmado:** `{st.session_state['current_user_id']}`", icon="👤")
-else:
+elif not st.session_state['user_confirmed'] and not st.session_state['warning_message']: # Initial state or after successful change
     st.warning("🚨 Por favor, digite e confirme seu ID de usuário acima para prosseguir.", icon="🚨")
 
-# Reset confirmation if the user changes the ID in the input field after confirming
-if 'user_id_input' in st.session_state and \
-   st.session_state['current_user_id'] != st.session_state['user_id_input'] and \
+
+# Reset confirmation if the user changes the ID in the input field AFTER a confirmation
+if st.session_state['current_user_id'] != st.session_state['user_id_input'].strip() and \
    st.session_state['user_confirmed']:
     st.session_state['user_confirmed'] = False
     st.session_state['warning_message'] = "⚠️ ID do usuário alterado. Por favor, confirme novamente."
+    # This warning will be displayed on the next rerun due to Streamlit's execution model
+    # To show it immediately, you might need st.rerun() here, but that can cause loops if not careful.
+    # For now, it will show when Streamlit naturally reruns (e.g., after this script block finishes).
+
+if st.session_state.get('warning_message') and not st.session_state.get('user_confirmed'):
     st.warning(st.session_state['warning_message'], icon="🚨")
+
 
 user_id_for_ops = st.session_state['current_user_id']
 
@@ -206,7 +213,7 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             # --- START: ALWAYS DISPLAY BLOOD TEST INFO ---
             blood_test_date_str = row.get("BLOOD TEST", "")
             has_blood_test_info = pd.notna(blood_test_date_str) and str(blood_test_date_str).strip() != ""
-            blood_test_is_expired = False
+            blood_test_is_expired = False # Initialize
             blood_info_html = ""
 
             if has_blood_test_info:
@@ -223,12 +230,10 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             if presenca_registrada_para_tipo_atual:
                 card_bg_color = "#143d14" # Dark green if attendance for *current tipo* is registered
             elif tipo == "Blood Test" and not presenca_registrada_para_tipo_atual:
-                # If current check is "Blood Test" and not yet done, make it stand out slightly
-                # (This could be more nuanced, e.g., if blood test is also expired)
-                if has_blood_test_info and not blood_test_is_expired:
-                    card_bg_color = "#3D3D00" # Yellowish if BT exists, is valid, but not yet checked in app
-                elif blood_test_is_expired or not has_blood_test_info:
-                     card_bg_color = "#4D1A00" # Orangey/Reddish if BT is expired/missing and current check is BT
+                if has_blood_test_info and not blood_test_is_expired: # Blood test exists, is valid, but not checked in app
+                    card_bg_color = "#3D3D00" # Dark Yellowish
+                elif blood_test_is_expired or not has_blood_test_info: # Blood test expired/missing and current check is BT
+                     card_bg_color = "#4D1A00" # Dark Orangey/Reddish
 
             # Passport image link
             passport_image_link_html = ""
@@ -242,11 +247,11 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                 if not mobile_number.startswith('+') and mobile_number.startswith('00'):
                      mobile_number = "+" + mobile_number[2:]
                 elif not mobile_number.startswith('+'):
-                    # Basic assumption for UAE numbers if no country code
-                    if len(mobile_number) >= 9 and not mobile_number.startswith("971"):
+                    if len(mobile_number) >= 9 and not mobile_number.startswith("971"): # Common UAE local format
                          mobile_number = "+971" + mobile_number.lstrip('0')
-                    elif not mobile_number.startswith("971"):
-                         mobile_number = "+" + mobile_number # If it's already a full international number without +
+                    # Add more specific country code logic here if needed, or assume it's already international without '+'
+                    elif not mobile_number.startswith("971"): # If it's some other number not starting with +, prefix +
+                         mobile_number = "+" + mobile_number
                 whatsapp_link_html = f"<tr><td style='padding-right:10px;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{mobile_number}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
 
 
@@ -254,7 +259,8 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             st.markdown(f"""
             <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
                 <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
-                    {''  /* Main content column */}
+                    {'' # This was an empty string placeholder, removed problematic comment syntax inside {}
+                    }
                     <div style='display:flex; align-items:center; gap:15px; flex-basis: 300px; flex-grow: 1;'>
                         <img src='{row["IMAGE"] if row["IMAGE"] else "https://via.placeholder.com/80?text=No+Image"}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
                         <div>
@@ -264,7 +270,8 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                             {blood_info_html} {/* BLOOD TEST INFO ALWAYS DISPLAYED HERE */}
                         </div>
                     </div>
-                    {'' /* Details table column */}
+                    {'' # This was an empty string placeholder, removed problematic comment syntax inside {}
+                    }
                     <div style='flex-basis: 300px; flex-grow: 1;'>
                         <table style='font-size:14px; color:white; border-collapse:collapse; width:100%;'>
                             <tr><td style='padding-right:10px;'><b>Gênero:</b></td><td>{row["GENDER"]}</td></tr>
@@ -294,9 +301,7 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                 use_container_width=True
             )
             st.markdown("<hr style='border-top: 1px solid #333; margin-top: 10px; margin-bottom: 25px;'>", unsafe_allow_html=True)
-else:
-    # This part is executed if user is not confirmed
-    if not st.session_state['user_confirmed'] and st.session_state['warning_message']:
-        # If there was a warning from a failed confirmation attempt, display it
-        st.warning(st.session_state['warning_message'], icon="🚨")
-    # The general prompt to confirm user ID is already displayed above
+# else:
+    # This part is executed if user is not confirmed.
+    # Warnings are now handled above more dynamically.
+    # The initial prompt to confirm ID is also handled above.

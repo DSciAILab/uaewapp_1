@@ -46,18 +46,17 @@ def load_data():
             df[col] = pd.to_datetime(df[col], errors="coerce")
             df[col] = df[col].dt.strftime("%d/%m/%Y").fillna("")
 
-        # Ensure 'IMAGE', 'PASSPORT IMAGE', and 'MOBILE' columns exist
         if "IMAGE" not in df.columns:
             df["IMAGE"] = ""
         df["IMAGE"] = df["IMAGE"].fillna("")
 
         if "PASSPORT IMAGE" not in df.columns:
             df["PASSPORT IMAGE"] = ""
-        df["PASSPORT IMAGE"] = df["PASSPORT IMAGE"].fillna("") # Ensure empty string for missing links
+        df["PASSPORT IMAGE"] = df["PASSPORT IMAGE"].fillna("")
 
         if "MOBILE" not in df.columns:
             df["MOBILE"] = ""
-        df["MOBILE"] = df["MOBILE"].fillna("") # Ensure empty string for missing numbers
+        df["MOBILE"] = df["MOBILE"].fillna("")
 
         st.success("Athlete data loaded and processed successfully.", icon="✅")
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
@@ -67,16 +66,22 @@ def load_data():
         st.stop()
 
 # --- Logging Function ---
-def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str): # Added athlete_id
+def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str):
     """
     Registers an attendance log entry in the 'Attendance' Google Sheet.
-    Order: ID, NAME, Tipo de verificação, usuário.
+    Order: ID, NAME, Tipo de verificação, usuário, Dia, Mês, Ano, Hora.
     """
     try:
         sheet = connect_gsheet("UAEW_App", "Attendance")
-        data_registro = datetime.now().strftime("%d/%m/%Y %H:%M")
-        # Ensure the order is ID, NAME, Tipo de verificação, usuário
-        nova_linha = [athlete_id, nome, tipo, user_id, data_registro] # Changed order
+        data_registro = datetime.now()
+        
+        dia = data_registro.day
+        mes = data_registro.month
+        ano = data_registro.year
+        hora = data_registro.strftime("%H:%M") # Formato HH:MM
+        
+        # Ordem das colunas: ID, NAME, Tipo de verificação, usuário, Dia, Mês, Ano, Hora
+        nova_linha = [athlete_id, nome, tipo, user_id, dia, mes, ano, hora]
         sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"Attendance registered for {nome} ({tipo}).", icon="✍️")
     except Exception as e:
@@ -122,9 +127,10 @@ def handle_attendance_click(athlete_id_val, athlete_name, current_tipo, user_id_
     if not user_id_val.strip():
         st.session_state['warning_message'] = "⚠️ Informe seu PS antes de registrar a presença."
     else:
-        registrar_log(athlete_id_val, athlete_name, current_tipo, user_id_val) # Pass athlete_id
-        st.session_state["presencas"][presenca_id] = True # Mark as attended after successful log
-        st.session_state['warning_message'] = None # Clear any previous warning
+        # Chamar registrar_log APENAS se o PS ID não estiver vazio
+        registrar_log(athlete_id_val, athlete_name, current_tipo, user_id_val)
+        st.session_state["presencas"][presenca_id] = True # Marcar como presente após o registro bem-sucedido
+        st.session_state['warning_message'] = None # Limpar qualquer aviso anterior
         st.rerun()
 
 # Display athlete cards
@@ -171,16 +177,11 @@ else:
 
         # Prepare WhatsApp Link
         whatsapp_link = ""
-        # Assuming mobile numbers might start with '+', if not, you might need to prepend '+971' or relevant country code
         mobile_number = str(row.get("MOBILE", "")).strip().replace(" ", "").replace("-", "")
         if mobile_number:
-            # WhatsApp link format: https://wa.me/NUMBER_WITH_COUNTRY_CODE (e.g., +971501234567)
-            # You might need to adjust the country code if it's not present in the sheet
-            # Example: if numbers are like 501234567 and UAE country code is +971
             if not mobile_number.startswith('+'):
-                # Heuristic: if it's 9 digits or more, assume a common local format and prepend country code
-                if len(mobile_number) >= 9: # Common length for mobile numbers
-                    mobile_number = "+971" + mobile_number # Prepend UAE country code
+                if len(mobile_number) >= 9:
+                    mobile_number = "+971" + mobile_number # Assuming UAE country code
             whatsapp_link = f"<tr><td style='padding-right:10px;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{mobile_number}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
 
 
@@ -216,9 +217,10 @@ else:
             button_text,
             key=f"attend_button_{i}",
             on_click=handle_attendance_click,
-            args=(row['ID'], row['NAME'], tipo, user_id), # Pass ID as the first argument
+            args=(row['ID'], row['NAME'], tipo, user_id), # Pass ID
             type="secondary" if presenca_registrada else "primary",
             use_container_width=True
         )
 
         st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
+

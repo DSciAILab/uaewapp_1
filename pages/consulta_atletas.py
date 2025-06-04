@@ -76,16 +76,38 @@ def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users")
         st.error(f"Erro ao carregar dados da aba de usuários '{users_tab_name}': {e}", icon="🚨")
         return []
 
-def get_valid_user_info(user_ps_id: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
-    if not user_ps_id: return None
+# --- CORREÇÃO PRINCIPAL AQUI ---
+def get_valid_user_info(user_ps_id_input: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
+    """
+    Valida o PS ID do usuário contra os dados carregados da aba 'Users'.
+    O input do usuário pode ser "PS1005" ou "1005". A planilha tem apenas números na coluna "PS".
+    Retorna um dicionário com dados do usuário se encontrado, None caso contrário.
+    """
+    if not user_ps_id_input: 
+        return None
+    
     all_users = load_users_data(sheet_name, users_tab_name) 
-    if not all_users: return None
+    if not all_users: 
+        return None
+
+    # Normalizar o input do usuário para obter a parte numérica para validação
+    processed_user_input = user_ps_id_input.strip().upper()
+    validation_id_from_input = processed_user_input
+    if processed_user_input.startswith("PS"):
+        if len(processed_user_input) > 2 and processed_user_input[2:].isdigit(): # Garante que há números após "PS"
+            validation_id_from_input = processed_user_input[2:]
+        # Se for apenas "PS" ou "PS" seguido de não-dígitos, a validação provavelmente falhará de qualquer maneira
+        # contra os IDs numéricos da planilha, o que é o comportamento desejado.
+    elif not processed_user_input.isdigit(): # Se não começa com PS e não é puramente numérico
+        return None # Formato de input inválido para comparação com IDs numéricos
+
     for user_record in all_users:
-        # --- CORREÇÃO AQUI ---
-        ps_id_from_sheet = str(user_record.get("PS", "")).strip() # Alterado "PS_ID" para "PS"
-        if ps_id_from_sheet.upper() == user_ps_id.upper(): # Comparação case-insensitive
-            return user_record
-    return None
+        # A coluna na planilha chama-se "PS" e contém apenas números (ex: "1005", "1724")
+        ps_id_from_sheet = str(user_record.get("PS", "")).strip() 
+        
+        if ps_id_from_sheet == validation_id_from_input:
+            return user_record # Encontrado!
+    return None # Não encontrado
 
 # --- 4. Logging Function ---
 def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
@@ -137,12 +159,12 @@ with st.container():
             if user_input_stripped:
                 user_info = get_valid_user_info(user_input_stripped) 
                 if user_info:
-                    st.session_state['current_user_id'] = user_input_stripped
-                    # --- CORREÇÃO AQUI ---
-                    st.session_state['current_user_name'] = str(user_info.get("USER", user_input_stripped)).strip() # Alterado "NOME" para "USER"
+                    # Armazenar o ID original que o usuário digitou para exibição
+                    st.session_state['current_user_id'] = user_input_stripped 
+                    st.session_state['current_user_name'] = str(user_info.get("USER", user_input_stripped)).strip() # Coluna "USER" para o nome
                     st.session_state['user_confirmed'] = True
                     st.session_state['warning_message'] = None
-                    st.success(f"Usuário '{st.session_state['current_user_name']}' (PS: {user_input_stripped}) confirmado!", icon="✅")
+                    st.success(f"Usuário '{st.session_state['current_user_name']}' (PS: {st.session_state['current_user_id']}) confirmado!", icon="✅")
                 else:
                     st.session_state['user_confirmed'] = False
                     st.session_state['warning_message'] = (
@@ -154,7 +176,7 @@ with st.container():
                 st.session_state['user_confirmed'] = False
 
 if st.session_state['user_confirmed'] and \
-   st.session_state['current_user_id'] != st.session_state['user_id_input'].strip() and \
+   st.session_state['current_user_id'].strip().upper() != st.session_state['user_id_input'].strip().upper() and \
    st.session_state['user_id_input'].strip() != "":
     st.session_state['user_confirmed'] = False
     st.session_state['warning_message'] = "⚠️ ID do usuário alterado. Por favor, confirme novamente."

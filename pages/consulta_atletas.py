@@ -44,6 +44,7 @@ status_view = st.radio("Filtro", ["Todos", "Feitos", "Restantes"], horizontal=Tr
 
 df = load_data()
 
+# Controle de presença em cache
 if "presencas" not in st.session_state:
     st.session_state["presencas"] = {}
 
@@ -56,11 +57,14 @@ for i, row in df.iterrows():
     if status_view == "Restantes" and presenca_registrada:
         continue
 
-    blood_info = f"<p style='margin:0; font-size:13px;'>Blood Test in: {row['BLOOD TEST']}</p>" \
-        if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else ""
+    # Verificar se há blood test registrado
+    blood_info = ""
+    if tipo == "Blood Test":
+        blood_test_date = row.get("BLOOD TEST", "")
+        if pd.notna(blood_test_date) and str(blood_test_date).strip() != "":
+            blood_info = f"<p style='margin:0; font-size:13px;'>Blood Test in: {blood_test_date}</p>"
 
-    button_text = "Subscrever attendance por uma nova?" \
-        if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else "Registrar Attendance"
+    button_text = "Subscrever attendance por uma nova?" if blood_info else "Registrar Attendance"
 
     st.markdown(f"""
     <div style='background-color:{"#143d14" if presenca_registrada else "#1e1e1e"}; padding:20px; border-radius:10px; margin-bottom:15px;'>
@@ -84,6 +88,7 @@ for i, row in df.iterrows():
     </div>
     """, unsafe_allow_html=True)
 
+    # Botão principal (único)
     if st.button(f"{button_text} - {row['NAME']}", key=f"attend_{i}"):
         if not user_id.strip():
             st.warning("⚠️ Informe seu PS antes de registrar a presença.")

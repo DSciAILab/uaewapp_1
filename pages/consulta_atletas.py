@@ -42,7 +42,7 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
 # --- 3. Data Loading and Preprocessing (Atletas) ---
 @st.cache_data(ttl=600)
 def load_athlete_data():
-    st.info("Carregando dados dos atletas...", icon="⏳")
+    # st.info("Carregando dados dos atletas...", icon="⏳") # Movido para dentro do if para não mostrar sempre
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     try:
         df = pd.read_csv(url)
@@ -67,9 +67,8 @@ def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users")
     try:
         gspread_client_internal = get_gspread_client() 
         users_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, users_tab_name)
-        users_data = users_worksheet.get_all_records()
+        users_data = users_worksheet.get_all_records() # Retorna lista de dicionários
         if not users_data:
-            st.warning(f"A aba '{users_tab_name}' está vazia ou não pôde ser lida.", icon="⚠️")
             return []
         return users_data
     except Exception as e:
@@ -90,13 +89,12 @@ def get_valid_user_info(user_ps_id_input: str, sheet_name: str = "UAEW_App", use
     for user_record in all_users:
         ps_id_from_sheet = str(user_record.get("PS", "")).strip() 
         if ps_id_from_sheet == validation_id_from_input:
-            return user_record
+            return user_record # Retorna o dicionário completo do usuário
     return None
 
 # --- 4. Logging Function ---
 def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
                   sheet_name: str = "UAEW_App", attendance_tab_name: str = "Attendance"):
-    """Registra a presença. Retorna True em sucesso, False em falha."""
     try:
         gspread_client_internal = get_gspread_client()
         log_sheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
@@ -108,10 +106,10 @@ def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
         ]
         log_sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"Attendance registered for {nome} ({tipo}).", icon="✍️")
-        return True # Indica sucesso
+        return True 
     except Exception as e:
         st.error(f"Error registering attendance: {e}", icon="🚨")
-        return False # Indica falha
+        return False
 
 # --- 5. Helper Function for Blood Test Expiration ---
 def is_blood_test_expired(blood_test_date_str: str) -> bool:
@@ -126,7 +124,8 @@ st.title("Consulta de Atletas")
 
 for key, default_val in [
     ("presencas", {}), ("warning_message", None), ("user_confirmed", False),
-    ("current_user_id", ""), ("current_user_name", "Usuário")
+    ("current_user_id", ""), ("current_user_name", "Usuário"),
+    ("current_user_image_url", "") # Novo estado para a URL da imagem do usuário
 ]:
     if key not in st.session_state: st.session_state[key] = default_val
 if 'user_id_input' not in st.session_state:
@@ -148,11 +147,14 @@ with st.container():
                 if user_info:
                     st.session_state['current_user_id'] = user_input_stripped 
                     st.session_state['current_user_name'] = str(user_info.get("USER", user_input_stripped)).strip()
+                    # --- ARMAZENAR URL DA IMAGEM DO USUÁRIO ---
+                    st.session_state['current_user_image_url'] = str(user_info.get("USER_IMAGE", "")).strip()
                     st.session_state['user_confirmed'] = True
                     st.session_state['warning_message'] = None
-                    st.success(f"Usuário '{st.session_state['current_user_name']}' (PS: {st.session_state['current_user_id']}) confirmado!", icon="✅")
+                    # A mensagem de sucesso agora será mostrada pela lógica de exibição abaixo
                 else:
                     st.session_state['user_confirmed'] = False
+                    st.session_state['current_user_image_url'] = "" # Limpar se não encontrou
                     st.session_state['warning_message'] = (
                         f"⚠️ Usuário com PS '{user_input_stripped}' não encontrado. "
                         "Por favor, verifique o PS ID ou contate o administrador para inclusão."
@@ -160,19 +162,44 @@ with st.container():
             else:
                 st.session_state['warning_message'] = "⚠️ O ID do usuário não pode ser vazio."
                 st.session_state['user_confirmed'] = False
+                st.session_state['current_user_image_url'] = ""
 
+# --- LÓGICA DE EXIBIÇÃO DA SAUDAÇÃO DO USUÁRIO ---
+if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
+    user_name_display = html.escape(st.session_state['current_user_name'])
+    user_id_display = html.escape(st.session_state['current_user_id'])
+    user_image_url = st.session_state.get('current_user_image_url', "")
+
+    greeting_html = ""
+    if user_image_url:
+        safe_image_url = html.escape(user_image_url, quote=True)
+        greeting_html = f"""
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="{safe_image_url}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid #555;">
+            <div style="line-height: 1.2;">
+                <span style="font-weight: bold;">{user_name_display}</span><br>
+                <span style="font-size: 0.9em; color: #ccc;">PS: {user_id_display}</span>
+            </div>
+        </div>
+        """
+        st.markdown(greeting_html, unsafe_allow_html=True)
+    else:
+        st.success(f"Usuário '{user_name_display}' (PS: {user_id_display}) confirmado!", icon="✅")
+
+elif st.session_state.get('warning_message'):
+    st.warning(st.session_state['warning_message'], icon="🚨")
+else:
+    st.warning("🚨 Por favor, digite e confirme seu ID de usuário acima para prosseguir.", icon="🚨")
+
+# Lógica para desconfirmar se o ID no input mudar após a confirmação
 if st.session_state['user_confirmed'] and \
    st.session_state['current_user_id'].strip().upper() != st.session_state['user_id_input'].strip().upper() and \
    st.session_state['user_id_input'].strip() != "":
     st.session_state['user_confirmed'] = False
     st.session_state['warning_message'] = "⚠️ ID do usuário alterado. Por favor, confirme novamente."
+    st.session_state['current_user_image_url'] = "" # Limpar imagem se desconfirmar
+    st.rerun() # Forçar rerun para atualizar a mensagem de saudação/aviso
 
-if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
-    st.info(f"**Usuário atual:** `{st.session_state['current_user_name']}` (PS: `{st.session_state['current_user_id']}`)", icon="👤")
-elif st.session_state.get('warning_message'):
-    st.warning(st.session_state['warning_message'], icon="🚨")
-else:
-    st.warning("🚨 Por favor, digite e confirme seu ID de usuário acima para prosseguir.", icon="🚨")
 
 user_id_for_ops = st.session_state['current_user_id']
 
@@ -183,6 +210,10 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         st.toast("Dados atualizados! Recarregando...", icon="🔄")
         st.rerun()
 
+    # Indicador de carregamento para atletas
+    with st.spinner("Carregando lista de atletas..."):
+        df_athletes = load_athlete_data()
+
     tipo = st.selectbox(
         "Tipo de verificação para REGISTRO", ["Blood Test", "PhotoShoot"]
     )
@@ -190,9 +221,6 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         "Filtro de exibição", ["Todos", "Feitos", "Restantes"], horizontal=True
     )
     
-    df_athletes = load_athlete_data()
-    
-    # --- NOVA FUNÇÃO WRAPPER PARA on_click ---
     def handle_register_attendance(athlete_id_val, athlete_name, current_tipo, user_id_for_log):
         log_success = registrar_log(
             athlete_id=str(athlete_id_val), 
@@ -200,16 +228,13 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             tipo=current_tipo, 
             user_id=user_id_for_log
         )
-        
-        if log_success: # Só atualiza a UI se o log foi bem-sucedido
+        if log_success:
             presenca_id = f"{athlete_name}_{current_tipo}"
             st.session_state["presencas"][presenca_id] = True
             st.session_state['warning_message'] = None 
-            st.rerun()
-        # Se log_success for False, a mensagem de erro já foi mostrada por registrar_log
-
+    
     if df_athletes.empty:
-        st.info("Nenhum dado de atleta para exibir no momento.")
+        st.info("Nenhum dado de atleta para exibir no momento ou falha ao carregar.")
     else:
         st.markdown(f"Exibindo **{len(df_athletes)}** atletas.")
         for i, row in df_athletes.iterrows():
@@ -231,14 +256,14 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             else:
                 blood_info_html = "<p style='margin:0; font-size:13px; color:orange;'>Blood Test: Não Registrado</p>"
 
-            card_bg_color = "#1e1e1e"
-            if presenca_registrada_para_tipo_atual: # Esta lógica determina a cor verde
-                card_bg_color = "#143d14"
+            card_bg_color = "#1e1e1e" 
+            if presenca_registrada_para_tipo_atual: 
+                card_bg_color = "#143d14" 
             elif tipo == "Blood Test" and not presenca_registrada_para_tipo_atual:
                 if has_blood_test_info and not blood_test_is_expired: card_bg_color = "#3D3D00"
                 elif blood_test_is_expired or not has_blood_test_info: card_bg_color = "#4D1A00"
 
-            passport_image_link_html = "" # ... (resto do código do card omitido para brevidade, mas é o mesmo)
+            passport_image_link_html = ""
             passport_image_url = str(row.get("PASSPORT IMAGE", "")).strip()
             if passport_image_url:
                 safe_passport_image_url = html.escape(passport_image_url, quote=True)
@@ -292,11 +317,10 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- ATUALIZAÇÃO DO BOTÃO on_click ---
             st.button(
                 f"Marcar '{tipo}' como FEITO{' (Refazer?)' if presenca_registrada_para_tipo_atual else ''}",
                 key=f"attend_button_{row['ID']}_{tipo.replace(' ', '_')}_{i}",
-                on_click=handle_register_attendance, # Usa a nova função wrapper
+                on_click=handle_register_attendance, 
                 args=(str(row['ID']), row['NAME'], tipo, st.session_state['current_user_id']),
                 type="secondary" if presenca_registrada_para_tipo_atual else "primary",
                 use_container_width=True

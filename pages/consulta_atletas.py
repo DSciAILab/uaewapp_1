@@ -4,7 +4,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
-import html # <--- ADICIONAR ESTA IMPORTAÇÃO
+import html
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="Consulta de Atletas", layout="wide")
@@ -173,7 +173,7 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             if has_blood_test_info:
                 color = "red" if blood_test_is_expired else "#A0F0A0"
                 expiry_text = ' <span style="font-weight:bold;">(Expired)</span>' if blood_test_is_expired else ''
-                blood_info_html = f"<p style='margin:0; font-size:13px; color:{color};'>Blood Test: {html.escape(blood_test_date_str)}{expiry_text}</p>" # ESCAPED blood_test_date_str
+                blood_info_html = f"<p style='margin:0; font-size:13px; color:{color};'>Blood Test: {html.escape(blood_test_date_str)}{expiry_text}</p>"
             else:
                 blood_info_html = "<p style='margin:0; font-size:13px; color:orange;'>Blood Test: Not Recorded</p>"
 
@@ -187,7 +187,6 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             passport_image_link_html = ""
             passport_image_url = str(row.get("PASSPORT IMAGE", "")).strip()
             if passport_image_url:
-                # URLs em href são sensíveis a quotes, então é bom escapar, especialmente se vierem de dados do usuário
                 safe_passport_image_url = html.escape(passport_image_url, quote=True)
                 passport_image_link_html = f"<tr><td style='padding-right:10px;'><b>Passaporte Imagem:</b></td><td><a href='{safe_passport_image_url}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>"
 
@@ -201,23 +200,19 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                     elif not (mobile_number.startswith("971") or mobile_number.startswith("+")): mobile_number = "+" + mobile_number
                 
                 if mobile_number.startswith("+"):
-                    # Para wa.me, o '+' não é usado, mas o número deve ser internacional
                     safe_mobile_for_link = html.escape(mobile_number.replace('+', ''), quote=True)
                     whatsapp_link_html = f"<tr><td style='padding-right:10px;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{safe_mobile_for_link}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
             
-            # --- Escapar dados de texto para o card ---
-            # Garantir que mesmo que os dados venham com caracteres HTML, eles sejam exibidos como texto.
-            # Os campos que já são HTML (blood_info_html, etc.) não devem ser escapados aqui.
             display_name = html.escape(str(row["NAME"]))
             display_event = html.escape(str(row["EVENT"]))
             display_id = html.escape(str(row["ID"]))
             display_gender = html.escape(str(row.get("GENDER", "")))
-            display_dob = html.escape(str(row.get("DOB", ""))) # DOB já formatado, mas por segurança
+            display_dob = html.escape(str(row.get("DOB", "")))
             display_nationality = html.escape(str(row.get("NATIONALITY", "")))
             display_passport = html.escape(str(row.get("PASSPORT", "")))
-            display_passport_expire_date = html.escape(str(row.get("PASSPORT EXPIRE DATE", ""))) # Já formatado, mas por segurança
+            display_passport_expire_date = html.escape(str(row.get("PASSPORT EXPIRE DATE", "")))
 
-            # --- Card HTML Structure ---
+            # --- Card HTML Structure (REMOVED PROBLEMATIC COMMENTS) ---
             st.markdown(f"""
             <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
                 <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
@@ -227,7 +222,7 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                             <h4 style='margin:0;'>{display_name}</h4>
                             <p style='margin:0; font-size:14px; color:#cccccc;'>{display_event}</p>
                             <p style='margin:0; font-size:13px; color:#cccccc;'>ID: {display_id}</p>
-                            {blood_info_html} {/* Já é HTML seguro */}
+                            {blood_info_html}
                         </div>
                     </div>
                     <div style='flex-basis: 300px; flex-grow: 1;'>
@@ -237,8 +232,8 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                             <tr><td style='padding-right:10px;'><b>Nacionalidade:</b></td><td>{display_nationality}</td></tr>
                             <tr><td style='padding-right:10px;'><b>Passaporte:</b></td><td>{display_passport}</td></tr>
                             <tr><td style='padding-right:10px;'><b>Expira em:</b></td><td>{display_passport_expire_date}</td></tr>
-                            {passport_image_link_html} {/* Já é HTML seguro */}
-                            {whatsapp_link_html} {/* Já é HTML seguro */}
+                            {passport_image_link_html}
+                            {whatsapp_link_html}
                         </table>
                     </div>
                 </div>

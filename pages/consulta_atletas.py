@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import html
+# import time # Necessário se for usar time.sleep com toast, mas geralmente não precisa
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="Consulta de Atletas", layout="wide")
@@ -26,9 +27,10 @@ def connect_gsheet(sheet_name: str, tab_name: str):
         st.stop()
 
 # --- 3. Data Loading and Preprocessing ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600) # Cache a data por 10 minutos (600 segundos)
 def load_data():
     """Loads and preprocesses athlete data."""
+    st.info("Carregando dados dos atletas...", icon="⏳") # Feedback durante o carregamento
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     try:
         df = pd.read_csv(url)
@@ -45,13 +47,13 @@ def load_data():
             if col_to_check not in df.columns:
                 df[col_to_check] = ""
             df[col_to_check] = df[col_to_check].fillna("")
-
-        st.success("Athlete data loaded and processed successfully.", icon="✅")
+        
+        # st.success("Athlete data loaded and processed successfully.", icon="✅") # Removido para ser menos verboso aqui
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
     except Exception as e:
         st.error(f"Error loading or processing data: {e}", icon="🚨")
         st.info("Please check the Google Sheet URL and column names.")
-        st.stop()
+        st.stop() # Para a execução se os dados não puderem ser carregados
 
 # --- 4. Logging Function ---
 def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str):
@@ -135,6 +137,15 @@ user_id_for_ops = st.session_state['current_user_id']
 
 # --- 6.3. Main Application UI (Filters and Athlete Cards) ---
 if st.session_state['user_confirmed'] and user_id_for_ops:
+
+    # --- 6.3.0. Botão para Atualizar Dados ---
+    if st.button("🔄 Atualizar Dados da Planilha", key="refresh_data_button", help="Recarrega os dados da planilha do Google."):
+        st.cache_data.clear()  # Limpa o cache de todas as funções @st.cache_data
+        st.toast("Dados atualizados! Recarregando a lista...", icon="🔄")
+        # time.sleep(0.5) # Pequena pausa para o toast ser visível antes do rerun (opcional)
+        st.rerun() # Recarrega o script inteiro
+
+    # --- 6.3.1. Filters ---
     tipo = st.selectbox(
         "Tipo de verificação para REGISTRO",
         ["Blood Test", "PhotoShoot"],
@@ -145,9 +156,14 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         ["Todos", "Feitos", "Restantes"], horizontal=True,
         help="Filtre os atletas por status de verificação para o TIPO selecionado."
     )
-
+    
+    # --- 6.3.2. Carregar dados dos atletas (será pego do cache ou recarregado se o cache foi limpo) ---
     df_athletes = load_data()
+    if df_athletes is None: # load_data agora pode retornar None em caso de erro antes de st.stop()
+        st.error("Não foi possível carregar os dados dos atletas. Tente atualizar.")
+        st.stop()
 
+    # --- 6.3.3. Attendance Button Handler ---
     def handle_attendance_click(athlete_id_val, athlete_name, current_tipo):
         presenca_id = f"{athlete_name}_{current_tipo}"
         registrar_log(str(athlete_id_val), athlete_name, current_tipo, st.session_state['current_user_id'])
@@ -155,9 +171,11 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         st.session_state['warning_message'] = None
         st.rerun()
 
+    # --- 6.3.4. Display Athlete Cards ---
     if df_athletes.empty:
-        st.info("No athletes found matching the criteria.", icon="ℹ️")
+        st.info("Nenhum atleta encontrado com os critérios atuais.", icon="ℹ️")
     else:
+        st.markdown(f"Exibindo **{len(df_athletes)}** atletas.")
         for i, row in df_athletes.iterrows():
             presenca_id_para_tipo_atual = f"{row['NAME']}_{tipo}"
             presenca_registrada_para_tipo_atual = st.session_state["presencas"].get(presenca_id_para_tipo_atual, False)
@@ -172,10 +190,10 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             
             if has_blood_test_info:
                 color = "red" if blood_test_is_expired else "#A0F0A0"
-                expiry_text = ' <span style="font-weight:bold;">(Expired)</span>' if blood_test_is_expired else ''
+                expiry_text = ' <span style="font-weight:bold;">(Expirado)</span>' if blood_test_is_expired else ''
                 blood_info_html = f"<p style='margin:0; font-size:13px; color:{color};'>Blood Test: {html.escape(blood_test_date_str)}{expiry_text}</p>"
             else:
-                blood_info_html = "<p style='margin:0; font-size:13px; color:orange;'>Blood Test: Not Recorded</p>"
+                blood_info_html = "<p style='margin:0; font-size:13px; color:orange;'>Blood Test: Não Registrado</p>"
 
             card_bg_color = "#1e1e1e"
             if presenca_registrada_para_tipo_atual:
@@ -212,7 +230,6 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             display_passport = html.escape(str(row.get("PASSPORT", "")))
             display_passport_expire_date = html.escape(str(row.get("PASSPORT EXPIRE DATE", "")))
 
-            # --- Card HTML Structure (REMOVED PROBLEMATIC COMMENTS) ---
             st.markdown(f"""
             <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
                 <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>

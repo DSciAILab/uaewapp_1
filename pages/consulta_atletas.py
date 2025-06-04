@@ -10,9 +10,8 @@ import html
 st.set_page_config(page_title="Consulta de Atletas", layout="wide")
 
 # --- 2. Google Sheets Connection ---
-@st.cache_resource(ttl=3600) # Cache do objeto de conexão
+@st.cache_resource(ttl=3600)
 def get_gspread_client():
-    """Retorna um cliente gspread autorizado."""
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
@@ -25,10 +24,7 @@ def get_gspread_client():
         st.error(f"Error connecting to Google API: {e}", icon="🚨")
         st.stop()
 
-# Esta função não precisa mais de client como argumento se chamada por funções que já têm acesso a ele
-# ou se as funções que a usam obtêm o cliente por si mesmas.
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    """Conecta-se a uma aba específica de uma planilha usando um cliente gspread fornecido."""
     try:
         spreadsheet = gspread_client.open(sheet_name)
         worksheet = spreadsheet.worksheet(tab_name)
@@ -46,7 +42,6 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
 # --- 3. Data Loading and Preprocessing (Atletas) ---
 @st.cache_data(ttl=600)
 def load_athlete_data():
-    """Loads and preprocesses athlete data."""
     st.info("Carregando dados dos atletas...", icon="⏳")
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     try:
@@ -54,29 +49,22 @@ def load_athlete_data():
         df.columns = df.columns.str.strip()
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
         df["EVENT"] = df["EVENT"].fillna("Z")
-
         date_cols = ["DOB", "PASSPORT EXPIRE DATE", "BLOOD TEST"]
         for col in date_cols:
             df[col] = pd.to_datetime(df[col], errors="coerce")
             df[col] = df[col].dt.strftime("%d/%m/%Y").fillna("")
-
         for col_to_check in ["IMAGE", "PASSPORT IMAGE", "MOBILE"]:
-            if col_to_check not in df.columns:
-                df[col_to_check] = ""
+            if col_to_check not in df.columns: df[col_to_check] = ""
             df[col_to_check] = df[col_to_check].fillna("")
-        
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
     except Exception as e:
         st.error(f"Error loading or processing athlete data: {e}", icon="🚨")
-        st.info("Please check the Google Sheet URL for athletes and its structure.")
         return pd.DataFrame()
 
 # --- 3.5. User Data Loading and Validation ---
-@st.cache_data(ttl=300) # Cache da lista de usuários por 5 minutos
-def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users"): # Não recebe mais gspread_client
-    """Carrega todos os dados da aba 'Users'."""
+@st.cache_data(ttl=300)
+def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
     try:
-        # Obtém o cliente gspread aqui dentro
         gspread_client_internal = get_gspread_client() 
         users_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, users_tab_name)
         users_data = users_worksheet.get_all_records()
@@ -89,32 +77,20 @@ def load_users_data(sheet_name: str = "UAEW_App", users_tab_name: str = "Users")
         return []
 
 def get_valid_user_info(user_ps_id: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
-    """
-    Valida o PS ID do usuário contra os dados carregados da aba 'Users'.
-    Retorna um dicionário com dados do usuário se encontrado, None caso contrário.
-    """
-    if not user_ps_id:
-        return None
-    
-    # Carrega os dados dos usuários (usará o cache se disponível)
-    # Não passa gspread_client aqui, pois load_users_data o obtém internamente
+    if not user_ps_id: return None
     all_users = load_users_data(sheet_name, users_tab_name) 
-    
-    if not all_users:
-        return None
-
+    if not all_users: return None
     for user_record in all_users:
-        ps_id_from_sheet = str(user_record.get("PS_ID", "")).strip()
-        if ps_id_from_sheet == user_ps_id:
+        # --- CORREÇÃO AQUI ---
+        ps_id_from_sheet = str(user_record.get("PS", "")).strip() # Alterado "PS_ID" para "PS"
+        if ps_id_from_sheet.upper() == user_ps_id.upper(): # Comparação case-insensitive
             return user_record
     return None
 
 # --- 4. Logging Function ---
 def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
                   sheet_name: str = "UAEW_App", attendance_tab_name: str = "Attendance"):
-    """Registers an attendance log entry."""
     try:
-        # Obtém o cliente gspread aqui dentro para registrar o log
         gspread_client_internal = get_gspread_client()
         log_sheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
         data_registro = datetime.now()
@@ -127,11 +103,9 @@ def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str,
         st.success(f"Attendance registered for {nome} ({tipo}).", icon="✍️")
     except Exception as e:
         st.error(f"Error registering attendance: {e}", icon="🚨")
-        st.warning("Could not log attendance. Please check sheet permissions or connection.")
 
 # --- 5. Helper Function for Blood Test Expiration ---
 def is_blood_test_expired(blood_test_date_str: str) -> bool:
-    """Checks if a blood test date is older than 6 months."""
     if not blood_test_date_str: return True
     try:
         blood_test_date = datetime.strptime(blood_test_date_str, "%d/%m/%Y")
@@ -140,8 +114,6 @@ def is_blood_test_expired(blood_test_date_str: str) -> bool:
 
 # --- 6. Main Application Logic ---
 st.title("Consulta de Atletas")
-
-# Removido gspread_client daqui, pois as funções o obterão internamente
 
 for key, default_val in [
     ("presencas", {}), ("warning_message", None), ("user_confirmed", False),
@@ -163,11 +135,11 @@ with st.container():
         if st.button("Confirmar Usuário", key="confirm_user_btn", use_container_width=True):
             user_input_stripped = st.session_state['user_id_input'].strip()
             if user_input_stripped:
-                # Não passa gspread_client para get_valid_user_info
                 user_info = get_valid_user_info(user_input_stripped) 
                 if user_info:
                     st.session_state['current_user_id'] = user_input_stripped
-                    st.session_state['current_user_name'] = str(user_info.get("NOME", user_input_stripped)).strip()
+                    # --- CORREÇÃO AQUI ---
+                    st.session_state['current_user_name'] = str(user_info.get("USER", user_input_stripped)).strip() # Alterado "NOME" para "USER"
                     st.session_state['user_confirmed'] = True
                     st.session_state['warning_message'] = None
                     st.success(f"Usuário '{st.session_state['current_user_name']}' (PS: {user_input_stripped}) confirmado!", icon="✅")
@@ -199,17 +171,15 @@ user_id_for_ops = st.session_state['current_user_id']
 if st.session_state['user_confirmed'] and user_id_for_ops:
     if st.button("🔄 Atualizar Dados (Atletas e Usuários)", key="refresh_data_button", help="Recarrega os dados da planilha do Google."):
         st.cache_data.clear()
-        st.cache_resource.clear() # Também limpar o cache do cliente gspread para forçar uma nova autenticação se necessário
+        st.cache_resource.clear()
         st.toast("Dados atualizados! Recarregando...", icon="🔄")
         st.rerun()
 
     tipo = st.selectbox(
-        "Tipo de verificação para REGISTRO", ["Blood Test", "PhotoShoot"],
-        help="Selecione o tipo de verificação para registrar a presença do atleta."
+        "Tipo de verificação para REGISTRO", ["Blood Test", "PhotoShoot"]
     )
     status_view = st.radio(
-        "Filtro de exibição (baseado no Tipo de Verificação acima)", ["Todos", "Feitos", "Restantes"],
-        horizontal=True, help="Filtre os atletas por status de verificação para o TIPO selecionado."
+        "Filtro de exibição", ["Todos", "Feitos", "Restantes"], horizontal=True
     )
     
     df_athletes = load_athlete_data()
@@ -302,7 +272,7 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                 f"Marcar '{tipo}' como FEITO{' (Refazer?)' if presenca_registrada_para_tipo_atual else ''}",
                 key=f"attend_button_{row['ID']}_{tipo.replace(' ', '_')}_{i}",
                 on_click=registrar_log,
-                args=(str(row['ID']), row['NAME'], tipo, st.session_state['current_user_id']), # Não precisa mais passar gspread_client
+                args=(str(row['ID']), row['NAME'], tipo, st.session_state['current_user_id']),
                 type="secondary" if presenca_registrada_para_tipo_atual else "primary",
                 use_container_width=True
             )

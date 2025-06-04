@@ -5,35 +5,52 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import html
-# import time # Necessário se for usar time.sleep com toast, mas geralmente não precisa
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="Consulta de Atletas", layout="wide")
 
 # --- 2. Google Sheets Connection ---
-@st.cache_resource(ttl=3600)
-def connect_gsheet(sheet_name: str, tab_name: str):
-    """Establishes and caches a connection to a Google Sheet worksheet."""
+@st.cache_resource(ttl=3600) # Cache do objeto de conexão
+def get_gspread_client():
+    """Retorna um cliente gspread autorizado."""
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-        worksheet = gspread.authorize(creds).open(sheet_name).worksheet(tab_name)
-        return worksheet
+        client = gspread.authorize(creds)
+        return client
     except KeyError as e:
         st.error(f"Configuration error: Missing Google Cloud service account key in `st.secrets`. Details: {e}", icon="🚨")
         st.stop()
     except Exception as e:
-        st.error(f"Error connecting to Google Sheet: {e}", icon="🚨")
+        st.error(f"Error connecting to Google API: {e}", icon="🚨")
         st.stop()
 
-# --- 3. Data Loading and Preprocessing ---
-@st.cache_data(ttl=600) # Cache a data por 10 minutos (600 segundos)
-def load_data():
+def connect_gsheet_tab(client, sheet_name: str, tab_name: str):
+    """Conecta-se a uma aba específica de uma planilha."""
+    try:
+        spreadsheet = client.open(sheet_name)
+        worksheet = spreadsheet.worksheet(tab_name)
+        return worksheet
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Erro: Planilha '{sheet_name}' não encontrada.", icon="🚨")
+        st.stop()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"Erro: Aba '{tab_name}' não encontrada na planilha '{sheet_name}'.", icon="🚨")
+        st.stop()
+    except Exception as e:
+        st.error(f"Erro ao conectar à aba '{tab_name}': {e}", icon="🚨")
+        st.stop()
+
+
+# --- 3. Data Loading and Preprocessing (Atletas) ---
+@st.cache_data(ttl=600)
+def load_athlete_data():
     """Loads and preprocesses athlete data."""
-    st.info("Carregando dados dos atletas...", icon="⏳") # Feedback durante o carregamento
+    st.info("Carregando dados dos atletas...", icon="⏳")
+    # URL direta para CSV da aba 'df'
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
     try:
-        df = pd.read_csv(url)
+        df = pd.read_csv(url) # Carrega diretamente da URL CSV
         df.columns = df.columns.str.strip()
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
         df["EVENT"] = df["EVENT"].fillna("Z")
@@ -48,25 +65,55 @@ def load_data():
                 df[col_to_check] = ""
             df[col_to_check] = df[col_to_check].fillna("")
         
-        # st.success("Athlete data loaded and processed successfully.", icon="✅") # Removido para ser menos verboso aqui
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
     except Exception as e:
-        st.error(f"Error loading or processing data: {e}", icon="🚨")
-        st.info("Please check the Google Sheet URL and column names.")
-        st.stop() # Para a execução se os dados não puderem ser carregados
+        st.error(f"Error loading or processing athlete data: {e}", icon="🚨")
+        st.info("Please check the Google Sheet URL for athletes and its structure.")
+        return pd.DataFrame() # Retorna DataFrame vazio em caso de erro
+
+# --- 3.5. User Validation Function ---
+@st.cache_data(ttl=300) # Cache de dados do usuário por 5 minutos
+def get_valid_user_info(gspread_client, user_ps_id: str, sheet_name: str = "UAEW_App", users_tab_name: str = "Users"):
+    """
+    Valida o PS ID do usuário contra a aba 'Users' e retorna informações do usuário.
+    Retorna um dicionário com dados do usuário se encontrado, None caso contrário.
+    """
+    if not user_ps_id:
+        return None
+    try:
+        users_worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
+        users_data = users_worksheet.get_all_records() # Lista de dicionários
+        
+        if not users_data:
+            st.warning(f"A aba '{users_tab_name}' está vazia ou não pôde ser lida.", icon="⚠️")
+            return None
+
+        for user_record in users_data:
+            # Certifique-se que a chave 'PS_ID' existe e compare como strings
+            ps_id_from_sheet = str(user_record.get("PS_ID", "")).strip()
+            if ps_id_from_sheet == user_ps_id:
+                return user_record # Retorna o dicionário completo do usuário
+        return None # Usuário não encontrado
+    except Exception as e:
+        # Erros de conexão já são tratados por connect_gsheet_tab com st.stop()
+        # Este catch é para outros possíveis erros durante o processamento dos dados.
+        st.error(f"Erro ao validar usuário na aba '{users_tab_name}': {e}", icon="🚨")
+        return None
+
 
 # --- 4. Logging Function ---
-def registrar_log(athlete_id: str, nome: str, tipo: str, user_id: str):
+def registrar_log(gspread_client, athlete_id: str, nome: str, tipo: str, user_id: str,
+                  sheet_name: str = "UAEW_App", attendance_tab_name: str = "Attendance"):
     """Registers an attendance log entry."""
     try:
-        sheet = connect_gsheet("UAEW_App", "Attendance")
+        log_sheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         data_registro = datetime.now()
         nova_linha = [
             str(athlete_id), nome, tipo, user_id,
             data_registro.day, data_registro.month, data_registro.year,
             data_registro.strftime("%H:%M")
         ]
-        sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
+        log_sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"Attendance registered for {nome} ({tipo}).", icon="✍️")
     except Exception as e:
         st.error(f"Error registering attendance: {e}", icon="🚨")
@@ -84,16 +131,20 @@ def is_blood_test_expired(blood_test_date_str: str) -> bool:
 # --- 6. Main Application Logic ---
 st.title("Consulta de Atletas")
 
+# --- 6.0. Obter cliente gspread ---
+gspread_client = get_gspread_client()
+
 # --- 6.1. Initialize Session State ---
 for key, default_val in [
     ("presencas", {}),
     ("warning_message", None),
     ("user_confirmed", False),
     ("current_user_id", ""),
+    ("current_user_name", "Usuário") # Para mensagem de boas-vindas
 ]:
     if key not in st.session_state:
         st.session_state[key] = default_val
-if 'user_id_input' not in st.session_state:
+if 'user_id_input' not in st.session_state: # Campo de input
     st.session_state['user_id_input'] = st.session_state['current_user_id']
 
 
@@ -113,24 +164,41 @@ with st.container():
         if st.button("Confirmar Usuário", key="confirm_user_btn", use_container_width=True):
             user_input_stripped = st.session_state['user_id_input'].strip()
             if user_input_stripped:
-                st.session_state['current_user_id'] = user_input_stripped
-                st.session_state['user_confirmed'] = True
-                st.session_state['warning_message'] = None
-                st.success(f"Usuário '{st.session_state['current_user_id']}' confirmado!", icon="✅")
-            else:
+                # Validar usuário
+                user_info = get_valid_user_info(gspread_client, user_input_stripped)
+                if user_info:
+                    # Usuário válido encontrado
+                    st.session_state['current_user_id'] = user_input_stripped
+                    # Supondo que a aba Users tem uma coluna 'NOME' para o nome do usuário
+                    st.session_state['current_user_name'] = str(user_info.get("NOME", user_input_stripped)).strip()
+                    st.session_state['user_confirmed'] = True
+                    st.session_state['warning_message'] = None
+                    st.success(f"Usuário '{st.session_state['current_user_name']}' (PS: {user_input_stripped}) confirmado!", icon="✅")
+                else:
+                    # Usuário inválido ou erro na busca
+                    st.session_state['user_confirmed'] = False
+                    if not st.session_state.get('error_occurred_during_user_validation'): # Evita sobrepor msg de erro da função
+                        st.session_state['warning_message'] = (
+                            f"⚠️ Usuário com PS '{user_input_stripped}' não encontrado ou "
+                            "erro ao acessar lista de usuários. Por favor, contate o administrador para inclusão."
+                        )
+            else: # Input vazio
                 st.session_state['warning_message'] = "⚠️ O ID do usuário não pode ser vazio."
                 st.session_state['user_confirmed'] = False
 
+# Lógica para lidar com mudança de ID após confirmação
 if st.session_state['user_confirmed'] and \
-   st.session_state['current_user_id'] != st.session_state['user_id_input'].strip():
+   st.session_state['current_user_id'] != st.session_state['user_id_input'].strip() and \
+   st.session_state['user_id_input'].strip() != "": # Só desconfirma se o novo input não for vazio
     st.session_state['user_confirmed'] = False
     st.session_state['warning_message'] = "⚠️ ID do usuário alterado. Por favor, confirme novamente."
 
+# Exibir mensagens de status/alerta do usuário
 if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
-    st.info(f"**Usuário atual confirmado:** `{st.session_state['current_user_id']}`", icon="👤")
+    st.info(f"**Usuário atual:** `{st.session_state['current_user_name']}` (PS: `{st.session_state['current_user_id']}`)", icon="👤")
 elif st.session_state.get('warning_message'):
     st.warning(st.session_state['warning_message'], icon="🚨")
-else:
+else: # Estado inicial ou após input limpo
     st.warning("🚨 Por favor, digite e confirme seu ID de usuário acima para prosseguir.", icon="🚨")
 
 user_id_for_ops = st.session_state['current_user_id']
@@ -138,14 +206,11 @@ user_id_for_ops = st.session_state['current_user_id']
 # --- 6.3. Main Application UI (Filters and Athlete Cards) ---
 if st.session_state['user_confirmed'] and user_id_for_ops:
 
-    # --- 6.3.0. Botão para Atualizar Dados ---
-    if st.button("🔄 Atualizar Dados da Planilha", key="refresh_data_button", help="Recarrega os dados da planilha do Google."):
-        st.cache_data.clear()  # Limpa o cache de todas as funções @st.cache_data
-        st.toast("Dados atualizados! Recarregando a lista...", icon="🔄")
-        # time.sleep(0.5) # Pequena pausa para o toast ser visível antes do rerun (opcional)
-        st.rerun() # Recarrega o script inteiro
+    if st.button("🔄 Atualizar Dados (Atletas e Usuários)", key="refresh_data_button", help="Recarrega os dados da planilha do Google."):
+        st.cache_data.clear()
+        st.toast("Dados atualizados! Recarregando...", icon="🔄")
+        st.rerun()
 
-    # --- 6.3.1. Filters ---
     tipo = st.selectbox(
         "Tipo de verificação para REGISTRO",
         ["Blood Test", "PhotoShoot"],
@@ -157,24 +222,12 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
         help="Filtre os atletas por status de verificação para o TIPO selecionado."
     )
     
-    # --- 6.3.2. Carregar dados dos atletas (será pego do cache ou recarregado se o cache foi limpo) ---
-    df_athletes = load_data()
-    if df_athletes is None: # load_data agora pode retornar None em caso de erro antes de st.stop()
-        st.error("Não foi possível carregar os dados dos atletas. Tente atualizar.")
-        st.stop()
-
-    # --- 6.3.3. Attendance Button Handler ---
-    def handle_attendance_click(athlete_id_val, athlete_name, current_tipo):
-        presenca_id = f"{athlete_name}_{current_tipo}"
-        registrar_log(str(athlete_id_val), athlete_name, current_tipo, st.session_state['current_user_id'])
-        st.session_state["presencas"][presenca_id] = True
-        st.session_state['warning_message'] = None
-        st.rerun()
-
-    # --- 6.3.4. Display Athlete Cards ---
-    if df_athletes.empty:
-        st.info("Nenhum atleta encontrado com os critérios atuais.", icon="ℹ️")
-    else:
+    df_athletes = load_athlete_data()
+    if df_athletes.empty: # Se load_athlete_data retornou um DF vazio (seja por erro ou por não ter dados)
+        # A função load_athlete_data já deve ter mostrado um erro se falhou ao carregar
+        st.info("Nenhum dado de atleta para exibir no momento.")
+        # st.stop() # Não precisa parar aqui, pode ser que o usuário queira tentar atualizar
+    else: # Prossiga se df_athletes não estiver vazio
         st.markdown(f"Exibindo **{len(df_athletes)}** atletas.")
         for i, row in df_athletes.iterrows():
             presenca_id_para_tipo_atual = f"{row['NAME']}_{tipo}"
@@ -216,7 +269,6 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
                 elif not mobile_number.startswith('+'):
                     if len(mobile_number) >= 9 and not mobile_number.startswith("971"): mobile_number = "+971" + mobile_number.lstrip('0')
                     elif not (mobile_number.startswith("971") or mobile_number.startswith("+")): mobile_number = "+" + mobile_number
-                
                 if mobile_number.startswith("+"):
                     safe_mobile_for_link = html.escape(mobile_number.replace('+', ''), quote=True)
                     whatsapp_link_html = f"<tr><td style='padding-right:10px;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{safe_mobile_for_link}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
@@ -264,8 +316,8 @@ if st.session_state['user_confirmed'] and user_id_for_ops:
             st.button(
                 button_text,
                 key=f"attend_button_{row['ID']}_{tipo.replace(' ', '_')}_{i}",
-                on_click=handle_attendance_click,
-                args=(row['ID'], row['NAME'], tipo),
+                on_click=registrar_log, # Alterado para passar gspread_client
+                args=(gspread_client, row['ID'], row['NAME'], tipo, st.session_state['current_user_id']),
                 type="secondary" if presenca_registrada_para_tipo_atual else "primary",
                 use_container_width=True
             )

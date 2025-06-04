@@ -56,34 +56,30 @@ for i, row in df.iterrows():
     if status_view == "Restantes" and presenca_registrada:
         continue
 
-    blood_info = f"<tr><td><b>Blood Test in:</b></td><td>{row['BLOOD TEST']}</td></tr>" if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else ""
+    blood_info = f"<p style='margin:0; font-size:13px;'>Blood Test in: {row['BLOOD TEST']}</p>" \
+        if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else ""
 
-    button_text = "Subscrever attendance por uma nova?" if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else "Registrar Attendance"
+    button_text = "Subscrever attendance por uma nova?" \
+        if tipo == "Blood Test" and pd.notna(row["BLOOD TEST"]) else "Registrar Attendance"
 
     st.markdown(f"""
     <div style='background-color:{"#143d14" if presenca_registrada else "#1e1e1e"}; padding:20px; border-radius:10px; margin-bottom:15px;'>
-        <div style='display:flex; align-items:center; gap:20px; flex-wrap:wrap; justify-content:space-between;'>
+        <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
             <div style='display:flex; align-items:center; gap:15px;'>
                 <img src='{row["IMAGE"]}' style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
                 <div>
                     <h4 style='margin:0;'>{row["NAME"]}</h4>
                     <p style='margin:0;'>{row["EVENT"]}</p>
-                    {"<p style='margin:0; font-size:13px;'>Blood Test in: " + row["BLOOD TEST"] + "</p>" if blood_info else ""}
+                    {blood_info}
                 </div>
             </div>
-            <table style='font-size:14px; color:white;'>
+            <table style='font-size:14px; color:white; border-collapse:collapse;'>
                 <tr><td><b>Gênero:</b></td><td>{row["GENDER"]}</td></tr>
                 <tr><td><b>Nascimento:</b></td><td>{row["DOB"]}</td></tr>
                 <tr><td><b>Nacionalidade:</b></td><td>{row["NATIONALITY"]}</td></tr>
                 <tr><td><b>Passaporte:</b></td><td>{row["PASSPORT"]}</td></tr>
                 <tr><td><b>Expira em:</b></td><td>{row["PASSPORT EXPIRE DATE"]}</td></tr>
             </table>
-            <div style='min-width:180px; text-align:right;'>
-                <form method='post'>
-                    <input type='hidden' name='index' value='{i}'>
-                    <button type='submit' name='attend_{i}' style='padding:10px 15px; background-color:#00b300; color:white; border:none; border-radius:5px;'>{button_text}</button>
-                </form>
-            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)

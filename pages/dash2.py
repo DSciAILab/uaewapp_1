@@ -1,184 +1,199 @@
-# pages/DashboardTickets.py 
-# (Nome do arquivo diferente para não confundir com o Dashboard.py anterior)
+# pages/DashboardAtletas.py
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import altair as alt
-from datetime import datetime, timedelta
+import numpy as np # Para cálculos, se necessário
+import altair as alt # Para gráficos mais customizados
+from datetime import datetime # Se for usar datas para filtros
 
 # --- Configuração da Página ---
-# st.set_page_config(layout="wide", page_title="Dashboard de Suporte") # Definido no MainApp.py
+# st.set_page_config(layout="wide", page_title="Dashboard de Atletas") # Geralmente no MainApp.py
 
-# --- Geração de Dados Fictícios (Sample Data) ---
-@st.cache_data # Cache para não gerar dados toda vez
-def generate_sample_data(num_tickets=100):
-    np.random.seed(42)
-    ticket_ids = [f"TICKET-{1100 - i}" for i in range(num_tickets)]
-    issues = [
-        "Website performance degradation", "Collaboration tool not sending notifications",
-        "System updates causing compatibility issues", "Database connection failure",
-        "Security vulnerability identified", "Customer data not loading in CRM",
-        "Email server downtime", "Login page unresponsive", "Software license expired",
-        "VPN connection unstable"
-    ]
-    statuses = ["Open", "In Progress", "Closed"]
-    priorities = ["Low", "Medium", "High"]
-    
-    data = {
-        "ID": np.random.choice(ticket_ids, num_tickets, replace=False),
-        "Issue": np.random.choice(issues, num_tickets),
-        "Status": np.random.choice(statuses, num_tickets, p=[0.35, 0.15, 0.5]), # Mais abertos e fechados
-        "Priority": np.random.choice(priorities, num_tickets, p=[0.4, 0.4, 0.2]),
-        "Date Submitted": [datetime(2023, 1, 1) + timedelta(days=int(d)) for d in np.random.randint(0, 360, num_tickets)]
-    }
-    df = pd.DataFrame(data)
-    df["Date Submitted"] = pd.to_datetime(df["Date Submitted"])
-    # Para os deltas das métricas, precisamos de dados de um período anterior (simulado)
-    df["Previous Period Open Tickets"] = np.random.randint(20, 50) 
-    df["Previous Period Response Time"] = np.random.uniform(4.0, 8.0)
-    df["Previous Period Resolution Time"] = np.random.uniform(10.0, 25.0)
-    return df.sort_values(by="Date Submitted", ascending=False)
+# --- Constantes (COPIE E AJUSTE AS SUAS CONSTANTES AQUI) ---
+MAIN_SHEET_NAME = "UAEW_App" 
+ATHLETES_TAB_NAME = "df" # Para dados gerais de atletas (ex: status de atividade)
+ATTENDANCE_TAB_NAME = "Attendance"
+CONFIG_TAB_NAME = "Config"
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID" 
+NAME_COLUMN_IN_ATTENDANCE = "Fighter"  # Ou "Name", dependendo da sua aba Attendance
+STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"]
 
-# --- Carregamento dos Dados ---
-df_tickets = generate_sample_data(100)
+# --- Funções de Conexão e Carregamento de Dados (COPIE SUAS FUNÇÕES REAIS AQUI) ---
+# get_gspread_client, connect_gsheet_tab, 
+# load_athlete_data (da aba 'df'), load_fightcard_data, 
+# load_attendance_data, load_config_data
+# Cole as definições completas aqui ou importe-as de um utils.py
 
-# --- Título e Cabeçalho ---
-st.title("Dashboard de Tickets de Suporte")
-st.markdown("---")
-
-# --- Métricas Principais ---
-total_tickets = len(df_tickets)
-open_tickets_df = df_tickets[df_tickets["Status"] == "Open"]
-num_open_tickets = len(open_tickets_df)
-
-# Simular dados para as métricas de tempo e deltas
-# (Em um cenário real, isso viria de cálculos mais complexos ou de outra fonte de dados)
-avg_response_time_hours = 5.2 
-avg_resolution_time_hours = 16.0
-
-# Para os deltas, comparamos com um valor "do período anterior" (simulado na geração de dados)
-# Pegamos o primeiro valor, já que é constante para este dataset de exemplo
-prev_open_tickets = df_tickets["Previous Period Open Tickets"].iloc[0] if not df_tickets.empty else num_open_tickets
-prev_response_time = df_tickets["Previous Period Response Time"].iloc[0] if not df_tickets.empty else avg_response_time_hours
-prev_resolution_time = df_tickets["Previous Period Resolution Time"].iloc[0] if not df_tickets.empty else avg_resolution_time_hours
-
-delta_open_tickets = num_open_tickets - prev_open_tickets
-delta_response_time = round(avg_response_time_hours - prev_response_time, 1)
-delta_resolution_time = round(avg_resolution_time_hours - prev_resolution_time, 1)
-
-
-st.subheader(f"Número Total de Tickets: {total_tickets}")
-st.info("📝 Você pode editar os tickets clicando duas vezes em uma célula. Note como os gráficos abaixo atualizam automaticamente! Você também pode ordenar a tabela clicando nos cabeçalhos das colunas.")
-
-# --- Tabela Editável de Tickets ---
-# Usar uma cópia para o editor não afetar os cálculos originais diretamente até o rerun
-edited_df = st.data_editor(
-    df_tickets[["ID", "Issue", "Status", "Priority", "Date Submitted"]].head(10), # Mostra apenas os 10 mais recentes
-    num_rows="dynamic", # Permite adicionar/remover linhas se quiser, ou "fixed"
-    use_container_width=True,
-    # Configuração de colunas (opcional, para dropdowns, etc.)
-    column_config={
-        "Status": st.column_config.SelectboxColumn(
-            "Status",
-            options=["Open", "In Progress", "Closed"],
-            required=True,
-        ),
-        "Priority": st.column_config.SelectboxColumn(
-            "Priority",
-            options=["Low", "Medium", "High"],
-            required=True,
-        ),
-        "Date Submitted": st.column_config.DateColumn(
-            "Date Submitted",
-            format="YYYY-MM-DD", # Formato de data
-        )
-    }
-)
-# Se você quiser usar os dados editados para recalcular os gráficos:
-# df_tickets_display = edited_df # Ou mesclar de volta ao df_tickets original
-# Mas para simplicidade, os gráficos abaixo usarão o df_tickets original (ou o editado se você atribuir)
-# Para que os gráficos atualizem com base no edited_df, use edited_df nas funções de gráfico.
-# Por agora, vamos usar df_tickets para os gráficos para mostrar o estado original + edições visuais.
-
-st.markdown("---")
-st.subheader("Estatísticas Gerais")
-
-# --- Estatísticas em Colunas ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric(label="Número de Tickets Abertos", value=num_open_tickets, delta=f"{delta_open_tickets:+.0f} vs anterior")
-with col2:
-    st.metric(label="Tempo Médio de Primeira Resposta (horas)", value=f"{avg_response_time_hours:.1f}", delta=f"{delta_response_time:+.1f}h vs anterior")
-with col3:
-    st.metric(label="Tempo Médio de Resolução (horas)", value=f"{avg_resolution_time_hours:.0f}", delta=f"{delta_resolution_time:+.0f}h vs anterior")
-
-st.markdown("---")
-
-# --- Gráfico de Status de Tickets por Mês ---
-st.subheader("Status de Tickets por Mês")
-
-# Preparar dados para o gráfico de barras
-if not df_tickets.empty:
-    df_tickets_monthly = df_tickets.copy()
-    df_tickets_monthly["Month"] = df_tickets_monthly["Date Submitted"].dt.strftime("%Y-%m") # Agrupa por Ano-Mês
-    
-    # Contar tickets por Mês e Status
-    status_per_month = df_tickets_monthly.groupby(["Month", "Status"])["ID"].count().unstack(fill_value=0)
-    status_per_month = status_per_month.sort_index() # Ordena por mês
-    
-    # Reordenar colunas para uma ordem lógica na legenda (opcional)
-    status_order = ["Open", "In Progress", "Closed"]
-    status_per_month = status_per_month.reindex(columns=[s for s in status_order if s in status_per_month.columns], fill_value=0)
-
-    # Mapear nomes de mês para exibição (opcional, para nomes mais amigáveis)
-    # Ex: Jun, Jul, Aug...
+# Exemplo de placeholders (SUBSTITUA PELAS SUAS FUNÇÕES REAIS)
+@st.cache_resource(ttl=3600)
+def get_gspread_client(): # Placeholder
+    if "gcp_service_account" not in st.secrets: st.error("Credenciais GCP não encontradas."); st.stop()
     try:
-        status_per_month.index = pd.to_datetime(status_per_month.index).strftime("%b") # Converte para nome do mês abreviado
-    except: # Fallback se a conversão de índice falhar
-        pass
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=["https://www.googleapis.com/auth/spreadsheets"])
+        return gspread.authorize(creds)
+    except Exception as e: st.error(f"Erro gspread client: {e}"); st.stop()
+
+def connect_gsheet_tab(client, sheet_name, tab_name): # Placeholder
+    try: return client.open(sheet_name).worksheet(tab_name)
+    except Exception as e: st.error(f"Erro ao conectar {sheet_name}/{tab_name}: {e}"); st.stop()
+
+@st.cache_data
+def load_athlete_main_data(sheet_name=MAIN_SHEET_NAME, athletes_tab=ATHLETES_TAB_NAME): # Carrega da aba 'df'
+    g_client = get_gspread_client()
+    ws = connect_gsheet_tab(g_client, sheet_name, athletes_tab)
+    try:
+        df_ath = pd.DataFrame(ws.get_all_records())
+        if df_ath.empty: return pd.DataFrame()
+        # Processamento básico: contar ativos, por exemplo
+        if "INACTIVE" in df_ath.columns:
+            if df_ath["INACTIVE"].dtype == 'object':
+                 df_ath["INACTIVE"] = df_ath["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+            elif pd.api.types.is_numeric_dtype(df_ath["INACTIVE"]):
+                 df_ath["INACTIVE"] = df_ath["INACTIVE"].map({0: False, 1: True}).fillna(True)
+        else: # Se não houver coluna INACTIVE, assume todos ativos para este exemplo
+            df_ath["INACTIVE"] = False
+        return df_ath
+    except Exception as e: st.error(f"Erro ao carregar dados principais dos atletas: {e}"); return pd.DataFrame()
+
+@st.cache_data
+def load_fightcard_data_db(): # Renomeado para evitar conflito se tiver outra load_fightcard_data
+    url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
+    try:
+        df = pd.read_csv(url); df.columns = df.columns.str.strip()
+        df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
+        df["Corner"] = df["Corner"].astype(str).str.strip().str.lower()
+        df["Fighter"] = df["Fighter"].astype(str).str.strip()
+        return df.dropna(subset=["Fighter", "FightOrder"])
+    except Exception as e: st.error(f"Erro Fightcard: {e}"); return pd.DataFrame()
+
+@st.cache_data(ttl=120)
+def load_attendance_data_db(sheet_name=MAIN_SHEET_NAME, att_tab=ATTENDANCE_TAB_NAME): # Renomeado
+    g_client = get_gspread_client()
+    ws = connect_gsheet_tab(g_client, sheet_name, att_tab)
+    try:
+        df_att = pd.DataFrame(ws.get_all_records())
+        if df_att.empty: return pd.DataFrame()
+        cols_to_str = [ID_COLUMN_IN_ATTENDANCE, NAME_COLUMN_IN_ATTENDANCE, "Task", "Status"]
+        for col in cols_to_str:
+            if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
+        return df_att
+    except Exception as e: st.error(f"Erro Attendance: {e}"); return pd.DataFrame()
+
+@st.cache_data(ttl=600)
+def load_config_data_db(sheet_name=MAIN_SHEET_NAME, conf_tab=CONFIG_TAB_NAME): # Renomeado
+    g_client = get_gspread_client()
+    ws = connect_gsheet_tab(g_client, sheet_name, conf_tab)
+    try:
+        data = ws.get_all_values()
+        if not data or len(data) < 1: return [], []
+        df_conf = pd.DataFrame(data[1:], columns=data[0])
+        tasks = df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
+        return tasks, (df_conf["TaskStatus"].dropna().astype(str).str.strip().unique().tolist() if "TaskStatus" in df_conf.columns else [])
+    except Exception as e: st.error(f"Erro Config: {e}"); return [], []
+# --- FIM DAS FUNÇÕES DE CARREGAMENTO (SUBSTITUA PELAS SUAS REAIS) ---
 
 
-    st.bar_chart(status_per_month, use_container_width=True)
-    # Adicionar legenda manualmente se st.bar_chart não mostrar automaticamente ou para mais controle
-    legend_html = "<div style='display: flex; justify-content: center; margin-top: 10px;'>"
-    colors = {"Open": "#FF6B6B", "In Progress": "#4D96FF", "Closed": "#6BCB77"} # Cores para a legenda
-    for status, color in colors.items():
-        if status in status_per_month.columns: # Apenas se o status existir nos dados
-             legend_html += f"<div style='margin-right: 20px;'><span style='background-color:{color}; width:15px; height:15px; display:inline-block; margin-right:5px; border-radius:3px;'></span>{status}</div>"
-    legend_html += "</div>"
-    st.markdown(legend_html, unsafe_allow_html=True)
+# --- Título e Cabeçalho da Página ---
+st.title("Dashboard de Atletas e Eventos")
+st.markdown("---")
 
-else:
-    st.info("Sem dados de tickets para gerar o gráfico mensal.")
+# --- Carregamento de Dados para o Dashboard ---
+df_athletes_main = load_athlete_main_data() # Da aba 'df'
+df_fightcard = load_fightcard_data_db()
+df_attendance = load_attendance_data_db()
+task_list, status_list_config = load_config_data_db()
+
+# --- Cálculos para as Métricas ---
+num_total_athletes = len(df_athletes_main) if not df_athletes_main.empty else 0
+num_active_athletes = len(df_athletes_main[df_athletes_main["INACTIVE"] == False]) if "INACTIVE" in df_athletes_main.columns and not df_athletes_main.empty else num_total_athletes
+num_events = df_fightcard["Event"].nunique() if not df_fightcard.empty else 0
+
+# Métrica: % de tarefas "Done" em geral
+total_tasks_recorded = len(df_attendance)
+done_tasks_recorded = len(df_attendance[df_attendance["Status"] == "Done"]) if "Status" in df_attendance.columns else 0
+perc_done_tasks = (done_tasks_recorded / total_tasks_recorded * 100) if total_tasks_recorded > 0 else 0
+
+# --- Exibição das Métricas ---
+st.subheader("Visão Geral")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Atletas Registrados", num_total_athletes)
+col2.metric("Atletas Ativos", num_active_athletes)
+col3.metric("Eventos no Fightcard", num_events)
+col4.metric("Tarefas Concluídas", f"{perc_done_tasks:.1f}%", help=f"{done_tasks_recorded} de {total_tasks_recorded} tarefas registradas.")
 
 st.markdown("---")
 
-# --- Gráfico de Prioridades Atuais (Donut Chart com Altair) ---
-st.subheader("Prioridades dos Tickets Atuais (Abertos e Em Progresso)")
-if not open_tickets_df.empty:
-    priority_counts = open_tickets_df["Priority"].value_counts().reset_index()
-    priority_counts.columns = ["Priority", "Count"]
-
-    # Cores para o gráfico de prioridade
-    priority_colors = alt.Scale(
-        domain=['Low', 'Medium', 'High'],
-        range=['#6BCB77', '#FFD700', '#FF6B6B'] # Verde, Amarelo, Vermelho
-    )
-
-    chart_priority = alt.Chart(priority_counts).mark_arc(innerRadius=70, outerRadius=110).encode(
-        theta=alt.Theta(field="Count", type="quantitative"),
-        color=alt.Color(field="Priority", type="nominal", scale=priority_colors, legend=alt.Legend(title="Prioridade")),
-        tooltip=['Priority', 'Count']
-    ).properties(
-        width=300, # Tamanho do gráfico
-        height=300
-    )
+# --- Tabela de Lutas do Fightcard (Não Editável por Padrão) ---
+st.subheader("Próximas Lutas Agendadas")
+if not df_fightcard.empty:
+    # Simplificar o fightcard para exibição
+    fights_display_list = []
+    for order, group in df_fightcard.sort_values(by=["Event", "FightOrder"]).groupby(["Event", "FightOrder"]):
+        event, fight_order = order
+        blue = group[group["Corner"] == "blue"].squeeze(axis=0)
+        red = group[group["Corner"] == "red"].squeeze(axis=0)
+        fight_entry = {
+            "Evento": event,
+            "Luta #": int(fight_order) if pd.notna(fight_order) else "",
+            "Canto Azul": blue.get("Fighter", "N/A") if isinstance(blue, pd.Series) else "N/A",
+            "Canto Vermelho": red.get("Fighter", "N/A") if isinstance(red, pd.Series) else "N/A",
+            "Divisão": blue.get("Division", red.get("Division", "N/A")) if isinstance(blue, pd.Series) else (red.get("Division", "N/A") if isinstance(red, pd.Series) else "N/A")
+        }
+        fights_display_list.append(fight_entry)
     
-    # Centralizar o gráfico (usando colunas é uma forma)
-    _, col_chart, _ = st.columns([0.2, 0.6, 0.2])
-    with col_chart:
-        st.altair_chart(chart_priority, use_container_width=True)
-
+    if fights_display_list:
+        df_fights_display = pd.DataFrame(fights_display_list)
+        st.dataframe(df_fights_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhuma luta formatada para exibir.")
 else:
-    st.info("Sem tickets abertos ou em progresso para exibir prioridades.")
+    st.info("Nenhum dado de fightcard carregado para exibir a tabela de lutas.")
+
+st.markdown("---")
+
+# --- Status Geral das Tarefas ---
+st.subheader("Status Agregado das Tarefas")
+if not df_attendance.empty and "Status" in df_attendance.columns and "Task" in df_attendance.columns:
+    col_chart1, col_chart2 = st.columns(2)
+
+    with col_chart1:
+        st.markdown("##### Contagem por Status de Tarefa")
+        status_counts = df_attendance["Status"].value_counts().reset_index()
+        status_counts.columns = ["Status", "Contagem"]
+        
+        # Cores para o gráfico de status
+        status_colors = alt.Scale(
+            domain=['Done', 'Requested', 'Pendente', '---', 'Não Registrado'] + [s for s in status_counts["Status"].unique() if s not in ['Done', 'Requested', 'Pendente', '---', 'Não Registrado']], # Garante que os principais estão mapeados
+            range=['#2ECC71', '#F1C40F', '#7F8C8D', '#A6E22E', '#7F8C8D'] + ['#A9A9A9'] * (len(status_counts["Status"].unique()) - 5) # Cores e um cinza para outros
+        )
+
+        chart_status_agg = alt.Chart(status_counts).mark_bar().encode(
+            x=alt.X('Status:N', sort='-y', title='Status'),
+            y=alt.Y('Contagem:Q', title='Número de Registros'),
+            color=alt.Color('Status:N', scale=status_colors, legend=None), # Legenda pode poluir se muitos status
+            tooltip=['Status', 'Contagem']
+        ).properties(height=300)
+        st.altair_chart(chart_status_agg, use_container_width=True)
+
+    with col_chart2:
+        st.markdown("##### Distribuição por Tipo de Tarefa")
+        task_type_counts = df_attendance["Task"].value_counts().reset_index()
+        task_type_counts.columns = ["Tarefa", "Contagem"]
+
+        chart_task_type = alt.Chart(task_type_counts).mark_arc(innerRadius=50).encode(
+            theta=alt.Theta(field="Contagem", type="quantitative"),
+            color=alt.Color(field="Tarefa", type="nominal", legend=alt.Legend(title="Tipo de Tarefa")),
+            tooltip=['Tarefa', 'Contagem']
+        ).properties(height=300)
+        st.altair_chart(chart_task_type, use_container_width=True)
+else:
+    st.info("Sem dados de presença suficientes para gerar gráficos de status de tarefas.")
+
+# --- Adicionar mais seções conforme necessário ---
+# Por exemplo:
+# - Lista de atletas com mais tarefas pendentes
+# - Tarefas mais comuns em status "Requested"
+# - Filtros interativos para os gráficos ou tabela de lutas
+
+st.markdown("---")
+st.caption("Dashboard de Atletas - Visão Agregada")

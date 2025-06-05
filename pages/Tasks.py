@@ -10,7 +10,7 @@ import html
 st.set_page_config(page_title="Consulta e Registro de Atletas", layout="wide")
 
 # --- Constants ---
-MAIN_SHEET_NAME = "UAEW_App" # CONFIRME O NOME DA SUA PLANILHA PRINCIPAL
+MAIN_SHEET_NAME = "UAEW_App" 
 ATHLETES_TAB_NAME = "df"
 USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance"
@@ -47,12 +47,10 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
         st.stop()
 
 # --- 3. Data Loading and Preprocessing ---
-
-# --- 3.1 Athlete Data ---
 @st.cache_data(ttl=600)
 def load_athlete_data():
     if 'google_sheet_id' not in st.secrets:
-        st.error("Erro: `google_sheet_id` não encontrado nos segredos do Streamlit. Necessário para carregar dados dos atletas.")
+        st.error("Erro: `google_sheet_id` não encontrado nos segredos do Streamlit.", icon="🚨")
         return pd.DataFrame()
     url = f"https://docs.google.com/spreadsheets/d/{st.secrets['google_sheet_id']}/gviz/tq?tqx=out:csv&sheet={ATHLETES_TAB_NAME}"
     try:
@@ -69,20 +67,18 @@ def load_athlete_data():
             df[col_to_check] = df[col_to_check].fillna("")
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
     except Exception as e:
-        st.error(f"Error loading or processing athlete data from URL: {e}", icon="🚨")
+        st.error(f"Error loading or processing athlete data: {e}", icon="🚨")
         return pd.DataFrame()
 
-# --- 3.2 User Data ---
 @st.cache_data(ttl=300)
 def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
     try:
         gspread_client_internal = get_gspread_client()
         users_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, users_tab_name)
         users_data = users_worksheet.get_all_records()
-        if not users_data: return []
-        return users_data
+        return users_data if users_data else []
     except Exception as e:
-        st.error(f"Erro ao carregar dados da aba de usuários '{users_tab_name}': {e}", icon="🚨")
+        st.error(f"Erro ao carregar dados de usuários '{users_tab_name}': {e}", icon="🚨")
         return []
 
 def get_valid_user_info(user_ps_id_input: str, sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
@@ -90,19 +86,15 @@ def get_valid_user_info(user_ps_id_input: str, sheet_name: str = MAIN_SHEET_NAME
     all_users = load_users_data(sheet_name, users_tab_name)
     if not all_users: return None
     processed_user_input = user_ps_id_input.strip().upper()
-    validation_id_from_input = processed_user_input
-    if processed_user_input.startswith("PS"):
-        if len(processed_user_input) > 2 and processed_user_input[2:].isdigit():
-            validation_id_from_input = processed_user_input[2:]
-    elif not processed_user_input.isdigit():
-        return None
+    validation_id = processed_user_input[2:] if processed_user_input.startswith("PS") and len(processed_user_input) > 2 and processed_user_input[2:].isdigit() else processed_user_input
+    if not validation_id.isdigit() and not processed_user_input.startswith("PS"): return None # allow full PS string if not just digits
+    
     for user_record in all_users:
         ps_id_from_sheet = str(user_record.get("PS", "")).strip()
-        if ps_id_from_sheet == validation_id_from_input:
+        if ps_id_from_sheet == validation_id or ("PS" + ps_id_from_sheet) == processed_user_input: # Check both forms
             return user_record
     return None
 
-# --- 3.3 Config Data (TaskList, TaskStatus) ---
 @st.cache_data(ttl=600)
 def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = CONFIG_TAB_NAME):
     try:
@@ -110,25 +102,16 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
         config_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, config_tab_name)
         data = config_worksheet.get_all_values()
         if not data or len(data) < 1:
-            st.error(f"Aba de configuração '{config_tab_name}' está vazia ou não tem cabeçalho.", icon="🚨")
-            return [],[]
+            st.error(f"Aba '{config_tab_name}' vazia ou sem cabeçalho.", icon="🚨"); return [],[]
         df_config = pd.DataFrame(data[1:], columns=data[0])
-        task_list = []
-        if "TaskList" in df_config.columns:
-            task_list = df_config["TaskList"].dropna().unique().tolist()
-        else:
-            st.warning(f"Coluna 'TaskList' não encontrada na aba '{config_tab_name}'.", icon="⚠️")
-        task_status_list = []
-        if "TaskStatus" in df_config.columns:
-            task_status_list = df_config["TaskStatus"].dropna().unique().tolist()
-        else:
-            st.warning(f"Coluna 'TaskStatus' não encontrada na aba '{config_tab_name}'.", icon="⚠️")
+        task_list = df_config["TaskList"].dropna().unique().tolist() if "TaskList" in df_config.columns else []
+        task_status_list = df_config["TaskStatus"].dropna().unique().tolist() if "TaskStatus" in df_config.columns else []
+        if not task_list: st.warning(f"'TaskList' não encontrada ou vazia em '{config_tab_name}'.", icon="⚠️")
+        if not task_status_list: st.warning(f"'TaskStatus' não encontrada ou vazia em '{config_tab_name}'.", icon="⚠️")
         return task_list, task_status_list
     except Exception as e:
-        st.error(f"Erro ao carregar dados da aba de configuração '{config_tab_name}': {e}", icon="🚨")
-        return [], []
+        st.error(f"Erro ao carregar config da aba '{config_tab_name}': {e}", icon="🚨"); return [], []
 
-# --- 3.4 Attendance Data ---
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
     try:
@@ -138,14 +121,11 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         df_attendance = pd.DataFrame(records)
         expected_cols = ["#", "Athlete ID", "Name", "Event", "Task", "Status", "Notes", "User", "Timestamp"]
         for col in expected_cols:
-            if col not in df_attendance.columns:
-                df_attendance[col] = None
+            if col not in df_attendance.columns: df_attendance[col] = None
         return df_attendance
     except Exception as e:
-        st.error(f"Erro ao carregar dados da aba de presença '{attendance_tab_name}': {e}", icon="🚨")
-        return pd.DataFrame()
+        st.error(f"Erro ao carregar dados de presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
 
-# --- 4. Logging Function ---
 def registrar_log(athlete_id: str, athlete_name: str, athlete_event: str,
                   task_type: str, task_status: str, notes: str, user_id: str,
                   sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
@@ -154,250 +134,188 @@ def registrar_log(athlete_id: str, athlete_name: str, athlete_event: str,
         log_sheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
         all_values = log_sheet.get_all_values()
         next_hash_num = 1
-        if len(all_values) > 1:
+        if len(all_values) > 1: # header + data
             try:
-                if all_values[-1] and all_values[-1][0] != '':
-                    last_hash_num = int(all_values[-1][0])
-                    next_hash_num = last_hash_num + 1
-                else:
-                    next_hash_num = len(all_values)
-            except (ValueError, IndexError):
-                 next_hash_num = len(all_values)
-        elif len(all_values) == 1:
-            next_hash_num = 1
+                if all_values[-1] and all_values[-1][0] and str(all_values[-1][0]).isdigit():
+                    next_hash_num = int(all_values[-1][0]) + 1
+                else: # Last '#' is not a number or empty, count rows (excluding header)
+                    next_hash_num = len(all_values) 
+            except (ValueError, IndexError): next_hash_num = len(all_values)
+        elif len(all_values) == 1: next_hash_num = 1 # Only header
+        
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        nova_linha = [
-            str(next_hash_num), athlete_id, athlete_name, athlete_event,
-            task_type, task_status, notes, user_id, timestamp
-        ]
+        nova_linha = [str(next_hash_num), athlete_id, athlete_name, athlete_event, task_type, task_status, notes, user_id, timestamp]
         log_sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"'{task_type}' para {athlete_name} registrado como '{task_status}'.", icon="✍️")
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Erro ao registrar na planilha '{attendance_tab_name}': {e}", icon="🚨")
-        return False
+        st.error(f"Erro ao registrar na planilha '{attendance_tab_name}': {e}", icon="🚨"); return False
 
-# --- 5. Helper Function for Blood Test Expiration ---
 def is_blood_test_expired(blood_test_date_str: str) -> bool:
     if not blood_test_date_str: return True
     try:
-        blood_test_date = datetime.strptime(blood_test_date_str, "%d/%m/%Y")
-        return blood_test_date < (datetime.now() - timedelta(days=182))
+        return datetime.strptime(blood_test_date_str, "%d/%m/%Y") < (datetime.now() - timedelta(days=182))
     except ValueError: return True
 
-# --- 6. Main Application Logic ---
 st.title("Consulta e Registro de Atletas")
-
-default_session_state = {
-    "warning_message": None, "user_confirmed": False,
-    "current_user_id": "", "current_user_name": "Usuário",
-    "current_user_image_url": "",
-    "show_personal_data": True,
-    "selected_task": None, "selected_statuses": [],
-}
-for key, default_val in default_session_state.items():
-    if key not in st.session_state: st.session_state[key] = default_val
-
-if 'user_id_input' not in st.session_state:
-    st.session_state['user_id_input'] = st.session_state['current_user_id']
+default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "Usuário",
+              "current_user_image_url": "", "show_personal_data": True, "selected_task": None, "selected_statuses": []}
+for k, v in default_ss.items():
+    if k not in st.session_state: st.session_state[k] = v
+if 'user_id_input' not in st.session_state: st.session_state['user_id_input'] = st.session_state['current_user_id']
 
 with st.container(border=True):
     st.subheader("Identificação do Usuário")
-    col1, col2 = st.columns([0.7, 0.3])
-    with col1:
-        st.session_state['user_id_input'] = st.text_input(
-            "Informe seu PS (ID de usuário)", value=st.session_state['user_id_input'],
-            max_chars=15, help="Seu ID de usuário para registrar.", key="user_id_input_field"
-        )
-    with col2:
+    c1, c2 = st.columns([0.7, 0.3])
+    with c1:
+        st.session_state['user_id_input'] = st.text_input("PS (ID de usuário)", value=st.session_state['user_id_input'], max_chars=15, key="user_id_field")
+    with c2:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Confirmar Usuário", key="confirm_user_btn", use_container_width=True, type="primary"):
-            user_input_stripped = st.session_state['user_id_input'].strip()
-            if user_input_stripped:
-                user_info = get_valid_user_info(user_input_stripped)
-                if user_info:
-                    st.session_state['current_user_id'] = user_input_stripped
-                    st.session_state['current_user_name'] = str(user_info.get("USER", user_input_stripped)).strip()
-                    st.session_state['current_user_image_url'] = str(user_info.get("USER_IMAGE", "")).strip()
-                    st.session_state['user_confirmed'] = True
-                    st.session_state['warning_message'] = None
+        if st.button("Confirmar Usuário", key="confirm_user_b", use_container_width=True, type="primary"):
+            uid_stripped = st.session_state['user_id_input'].strip()
+            if uid_stripped:
+                u_info = get_valid_user_info(uid_stripped)
+                if u_info:
+                    st.session_state.update({"current_user_id": uid_stripped, "current_user_name": str(u_info.get("USER", uid_stripped)).strip(),
+                                             "current_user_image_url": str(u_info.get("USER_IMAGE", "")).strip(), "user_confirmed": True, "warning_message": None})
                 else:
-                    st.session_state['user_confirmed'] = False; st.session_state['current_user_image_url'] = ""
-                    st.session_state['warning_message'] = f"⚠️ Usuário '{user_input_stripped}' não encontrado."
+                    st.session_state.update({"user_confirmed": False, "current_user_image_url": "", "warning_message": f"⚠️ Usuário '{uid_stripped}' não encontrado."})
             else:
-                st.session_state['warning_message'] = "⚠️ O ID do usuário não pode ser vazio."; st.session_state['user_confirmed'] = False; st.session_state['current_user_image_url'] = ""
+                st.session_state.update({"warning_message": "⚠️ ID do usuário vazio.", "user_confirmed": False, "current_user_image_url": ""})
 
     if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
-        user_name_display = html.escape(st.session_state['current_user_name'])
-        user_id_display = html.escape(st.session_state['current_user_id'])
-        user_image_url = st.session_state.get('current_user_image_url', "")
-        greeting_html = ""
-        if user_image_url:
-            safe_image_url = html.escape(user_image_url, quote=True)
-            greeting_html = f"""<div style="display: flex; align-items: center; gap: 10px; margin-top:10px;"><img src="{safe_image_url}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid #555;"><div style="line-height: 1.2;"><span style="font-weight: bold;">{user_name_display}</span><br><span style="font-size: 0.9em; color: #ccc;">PS: {user_id_display}</span></div></div>"""
-            st.markdown(greeting_html, unsafe_allow_html=True)
-        else:
-            st.success(f"Usuário '{user_name_display}' (PS: {user_id_display}) confirmado!", icon="✅")
-    elif st.session_state.get('warning_message'):
-        st.warning(st.session_state['warning_message'], icon="🚨")
-    else:
-        st.info("ℹ️ Por favor, confirme seu ID de usuário para prosseguir.", icon="ℹ️")
+        uname_disp = html.escape(st.session_state['current_user_name']); uid_disp = html.escape(st.session_state['current_user_id'])
+        uimg_url = st.session_state.get('current_user_image_url', "")
+        greet_html = f"""<div style="display:flex;align-items:center;gap:10px;margin-top:10px;"><img src="{html.escape(uimg_url,quote=True)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid #555;"><div style="line-height:1.2;"><span style="font-weight:bold;">{uname_disp}</span><br><span style="font-size:0.9em;color:#ccc;">PS: {uid_disp}</span></div></div>""" if uimg_url else f"Usuário '{uname_disp}' (PS: {uid_disp}) confirmado!"
+        if uimg_url: st.markdown(greet_html, unsafe_allow_html=True)
+        else: st.success(greet_html, icon="✅")
+    elif st.session_state.get('warning_message'): st.warning(st.session_state['warning_message'], icon="🚨")
+    else: st.info("ℹ️ Confirme seu ID de usuário para prosseguir.", icon="ℹ️")
 
-    if st.session_state['user_confirmed'] and \
-    st.session_state['current_user_id'].strip().upper() != st.session_state['user_id_input'].strip().upper() and \
-    st.session_state['user_id_input'].strip() != "":
-        st.session_state['user_confirmed'] = False; st.session_state['warning_message'] = "⚠️ ID alterado. Confirme novamente."; st.session_state['current_user_image_url'] = ""; st.rerun()
+    if st.session_state['user_confirmed'] and st.session_state['current_user_id'].strip().upper() != st.session_state['user_id_input'].strip().upper() and st.session_state['user_id_input'].strip():
+        st.session_state.update({"user_confirmed": False, "warning_message": "⚠️ ID alterado. Confirme.", "current_user_image_url": ""}); st.rerun()
 
 if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
     st.markdown("---")
     TASK_LIST, TASK_STATUS_LIST = load_config_data()
-    if not TASK_LIST:
-        st.error("Lista de tarefas não carregada da 'Config'. Verifique.", icon="🚨"); st.stop()
-    if not TASK_STATUS_LIST: TASK_STATUS_LIST = ["Pendente", "Requested", "Done", "Approved", "Rejected", "Issue"]
+    if not TASK_LIST: st.error("Lista de tarefas não carregada.", icon="🚨"); st.stop()
+    if not TASK_STATUS_LIST: TASK_STATUS_LIST = ["Pendente", "Requested", "Done", "Approved", "Rejected", "Issue"] # Fallback
 
-    col_control1, col_control2, col_control3 = st.columns([0.4, 0.4, 0.2])
-    with col_control1:
-        st.session_state.selected_task = st.selectbox(
-            "Tipo de verificação para REGISTRO:", options=TASK_LIST,
-            index=TASK_LIST.index(st.session_state.selected_task) if st.session_state.selected_task and st.session_state.selected_task in TASK_LIST else 0,
-            key="task_selector")
-    with col_control2:
-        st.session_state.selected_statuses = st.multiselect(
-            "Filtrar por Status da Tarefa:", options=TASK_STATUS_LIST,
-            default=st.session_state.selected_statuses if st.session_state.selected_statuses else [],
-            key="status_multiselect")
-    with col_control3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Atualizar Dados", key="refresh_data_button", help="Recarrega dados.", use_container_width=True):
-            st.cache_data.clear(); st.cache_resource.clear(); st.toast("Dados atualizados!", icon="🔄"); st.rerun()
-
-    st.session_state.show_personal_data = st.toggle("Mostrar Dados Pessoais do Atleta", value=st.session_state.show_personal_data, key="toggle_personal_data")
+    cc1, cc2, cc3 = st.columns([0.4, 0.4, 0.2])
+    with cc1: st.session_state.selected_task = st.selectbox("Tipo de verificação:", TASK_LIST, index=TASK_LIST.index(st.session_state.selected_task) if st.session_state.selected_task in TASK_LIST else 0, key="task_sel")
+    with cc2: st.session_state.selected_statuses = st.multiselect("Filtrar Status:", TASK_STATUS_LIST, default=st.session_state.selected_statuses, key="status_multi")
+    with cc3: st.markdown("<br>",True); st.button("🔄 Atualizar", key="refresh_b", help="Recarrega dados.", on_click=lambda: (st.cache_data.clear(), st.cache_resource.clear(), st.toast("Dados atualizados!", icon="🔄"), st.rerun()), use_container_width=True)
+    st.session_state.show_personal_data = st.toggle("Mostrar Dados Pessoais", value=st.session_state.show_personal_data, key="toggle_pd")
     st.markdown("---")
 
     with st.spinner("Carregando atletas..."): df_athletes = load_athlete_data()
     with st.spinner("Carregando registros..."): df_attendance = load_attendance_data()
 
-    if df_athletes.empty:
-        st.info("Nenhum atleta para exibir.")
+    if df_athletes.empty: st.info("Nenhum atleta para exibir.")
     else:
         filtered_athletes = df_athletes.copy()
-        task_to_filter = st.session_state.selected_task
-        statuses_to_filter = st.session_state.selected_statuses
-
+        task_to_filter, statuses_to_filter = st.session_state.selected_task, st.session_state.selected_statuses
         if task_to_filter and statuses_to_filter:
-            athletes_to_show_ids = set()
-            df_attendance_str_id = df_attendance.copy()
-            if "Athlete ID" in df_attendance_str_id.columns:
-                 df_attendance_str_id["Athlete ID"] = df_attendance_str_id["Athlete ID"].astype(str)
-            for index, athlete_row in filtered_athletes.iterrows():
-                athlete_id = str(athlete_row["ID"])
-                relevant_attendance = pd.DataFrame()
-                if "Athlete ID" in df_attendance_str_id.columns and "Task" in df_attendance_str_id.columns:
-                    relevant_attendance = df_attendance_str_id[
-                        (df_attendance_str_id["Athlete ID"] == athlete_id) &
-                        (df_attendance_str_id["Task"] == task_to_filter)]
-                if not relevant_attendance.empty:
-                    if "Status" in relevant_attendance.columns and any(status in statuses_to_filter for status in relevant_attendance["Status"].unique()):
-                        athletes_to_show_ids.add(athlete_id)
-                elif any(s in statuses_to_filter for s in ["Pendente", "---", "Não Registrado"]):
-                    athletes_to_show_ids.add(athlete_id)
-            filtered_athletes = filtered_athletes[filtered_athletes["ID"].astype(str).isin(list(athletes_to_show_ids))]
+            show_ids = set()
+            df_att_copy = df_attendance.copy()
+            if "Athlete ID" in df_att_copy.columns: df_att_copy["Athlete ID"] = df_att_copy["Athlete ID"].astype(str)
+            for _, athlete_row in filtered_athletes.iterrows():
+                ath_id = str(athlete_row["ID"])
+                rel_att = pd.DataFrame()
+                if "Athlete ID" in df_att_copy.columns and "Task" in df_att_copy.columns:
+                    rel_att = df_att_copy[(df_att_copy["Athlete ID"] == ath_id) & (df_att_copy["Task"] == task_to_filter)]
+                if not rel_att.empty:
+                    if "Status" in rel_att.columns and any(s in statuses_to_filter for s in rel_att["Status"].unique()): show_ids.add(ath_id)
+                elif any(s in statuses_to_filter for s in ["Pendente", "---", "Não Registrado"]): show_ids.add(ath_id) # Default status check
+            filtered_athletes = filtered_athletes[filtered_athletes["ID"].astype(str).isin(list(show_ids))]
         
         st.markdown(f"Exibindo **{len(filtered_athletes)}** de **{len(df_athletes)}** atletas.")
 
         for i, row in filtered_athletes.iterrows():
-            athlete_id_str = str(row["ID"])
-            athlete_name = str(row["NAME"])
-            athlete_event = str(row["EVENT"])
+            athlete_id_str, athlete_name, athlete_event = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             current_task_status_info = "Status: Pendente / Não Registrado"
-            athlete_task_records = pd.DataFrame()
+            ath_task_recs = pd.DataFrame()
             if "Athlete ID" in df_attendance.columns and "Task" in df_attendance.columns:
-                df_attendance_task_check = df_attendance.copy()
-                df_attendance_task_check["Athlete ID"] = df_attendance_task_check["Athlete ID"].astype(str)
-                athlete_task_records = df_attendance_task_check[
-                    (df_attendance_task_check["Athlete ID"] == athlete_id_str) &
-                    (df_attendance_task_check["Task"] == st.session_state.selected_task)]
-            if not athlete_task_records.empty and "Status" in athlete_task_records.columns:
-                latest_record = athlete_task_records.sort_values(by="Timestamp", ascending=False).iloc[0]
-                current_task_status_info = f"Status Atual: **{latest_record['Status']}**"
-                if "Notes" in latest_record and pd.notna(latest_record['Notes']) and latest_record['Notes']:
-                     current_task_status_info += f" (Notas: {html.escape(str(latest_record['Notes']))})"
-            card_bg_color = "#1e1e1e"
-            if not athlete_task_records.empty and "Status" in athlete_task_records.columns and "Done" in athlete_task_records["Status"].values:
-                 card_bg_color = "#143d14" 
-            elif st.session_state.selected_task == "Blood Test":
-                bt_date_str = row.get("BLOOD TEST", ""); has_bt = pd.notna(bt_date_str) and str(bt_date_str).strip() != ""
-                bt_expired = is_blood_test_expired(bt_date_str) if has_bt else True
-                if has_bt and not bt_expired: card_bg_color = "#3D3D00"
-                elif bt_expired or not has_bt: card_bg_color = "#4D1A00"
+                df_att_task_check = df_attendance.copy(); df_att_task_check["Athlete ID"] = df_att_task_check["Athlete ID"].astype(str)
+                ath_task_recs = df_att_task_check[(df_att_task_check["Athlete ID"] == athlete_id_str) & (df_att_task_check["Task"] == st.session_state.selected_task)]
+            if not ath_task_recs.empty and "Status" in ath_task_recs.columns:
+                latest_rec = ath_task_recs.sort_values(by="Timestamp", ascending=False).iloc[0]
+                current_task_status_info = f"Status Atual: **{latest_rec['Status']}**"
+                if "Notes" in latest_rec and pd.notna(latest_rec['Notes']) and latest_rec['Notes']:
+                    current_task_status_info += f" (Notas: {html.escape(str(latest_rec['Notes']))})"
             
-            st.markdown(f"""
-            <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
-                <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
-                    <div style='display:flex; align-items:center; gap:15px; flex-basis: 300px; flex-grow: 1;'>
-                        <img src='{html.escape(row["IMAGE"] if pd.notna(row["IMAGE"]) and row["IMAGE"] else "https://via.placeholder.com/80?text=No+Image", quote=True)}'
-                             style='width:80px; height:80px; border-radius:50%; object-fit:cover; border:2px solid white;'>
-                        <div>
-                            <h4 style='margin:0;'>{html.escape(athlete_name)}</h4>
-                            <p style='margin:0; font-size:14px; color:#cccccc;'>{html.escape(athlete_event)}</p>
-                            <p style='margin:0; font-size:13px; color:#cccccc;'>ID: {html.escape(athlete_id_str)}</p>
-                            <p style='margin:0; font-size:13px; color:#a0f0a0;'><i>{current_task_status_info}</i></p>
-                        </div>
-                    </div>
-                    {f'''<div style='flex-basis: 350px; flex-grow: 1;'>
-                        <table style='font-size:14px; color:white; border-collapse:collapse; width:100%;'>
-                            <tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER", ""))) }</td></tr>
-                            <tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB", ""))) }</td></tr>
-                            <tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY", ""))) }</td></tr>
-                            <tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT", ""))) }</td></tr>
-                            <tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE", ""))) }</td></tr>
-                            {"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='"+html.escape(str(row.get("PASSPORT IMAGE","")),quote=True)+"' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""}
-                            {(lambda m: "<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/"+html.escape(m.replace("+",""),quote=True)+"' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>" if m else "")((lambda raw: ("+" + raw[2:] if raw.startswith("00") else ("+971" + raw.lstrip("0") if len(raw) >= 9 and not raw.startswith("971") and not raw.startswith("+") else ("+" + raw if not raw.startswith("+") else raw)) if raw else "")(str(row.get("MOBILE", "")).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")))}
-                            {(lambda bt_str, bt_exp: f"<tr style='color:{"red" if bt_exp else "#A0F0A0"};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_str)}{(f'<span style="font-weight:bold;">(Expirado)</span>' if bt_exp else '')}</td></tr>" if bt_str else "<tr style='color:orange;'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>Não Registrado</td></tr>")(str(row.get("BLOOD TEST", "")), is_blood_test_expired(str(row.get("BLOOD TEST", ""))))}
-                        </table>
-                    </div>''' if st.session_state.show_personal_data else "<div style='flex-basis: 300px; flex-grow: 1; font-style:italic; color:#ccc; font-size:13px; text-align:center;'>Dados pessoais ocultos.</div>"}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            card_bg_color = "#1e1e1e"
+            if not ath_task_recs.empty and "Status" in ath_task_recs.columns and "Done" in ath_task_recs["Status"].values: card_bg_color = "#143d14"
+            elif st.session_state.selected_task == "Blood Test":
+                bt_d_str, has_bt = row.get("BLOOD TEST", ""), pd.notna(row.get("BLOOD TEST", "")) and str(row.get("BLOOD TEST", "")).strip() != ""
+                bt_exp = is_blood_test_expired(bt_d_str) if has_bt else True
+                if has_bt and not bt_exp: card_bg_color = "#3D3D00"
+                elif bt_exp or not has_bt: card_bg_color = "#4D1A00"
 
-            current_selected_task = st.session_state.selected_task
-            music_link_keys = [f"music_link_1_{athlete_id_str}", f"music_link_2_{athlete_id_str}", f"music_link_3_{athlete_id_str}"]
-            for key_music in music_link_keys:
-                if key_music not in st.session_state: st.session_state[key_music] = ""
+            passport_image_html_part = ""
+            if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE"):
+                passport_url = html.escape(str(row.get("PASSPORT IMAGE", "")), quote=True)
+                passport_image_html_part = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{passport_url}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>"
 
-            if current_selected_task == "Walkout Music":
+            whatsapp_html_part = ""
+            mobile_raw_val = str(row.get("MOBILE", "")).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            if mobile_raw_val:
+                mob_proc = ("+" + mobile_raw_val[2:]) if mobile_raw_val.startswith("00") else \
+                           ("+971" + mobile_raw_val.lstrip("0")) if len(mobile_raw_val) >= 9 and not mobile_raw_val.startswith("971") and not mobile_raw_val.startswith("+") else \
+                           ("+" + mobile_raw_val) if not mobile_raw_val.startswith("+") else mobile_raw_val
+                if mob_proc.startswith("+"):
+                    wa_link_safe = html.escape(mob_proc.replace("+", ""), quote=True)
+                    whatsapp_html_part = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{wa_link_safe}' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>"
+
+            blood_test_html_part = ""
+            bt_date_str_val = str(row.get("BLOOD TEST", ""))
+            bt_is_expired_val = is_blood_test_expired(bt_date_str_val)
+            if bt_date_str_val:
+                bt_color = "red" if bt_is_expired_val else "#A0F0A0"
+                exp_span = f'<span style="font-weight:bold;">(Expirado)</span>' if bt_is_expired_val else ''
+                blood_test_html_part = f"<tr style='color:{bt_color};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_date_str_val)}{exp_span}</td></tr>"
+            else:
+                blood_test_html_part = "<tr style='color:orange;'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>Não Registrado</td></tr>"
+
+            personal_data_table_html = f"""<div style='flex-basis: 350px; flex-grow: 1;'>
+                    <table style='font-size:14px; color:white; border-collapse:collapse; width:100%;'>
+                        <tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER", ""))) }</td></tr>
+                        <tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB", ""))) }</td></tr>
+                        <tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY", ""))) }</td></tr>
+                        <tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT", ""))) }</td></tr>
+                        <tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE", ""))) }</td></tr>
+                        {passport_image_html_part} {whatsapp_html_part} {blood_test_html_part}
+                    </table></div>""" if st.session_state.show_personal_data else "<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
+
+            st.markdown(f"""<div style='background-color:{card_bg_color};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'>
+                <div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'>
+                <div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row["IMAGE"] if pd.notna(row["IMAGE"]) and row["IMAGE"] else "https://via.placeholder.com/80?text=No+Image", quote=True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div>
+                <h4 style='margin:0;'>{html.escape(athlete_name)}</h4><p style='margin:0;font-size:14px;color:#cccccc;'>{html.escape(athlete_event)}</p><p style='margin:0;font-size:13px;color:#cccccc;'>ID: {html.escape(athlete_id_str)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;'><i>{current_task_status_info}</i></p></div></div>
+                {personal_data_table_html}</div></div>""", unsafe_allow_html=True)
+
+            sel_task = st.session_state.selected_task
+            music_keys = [f"music_link_{j}_{athlete_id_str}" for j in range(1,4)]
+            for mk in music_keys:
+                if mk not in st.session_state: st.session_state[mk] = ""
+            if sel_task == "Walkout Music":
                 st.markdown("##### Links para Walkout Music:")
-                st.session_state[music_link_keys[0]] = st.text_input(f"Música 1 (YouTube)", value=st.session_state[music_link_keys[0]], key=f"music1_{athlete_id_str}_{i}", placeholder="Link do YouTube")
-                st.session_state[music_link_keys[1]] = st.text_input(f"Música 2 (YouTube)", value=st.session_state[music_link_keys[1]], key=f"music2_{athlete_id_str}_{i}", placeholder="Link do YouTube")
-                st.session_state[music_link_keys[2]] = st.text_input(f"Música 3 (YouTube)", value=st.session_state[music_link_keys[2]], key=f"music3_{athlete_id_str}_{i}", placeholder="Link do YouTube")
-                if st.button(f"Registrar Músicas para {athlete_name}", key=f"register_music_{athlete_id_str}_{i}", type="primary", use_container_width=True):
-                    links_to_register = [st.session_state[k] for k in music_link_keys]
-                    registered_any = False
-                    for idx, link_url in enumerate(links_to_register):
-                        if link_url and link_url.strip():
-                            success = registrar_log(
-                                athlete_id=athlete_id_str, athlete_name=athlete_name, athlete_event=athlete_event,
-                                task_type="Walkout Music", task_status="Done",
-                                notes=link_url.strip(), user_id=st.session_state['current_user_id'])
-                            if success: registered_any = True; st.session_state[music_link_keys[idx]] = ""
-                    if registered_any: st.rerun()
+                for j, mk_key in enumerate(music_keys):
+                    st.session_state[mk_key] = st.text_input(f"Música {j+1}", value=st.session_state[mk_key], key=f"music{j+1}_{athlete_id_str}_{i}", placeholder="Link YouTube")
+                if st.button(f"Registrar Músicas para {athlete_name}", key=f"reg_music_{athlete_id_str}_{i}", type="primary", use_container_width=True):
+                    any_reg = False
+                    for idx, k_music in enumerate(music_keys):
+                        if st.session_state[k_music] and st.session_state[k_music].strip():
+                            if registrar_log(athlete_id_str, athlete_name, athlete_event, "Walkout Music", "Done", st.session_state[k_music].strip(), st.session_state['current_user_id']):
+                                any_reg = True; st.session_state[k_music] = "" # Clear on success
+                    if any_reg: st.rerun()
                     else: st.warning("Nenhum link de música fornecido.", icon="⚠️")
             else:
-                is_already_done = False
-                if not athlete_task_records.empty and "Status" in athlete_task_records.columns:
-                    if "Done" in athlete_task_records["Status"].values: is_already_done = True
-                button_label = f"Marcar '{current_selected_task}' como CONCLUÍDO"
-                button_type = "primary"
-                if is_already_done:
-                    button_label = f"'{current_selected_task}' CONCLUÍDO (Registrar novamente?)"; button_type = "secondary"
-                if st.button(button_label, key=f"mark_done_{athlete_id_str}_{current_selected_task.replace(' ', '_')}_{i}", type=button_type, use_container_width=True):
-                    registrar_log(
-                        athlete_id=athlete_id_str, athlete_name=athlete_name, athlete_event=athlete_event,
-                        task_type=current_selected_task, task_status="Done", notes="",
-                        user_id=st.session_state['current_user_id'])
-                    st.rerun()
-            st.markdown("<hr style='border-top: 1px solid #333; margin-top: 10px; margin-bottom: 25px;'>", unsafe_allow_html=True)
+                done = "Done" in ath_task_recs["Status"].values if not ath_task_recs.empty and "Status" in ath_task_recs.columns else False
+                btn_lbl = f"Marcar '{sel_task}' CONCLUÍDO{' (Refazer?)' if done else ''}"
+                if st.button(btn_lbl, key=f"mark_done_{athlete_id_str}_{sel_task.replace(' ','_')}_{i}", type="secondary" if done else "primary", use_container_width=True):
+                    registrar_log(athlete_id_str, athlete_name, athlete_event, sel_task, "Done", "", st.session_state['current_user_id']); st.rerun()
+            st.markdown("<hr style='border-top:1px solid #333;margin-top:10px;margin-bottom:25px;'>", unsafe_allow_html=True)
 else:
     if not st.session_state['user_confirmed'] and not st.session_state.get('warning_message'):
          st.warning("🚨 Confirme seu ID de usuário para acessar.", icon="🚨")

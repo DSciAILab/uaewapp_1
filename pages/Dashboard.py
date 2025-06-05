@@ -1,36 +1,32 @@
-# pages/Dashboard.py
-
+# Dashboard.py
 import streamlit as st
 import pandas as pd
 import gspread 
 from google.oauth2.service_account import Credentials 
-from datetime import datetime
+from datetime import datetime 
 import html 
+import os # Importar o módulo os
 
-# --- 1. Page Configuration ---
-# st.set_page_config(layout="wide", page_title="Dashboard de Atletas") # Removido, pois é definido no MainApp.py
-
-# --- Constants ---
-MAIN_SHEET_NAME = "UAEW_App" 
-# ATHLETES_TAB_NAME = "df" # Não usado diretamente para carregar dados de atletas neste script.
-# USERS_TAB_NAME = "Users" # Não usado diretamente neste dashboard.
-ATTENDANCE_TAB_NAME = "Attendance"
-CONFIG_TAB_NAME = "Config"
-
-ID_COLUMN_IN_ATTENDANCE = "Athlete ID" 
-NAME_COLUMN_IN_ATTENDANCE = "Fighter"  
-
-STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"]
+# ... (suas constantes) ...
 
 # --- Função para Carregar CSS Externo ---
 def local_css(file_name):
+    # Constrói o caminho absoluto para o arquivo CSS
+    # __file__ é o caminho para o script atual (Dashboard.py)
+    # os.path.dirname(__file__) pega o diretório desse script (a pasta 'pages')
+    # os.path.join junta o diretório com o nome do arquivo CSS
+    current_script_path = os.path.dirname(__file__)
+    css_file_path = os.path.join(current_script_path, file_name)
+    
     try:
-        with open(file_name, "r", encoding="utf-8") as f:
+        with open(css_file_path, "r", encoding="utf-8") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"Arquivo CSS '{file_name}' não encontrado. Crie-o na mesma pasta do script (pages/).")
+        st.error(f"Arquivo CSS '{file_name}' não encontrado em: {css_file_path}. Verifique o caminho e se o arquivo existe.")
     except Exception as e:
-        st.error(f"Erro ao carregar CSS '{file_name}': {e}")
+        st.error(f"Erro ao carregar CSS '{css_file_path}': {e}")
+
+# ... (resto do seu script Dashboard.py) ...
 
 # --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)

@@ -1,0 +1,133 @@
+/* style.css */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700&display=swap');
+
+body, .main {
+    background-color: #0e1117;
+    color: white;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px; /* Base font size */
+}
+
+.dashboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 40px;
+    table-layout: fixed; /* Importante para larguras de coluna */
+}
+
+.dashboard-table th, .dashboard-table td {
+    border: 1px solid #2c3e50; /* Bordas mais escuras */
+    padding: 6px 8px; /* Padding reduzido */
+    text-align: left;
+    vertical-align: top;
+}
+
+.dashboard-table th {
+    background-color: #1a2533; /* Azul escuro para cabeçalhos */
+    color: #ecf0f1;
+    font-size: 13px;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.event-header-row td { /* Para a linha do nome do evento */
+    background-color: #111 !important; /* Corrigido */
+    color: white !important;
+    font-weight: bold !important;
+    text-align: center !important;
+    font-size: 20px !important;
+    padding: 10px !important;
+    text-transform: uppercase;
+    border: none !important; /* Remove bordas para o header do evento */
+}
+
+
+.fighter-cell {
+    width: 15%; /* Nome e foto */
+    text-align: center;
+}
+.fighter-img {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 50%; /* Circular */
+    border: 2px solid #34495e;
+    margin-bottom: 5px;
+}
+.fighter-name {
+    font-weight: bold;
+    font-size: 1.1em;
+    display: block;
+    margin-bottom: 3px;
+}
+.fighter-info-general { /* Para "Info Geral" - você definirá o conteúdo */
+    font-size: 0.8em;
+    color: #bdc3c7;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.tasks-cell {
+    width: 25%; /* Espaço para tarefas */
+}
+
+.task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); /* Colunas responsivas para tarefas */
+    gap: 4px;
+    font-size: 0.85em;
+}
+.task-item {
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    border-radius: 3px;
+    background-color: #1c2b3a; /* Fundo leve para cada item de tarefa */
+}
+.task-status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0; /* Para não encolher */
+}
+.task-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Para nomes de tarefas longos */
+    color: #ecf0f1;
+}
+
+/* Cores dos Indicadores de Status */
+.status-done { background-color: #2ECC71; } /* Verde */
+.status-requested { background-color: #F1C40F; } /* Amarelo */
+.status-not-requested { background-color: #A6E22E; } /* Verde Claro para "---" */
+.status-pending { background-color: #34495e; } /* Cinza escuro para pendente/sem info */
+
+
+.fight-details-cell {
+    width: 20%;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.9em;
+    background-color: #1f2c3a; /* Fundo um pouco diferente */
+    vertical-align: middle;
+}
+
+/* Cores para os cantos, se ainda quiser um leve destaque na célula */
+.blue-corner-bg { background-color: rgba(52, 152, 219, 0.1); }
+.red-corner-bg { background-color: rgba(231, 76, 60, 0.1); }
+
+ /* Ajustes para texto não ficar muito pequeno em telas menores, mas prioriza densidade */
+ @media screen and (max-width: 1200px) {
+     body, .main { font-size: 13px; }
+     .fighter-img { width: 60px; height: 60px; }
+     .task-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+ }
+ @media screen and (max-width: 768px) {
+     /* Em telas muito pequenas, pode ser necessário ocultar colunas ou empilhar */
+     .dashboard-table th, .dashboard-table td { padding: 4px; font-size: 11px;}
+     .fighter-img { width: 40px; height: 40px; }
+     .tasks-cell { display: none; } /* Exemplo: ocultar tarefas em telas muito pequenas */
+                                    /* Ou ajustar para um layout mais vertical */
+ }

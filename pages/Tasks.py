@@ -14,8 +14,7 @@ MAIN_SHEET_NAME = "UAEW_App"
 ATHLETES_TAB_NAME = "df" 
 USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance" 
-# !!! IMPORTANTE: AJUSTE ESTE NOME DE COLUNA SE NECESSÁRIO !!!
-ID_COLUMN_IN_ATTENDANCE = "Athlete ID" # Nome da coluna de ID do atleta na aba Attendance
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID" 
 CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED_LABEL = "-- Selecione uma Tarefa --"
 STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"] 
@@ -117,17 +116,12 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(worksheet.get_all_records())
-        # Ordem das colunas esperada na aba "Attendance" para consistência do DataFrame df_attendance
-        # A ordem em registrar_log para new_row_data é o que dita a gravação.
         expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
         for col in expected_cols_order:
-            if col not in df_att.columns: df_att[col] = None # Adiciona coluna se não existir
-        # Opcional: Reordenar o DataFrame para essa ordem, embora não afete a leitura de registros individuais
-        # df_att = df_att.reindex(columns=expected_cols_order) 
+            if col not in df_att.columns: df_att[col] = None
         return df_att
     except Exception as e: st.error(f"Erro ao carregar presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
 
-# --- 4. Logging Function ---
 def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str,
                   sheet_name: str = MAIN_SHEET_NAME, att_tab_name: str = ATTENDANCE_TAB_NAME):
     try:
@@ -140,22 +134,14 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
             if str(last_entry_first_col).isdigit(): next_num = int(last_entry_first_col) + 1
             else: next_num = len(all_vals) 
         elif len(all_vals) == 1: next_num = 1
-        
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name', user_log_id) if st.session_state.get('user_confirmed') else user_log_id
-        
-        new_row_data = [
-            str(next_num), ath_event, ath_id, ath_name, # Fighter é ath_name
-            task, status, user_ident, ts, notes
-        ] # Ordem: #, Event, Athlete ID, Fighter, Task, Status, User, TimeStamp, Notes
-        
+        new_row_data = [str(next_num), ath_event, ath_id, ath_name, task, status, user_ident, ts, notes]
         log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
         st.success(f"'{task}' para {ath_name} registrado como '{status}'.", icon="✍️")
-        load_attendance_data.clear() # Limpa cache específico
-        return True
+        load_attendance_data.clear(); return True
     except Exception as e: st.error(f"Erro ao registrar em '{att_tab_name}': {e}", icon="🚨"); return False
 
-# --- 5. Helper Functions ---
 def is_blood_test_expired(date_str: str) -> bool:
     if not date_str or pd.isna(date_str): return True
     try:
@@ -164,7 +150,6 @@ def is_blood_test_expired(date_str: str) -> bool:
         return dt_obj < (datetime.now() - timedelta(days=182)) if dt_obj else True
     except: return True
 
-# --- 6. Main Application Logic ---
 st.title("Consulta e Registro de Atletas")
 default_ss = {"warning_message":None, "user_confirmed":False, "current_user_id":"", "current_user_name":"Usuário",
               "current_user_image_url":"", "show_personal_data":True, "selected_task":NO_TASK_SELECTED_LABEL, "selected_statuses":[]}
@@ -172,7 +157,7 @@ for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
 
-with st.container(border=True): # User Auth
+with st.container(border=True):
     st.subheader("Identificação do Usuário")
     c1,c2=st.columns([0.7,0.3])
     with c1: st.session_state['user_id_input']=st.text_input("PS (ID de usuário) ou Nome",value=st.session_state['user_id_input'],max_chars=50,key="uid_w")
@@ -195,27 +180,24 @@ with st.container(border=True): # User Auth
     if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
         st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",current_user_image_url="",selected_task=NO_TASK_SELECTED_LABEL);st.rerun()
 
-if st.session_state.user_confirmed and st.session_state.current_user_name!="Usuário": # Main App Content
+if st.session_state.user_confirmed and st.session_state.current_user_name!="Usuário":
     st.markdown("---")
     with st.spinner("Carregando configurações..."):tasks_raw,statuses_list_cfg=load_config_data()
     tasks_for_select=[NO_TASK_SELECTED_LABEL]+tasks_raw
     if not tasks_raw:st.error("Lista de tarefas não carregada.",icon="🚨");st.stop()
     if not statuses_list_cfg:statuses_list_cfg=STATUS_PENDING_EQUIVALENTS+["Requested","Done","Approved","Rejected","Issue"]
-    
-    cc1,cc2,cc3=st.columns([0.4,0.4,0.2]) # Controls
+    cc1,cc2,cc3=st.columns([0.4,0.4,0.2])
     with cc1:st.session_state.selected_task=st.selectbox("Tipo de verificação:",tasks_for_select,index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0,key="tsel_w")
     with cc2:st.session_state.selected_statuses=st.multiselect("Filtrar Status:",statuses_list_cfg,default=st.session_state.selected_statuses or [],key="smul_w",disabled=(st.session_state.selected_task==NO_TASK_SELECTED_LABEL))
     with cc3:st.markdown("<br>",True);st.button("🔄 Atualizar",key="ref_b_w",help="Recarrega dados.",on_click=lambda:(load_athlete_data.clear(), load_users_data.clear(), load_config_data.clear(), load_attendance_data.clear(), st.toast("Dados atualizados!",icon="🔄"),st.rerun()),use_container_width=True)
     st.session_state.show_personal_data=st.toggle("Mostrar Dados Pessoais",value=st.session_state.show_personal_data,key="tgl_pd_w")
     st.markdown("---")
-
     with st.spinner("Carregando atletas..."):df_athletes=load_athlete_data()
     with st.spinner("Carregando registros..."):df_attendance=load_attendance_data()
     sel_task_actual=st.session_state.selected_task if st.session_state.selected_task!=NO_TASK_SELECTED_LABEL else None
-    
     if df_athletes.empty:st.info("Nenhum atleta para exibir.")
     else:
-        df_filtered=df_athletes.copy() # Filtering
+        df_filtered=df_athletes.copy()
         if sel_task_actual and st.session_state.selected_statuses:
             show_ids=set()
             df_att_filt=df_attendance.copy()
@@ -232,7 +214,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
         st.markdown(f"Exibindo **{len(df_filtered)}** de **{len(df_athletes)}** atletas.")
         if not sel_task_actual:st.info("Selecione uma tarefa para opções de registro e filtro.",icon="ℹ️")
 
-        for i_l,row in df_filtered.iterrows(): # Athlete Card Display
+        for i_l,row in df_filtered.iterrows():
             ath_id_d,ath_name_d,ath_event_d=str(row["ID"]),str(row["NAME"]),str(row["EVENT"])
             task_stat_disp="Status: Pendente / Não Registrado";latest_rec_task=None;ath_task_recs=pd.DataFrame()
             if sel_task_actual:
@@ -251,26 +233,28 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                     task_stat_disp=f"Status ({sel_task_actual}): **{latest_rec_task.get('Status','N/A')}**"
                     if "Notes" in latest_rec_task and pd.notna(latest_rec_task.get('Notes')) and latest_rec_task.get('Notes'):task_stat_disp+=f" (Notas: {html.escape(str(latest_rec_task.get('Notes')))})"
             
-            card_bg_col="#1e1e1e";curr_stat_color=latest_rec_task.get('Status') if latest_rec_task is not None else None
-            if curr_stat_color=="Done":card_bg_col="#143d14"
-            elif curr_stat_color=="Requested":card_bg_col="#634806" # Laranja escuro
-            if sel_task_actual=="Blood Test":
-                bt_d,has_b=row.get("BLOOD TEST",""),pd.notna(row.get("BLOOD TEST",""))and str(row.get("BLOOD TEST","")).strip()!=""
-                bt_ex=is_blood_test_expired(bt_d)if has_b else True
-                if has_b and not bt_ex:card_bg_col="#3D3D00"
-                elif bt_ex or not has_b:card_bg_col="#4D1A00"
+            # --- Lógica de Cor do Card PADRONIZADA ---
+            card_bg_col = "#1e1e1e" # Default - Cor do background (sem highlight)
+            current_status_for_color = latest_rec_task.get('Status') if latest_rec_task is not None else None
+
+            if current_status_for_color == "Done":
+                card_bg_col = "#143d14"  # Verde
+            elif current_status_for_color == "Requested":
+                card_bg_col = "#B08D00"  # Amarelo (Ex: #B08D00, #CCCC00, #FFD700)
+            # Se for "---", "Pendente", ou qualquer outro, permanece o default #1e1e1e
             
-            pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get("PASSPORT IMAGE","")),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else""
+            pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get("PASSPORT IMAGE","")),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
             mob_r=str(row.get("MOBILE","")).strip().replace(" ","").replace("-","").replace("(","").replace(")","");wa_h=""
             if mob_r:
                 mob_p=("+"+mob_r[2:])if mob_r.startswith("00")else("+971"+mob_r.lstrip("0"))if len(mob_r)>=9 and not mob_r.startswith("971")and not mob_r.startswith("+")else("+"+mob_r)if not mob_r.startswith("+")else mob_r
                 if mob_p.startswith("+"):wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(mob_p.replace('+',''),True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
             bt_d_h,bt_ex_h=str(row.get("BLOOD TEST","")),is_blood_test_expired(str(row.get("BLOOD TEST","")))
-            bt_h=f"<tr style='color:{"red"if bt_ex_h else"#A0F0A0"};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_d_h)}{f'<span style="font-weight:bold;">(Expirado)</span>'if bt_ex_h else''}</td></tr>"if bt_d_h else"<tr style='color:orange;'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>Não Registrado</td></tr>"
-            pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}{bt_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
+            # A cor do texto do Blood Test (vermelho/verde/laranja) é mantida, mas a cor de fundo do card é padronizada.
+            bt_html = f"<tr style='color:{"red" if bt_ex_h else ("#A0F0A0" if bt_d_h else "orange")};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_d_h) if bt_d_h else 'Não Registrado'}{f'<span style="font-weight:bold;">(Expirado)</span>' if bt_ex_h and bt_d_h else ''}</td></tr>"
+            pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}{bt_html}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;'><i>{task_stat_disp}</i></p></div></div>{pd_tbl_h}</div></div>""",True)
 
-            if sel_task_actual: # Action Buttons
+            if sel_task_actual: 
                 m_keys=[f"music_link_1_{ath_id_d}",f"music_link_2_{ath_id_d}",f"music_link_3_{ath_id_d}"]
                 for mk in m_keys:
                     if mk not in st.session_state:st.session_state[mk]=""
@@ -285,7 +269,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                                 if registrar_log(ath_id_d,ath_name_d,ath_event_d,"Walkout Music","Done",link_u.strip(),uid_l):any_m_reg=True;st.session_state[m_keys[idx]]=""
                         if any_m_reg:st.rerun()
                         else:st.warning("Nenhum link de música válido.",icon="⚠️")
-                else:
+                else: # Botão Dinâmico para outras tarefas
                     curr_ath_task_stat_btn=latest_rec_task.get('Status') if latest_rec_task is not None else None
                     next_stat_log="Requested";btn_lbl_task=f"Marcar '{sel_task_actual}' como SOLICITADO";btn_type_task="primary"
                     if curr_ath_task_stat_btn is None or curr_ath_task_stat_btn in STATUS_PENDING_EQUIVALENTS:

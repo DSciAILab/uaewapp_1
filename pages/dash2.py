@@ -6,15 +6,11 @@ import numpy as np
 import altair as alt 
 from datetime import datetime 
 
-# Importações para Google Sheets
 import gspread
-from google.oauth2.service_account import Credentials # GARANTIDO QUE ESTÁ AQUI
+from google.oauth2.service_account import Credentials 
 
-# --- Configuração da Página (geralmente no MainApp.py para apps multipágina) ---
-# Se este for seu app principal ou você quiser configurar por página:
-# if 'page_config_set_dashboard_atletas' not in st.session_state:
-#     st.set_page_config(layout="wide", page_title="Dashboard de Atletas")
-#     st.session_state.page_config_set_dashboard_atletas = True
+# --- Configuração da Página ---
+# (Geralmente no MainApp.py)
 
 # --- Constantes ---
 MAIN_SHEET_NAME = "UAEW_App" 
@@ -25,15 +21,13 @@ ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 NAME_COLUMN_IN_ATTENDANCE = "Fighter"
 STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"]
 
-# --- Funções de Conexão e Carregamento de Dados ---
+# --- Funções de Conexão e Carregamento de Dados (COPIE SUAS FUNÇÕES REAIS AQUI) ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         if "gcp_service_account" not in st.secrets:
             st.error("Erro: Credenciais `gcp_service_account` não encontradas.", icon="🚨"); st.stop()
-        # USA Credentials AQUI
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
     except KeyError: 
@@ -42,7 +36,6 @@ def get_gspread_client():
         st.error(f"Erro API Google/gspread auth: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     if not gspread_client: st.error("Cliente gspread não inicializado.", icon="🚨"); st.stop()
     try:
         spreadsheet = gspread_client.open(sheet_name)
@@ -56,7 +49,6 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
 
 @st.cache_data
 def load_athlete_main_data(sheet_name=MAIN_SHEET_NAME, athletes_tab=ATHLETES_TAB_NAME):
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     g_client = get_gspread_client()
     ws = connect_gsheet_tab(g_client, sheet_name, athletes_tab)
     try:
@@ -73,19 +65,18 @@ def load_athlete_main_data(sheet_name=MAIN_SHEET_NAME, athletes_tab=ATHLETES_TAB
 
 @st.cache_data
 def load_fightcard_data_db():
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
     try:
         df = pd.read_csv(url); df.columns = df.columns.str.strip()
         df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
         df["Corner"] = df["Corner"].astype(str).str.strip().str.lower()
         df["Fighter"] = df["Fighter"].astype(str).str.strip()
+        df["Picture"] = df["Picture"].astype(str).str.strip() # Garante que Picture é string
         return df.dropna(subset=["Fighter", "FightOrder"])
     except Exception as e: st.error(f"Erro Fightcard: {e}"); return pd.DataFrame()
 
 @st.cache_data(ttl=120)
 def load_attendance_data_db(sheet_name=MAIN_SHEET_NAME, att_tab=ATTENDANCE_TAB_NAME):
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     g_client = get_gspread_client()
     ws = connect_gsheet_tab(g_client, sheet_name, att_tab)
     try:
@@ -99,7 +90,6 @@ def load_attendance_data_db(sheet_name=MAIN_SHEET_NAME, att_tab=ATTENDANCE_TAB_N
 
 @st.cache_data(ttl=600)
 def load_config_data_db(sheet_name=MAIN_SHEET_NAME, conf_tab=CONFIG_TAB_NAME):
-    # SUBSTITUA PELO SEU CÓDIGO REAL OU IMPORTE DE UTILS
     g_client = get_gspread_client()
     ws = connect_gsheet_tab(g_client, sheet_name, conf_tab)
     try:
@@ -116,13 +106,12 @@ def load_config_data_db(sheet_name=MAIN_SHEET_NAME, conf_tab=CONFIG_TAB_NAME):
 st.title("Dashboard de Atletas e Eventos")
 st.markdown("---")
 
-# --- Carregamento de Dados para o Dashboard ---
-# Inicializa para evitar NameError se alguma carga falhar antes da atribuição
+# --- Carregamento de Dados ---
 df_athletes_main = pd.DataFrame()
 df_fightcard = pd.DataFrame()
 df_attendance = pd.DataFrame()
 task_list = []
-status_list_config = [] # Não usado diretamente nos gráficos atuais, mas carregado
+status_list_config = []
 
 with st.spinner("Carregando dados..."):
     df_athletes_main = load_athlete_main_data() 
@@ -145,10 +134,9 @@ col1.metric("Atletas Registrados", num_total_athletes)
 col2.metric("Atletas Ativos", num_active_athletes)
 col3.metric("Eventos no Fightcard", num_events)
 col4.metric("Tarefas Concluídas", f"{perc_done_tasks:.1f}%", help=f"{done_tasks_recorded} de {total_tasks_recorded} tarefas.")
-
 st.markdown("---")
 
-# --- Tabela de Lutas do Fightcard ---
+# --- Tabela de Lutas do Fightcard com Imagens ---
 st.subheader("Lutas Agendadas")
 if not df_fightcard.empty:
     fights_display_list = []
@@ -156,19 +144,48 @@ if not df_fightcard.empty:
         event, fight_order = order
         blue = group[group["Corner"] == "blue"].squeeze(axis=0)
         red = group[group["Corner"] == "red"].squeeze(axis=0)
+        
+        blue_fighter_name = blue.get("Fighter", "N/A") if isinstance(blue, pd.Series) else "N/A"
+        red_fighter_name = red.get("Fighter", "N/A") if isinstance(red, pd.Series) else "N/A"
+        # Garante que a URL da imagem seja uma string e válida, senão None
+        blue_image_url = str(blue.get("Picture", "")) if isinstance(blue, pd.Series) and isinstance(blue.get("Picture"), str) and blue.get("Picture", "").startswith("http") else None
+        red_image_url = str(red.get("Picture", "")) if isinstance(red, pd.Series) and isinstance(red.get("Picture"), str) and red.get("Picture", "").startswith("http") else None
+
         fight_entry = {
             "Evento": event,
             "Luta #": int(fight_order) if pd.notna(fight_order) else "",
-            "Canto Azul": blue.get("Fighter", "N/A") if isinstance(blue, pd.Series) else "N/A",
-            "Canto Vermelho": red.get("Fighter", "N/A") if isinstance(red, pd.Series) else "N/A",
+            "Foto Azul": blue_image_url, 
+            "Canto Azul": blue_fighter_name,
+            "Canto Vermelho": red_fighter_name,
+            "Foto Vermelho": red_image_url, 
             "Divisão": blue.get("Division", red.get("Division", "N/A")) if isinstance(blue, pd.Series) else (red.get("Division", "N/A") if isinstance(red, pd.Series) else "N/A")
         }
         fights_display_list.append(fight_entry)
+    
     if fights_display_list:
-        df_fights_display = pd.DataFrame(fights_display_list)
-        st.dataframe(df_fights_display, use_container_width=True, hide_index=True)
-    else: st.info("Nenhuma luta formatada para exibir.")
-else: st.info("Nenhum dado de fightcard para exibir tabela de lutas.")
+        df_fights_for_editor = pd.DataFrame(fights_display_list)
+        
+        st.data_editor( 
+            df_fights_for_editor, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Foto Azul": st.column_config.ImageColumn("Foto Azul", width="small"),
+                "Foto Vermelho": st.column_config.ImageColumn("Foto Vermelho", width="small"),
+                "Evento": st.column_config.TextColumn(width="medium"),
+                "Luta #": st.column_config.NumberColumn(width="small", format="%d"), # Formato para inteiro
+                "Canto Azul": st.column_config.TextColumn("Lutador Azul", width="large"), # Label melhorado
+                "Canto Vermelho": st.column_config.TextColumn("Lutador Vermelho", width="large"), # Label melhorado
+                "Divisão": st.column_config.TextColumn(width="medium"),
+            },
+            column_order=("Evento", "Luta #", "Foto Azul", "Canto Azul", "Divisão", "Canto Vermelho", "Foto Vermelho"),
+            num_rows="fixed", # Não permite adicionar/remover linhas
+            disabled=True # Torna a tabela inteira não editável, apenas para visualização
+        )
+    else:
+        st.info("Nenhuma luta formatada para exibir.")
+else:
+    st.info("Nenhum dado de fightcard carregado para exibir tabela de lutas.")
 
 st.markdown("---")
 
@@ -180,26 +197,26 @@ if not df_attendance.empty and "Status" in df_attendance.columns and "Task" in d
         st.markdown("##### Contagem por Status")
         status_counts = df_attendance["Status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Contagem"]
-        status_colors_domain = ['Done', 'Requested', 'Pendente', '---'] + [s for s in status_counts["Status"].unique() if s not in ['Done', 'Requested', 'Pendente', '---']]
-        status_colors_range = ['#2ECC71', '#F1C40F', '#7F8C8D', '#A6E22E'] + ['#A9A9A9'] * (len(status_counts["Status"].unique()) - 4)
+        status_colors_domain = ['Done', 'Requested'] + [s for s in status_counts["Status"].unique() if s not in ['Done', 'Requested']]
+        status_colors_range = ['#2ECC71', '#F1C40F'] + ['#A6E22E', '#7F8C8D', '#A9A9A9'] * (len(status_counts["Status"].unique())) # Garante cores suficientes
         
         chart_status_agg = alt.Chart(status_counts).mark_bar().encode(
             x=alt.X('Status:N', sort='-y', title='Status'),
             y=alt.Y('Contagem:Q', title='Nº de Registros'),
-            color=alt.Color('Status:N', scale=alt.Scale(domain=status_colors_domain, range=status_colors_range), legend=None),
+            color=alt.Color('Status:N', scale=alt.Scale(domain=status_colors_domain, range=status_colors_range[:len(status_colors_domain)]), legend=None),
             tooltip=['Status', 'Contagem']
-        ).properties(height=350) # Aumentado altura
+        ).properties(height=350)
         st.altair_chart(chart_status_agg, use_container_width=True)
 
     with col_chart2:
         st.markdown("##### Distribuição por Tipo de Tarefa")
         task_type_counts = df_attendance["Task"].value_counts().reset_index()
         task_type_counts.columns = ["Tarefa", "Contagem"]
-        chart_task_type = alt.Chart(task_type_counts).mark_arc(innerRadius=60, outerRadius=100).encode( # Ajustado raio
+        chart_task_type = alt.Chart(task_type_counts).mark_arc(innerRadius=60, outerRadius=100).encode(
             theta=alt.Theta(field="Contagem", type="quantitative"),
-            color=alt.Color(field="Tarefa", type="nominal", legend=alt.Legend(title="Tipo de Tarefa", orient="right")), # Legenda à direita
+            color=alt.Color(field="Tarefa", type="nominal", legend=alt.Legend(title="Tipo de Tarefa", orient="right")),
             tooltip=['Tarefa', 'Contagem']
-        ).properties(height=350) # Aumentado altura
+        ).properties(height=350)
         st.altair_chart(chart_task_type, use_container_width=True)
 else:
     st.info("Sem dados de presença para gerar gráficos de status de tarefas.")

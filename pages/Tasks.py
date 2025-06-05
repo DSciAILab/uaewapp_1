@@ -13,12 +13,11 @@ st.set_page_config(page_title="Consulta e Registro de Atletas", layout="wide")
 MAIN_SHEET_NAME = "UAEW_App" 
 ATHLETES_TAB_NAME = "df" 
 USERS_TAB_NAME = "Users"
-ATTENDANCE_TAB_NAME = "Attendance" # Coluna de ID do atleta aqui deve ser "Athlete ID"
+ATTENDANCE_TAB_NAME = "Attendance" 
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID" # Confirme se este é o nome da coluna na sua aba Attendance
 CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED_LABEL = "-- Selecione uma Tarefa --"
-# Assumindo que a coluna de ID do atleta na aba Attendance é "Athlete ID"
-# Se for "ID", você precisará mudar ID_COLUMN_IN_ATTENDANCE abaixo e nas funções/lógica.
-ID_COLUMN_IN_ATTENDANCE = "Athlete ID" 
+STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"] # Status que significam "ainda não feito"
 
 # --- 2. Google Sheets Connection (para gspread) ---
 @st.cache_resource(ttl=3600)
@@ -124,7 +123,6 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(worksheet.get_all_records())
-        # Usa ID_COLUMN_IN_ATTENDANCE aqui
         expected = ["#", ID_COLUMN_IN_ATTENDANCE, "Name", "Event", "Task", "Status", "Notes", "User", "Timestamp"]
         for col in expected:
             if col not in df_att.columns: df_att[col] = None
@@ -141,20 +139,10 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
         next_num = 1
         if len(all_vals) > 1 and all_vals[-1] and all_vals[-1][0] and str(all_vals[-1][0]).isdigit():
             next_num = int(all_vals[-1][0]) + 1
-        elif len(all_vals) >= 1 : next_num = len(all_vals) # Se só cabeçalho, é 1. Se dados, len(all_vals) é count + header.
-                                                            # Se dados, o correto seria len(all_values) se # é sequencial desconsiderando header
-                                                            # Mais robusto: pegar o MAX da coluna # ou len(dados) + 1
-
+        elif len(all_vals) >= 1 : next_num = len(all_vals) 
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name', user_log_id) if st.session_state.get('user_confirmed') else user_log_id
-        # Usa ID_COLUMN_IN_ATTENDANCE para o nome da coluna na linha, mas o valor é ath_id
         new_row_data = [str(next_num), ath_id, ath_name, ath_event, task, status, notes, user_ident, ts]
-        
-        # Para montar a linha, precisamos garantir que o nome da coluna de ID do atleta seja o correto.
-        # A função append_row não usa nomes de coluna, apenas a ordem.
-        # A estrutura da linha deve coincidir com a ordem das colunas na aba "Attendance"
-        # Se a primeira coluna de ID é "Athlete ID" (ID_COLUMN_IN_ATTENDANCE), então está ok.
-
         log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
         st.success(f"'{task}' para {ath_name} registrado como '{status}'.", icon="✍️")
         st.cache_data.clear(); return True
@@ -207,13 +195,15 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
     with st.spinner("Carregando configurações..."): tasks_raw, statuses_list = load_config_data()
     tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
     if not tasks_raw: st.error("Lista de tarefas não carregada.", icon="🚨"); st.stop()
-    if not statuses_list: statuses_list = ["Pendente","Requested","Done","Approved","Rejected","Issue"]
+    if not statuses_list: statuses_list = STATUS_PENDING_EQUIVALENTS + ["Requested","Done","Approved","Rejected","Issue"] # Garante que Pendente e Requested existem
+    
     cc1,cc2,cc3 = st.columns([0.4,0.4,0.2])
     with cc1: st.session_state.selected_task = st.selectbox("Tipo de verificação:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="task_sel_w")
     with cc2: st.session_state.selected_statuses = st.multiselect("Filtrar Status:", statuses_list, default=st.session_state.selected_statuses or [], key="status_multi_w", disabled=(st.session_state.selected_task==NO_TASK_SELECTED_LABEL))
     with cc3: st.markdown("<br>",True); st.button("🔄 Atualizar", key="refresh_b_w", help="Recarrega dados.", on_click=lambda:(st.cache_data.clear(),st.cache_resource.clear(),st.toast("Dados atualizados!",icon="🔄"),st.rerun()), use_container_width=True)
     st.session_state.show_personal_data = st.toggle("Mostrar Dados Pessoais", value=st.session_state.show_personal_data, key="toggle_pd_w")
     st.markdown("---")
+    
     with st.spinner("Carregando atletas..."): df_athletes = load_athlete_data()
     with st.spinner("Carregando registros..."): df_attendance = load_attendance_data()
     
@@ -230,22 +220,21 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                 rel_att_recs = pd.DataFrame()
                 if ID_COLUMN_IN_ATTENDANCE in df_att_filt.columns and "Task" in df_att_filt.columns:
                     rel_att_recs = df_att_filt[(df_att_filt[ID_COLUMN_IN_ATTENDANCE] == ath_id_filt) & (df_att_filt["Task"] == sel_task_actual)]
-                if not rel_att_recs.empty and "Status" in rel_att_recs.columns and any(s in st.session_state.selected_statuses for s in rel_att_recs["Status"].unique()):
+                if not rel_att_recs.empty:
+                    if "Status" in rel_att_recs.columns and any(s in st.session_state.selected_statuses for s in rel_att_recs["Status"].unique()):
+                        show_ids.add(ath_id_filt)
+                elif rel_att_recs.empty and any(s in st.session_state.selected_statuses for s in STATUS_PENDING_EQUIVALENTS):
                     show_ids.add(ath_id_filt)
-                elif not rel_att_recs.empty and any(s in st.session_state.selected_statuses for s in ["Pendente","---","Não Registrado"]): # Se status do filtro é pendente, e não tem registro (empty), não deve entrar aqui.
-                    pass # Não adicionar se o filtro é para pendente e o atleta TEM registros para a tarefa (mesmo que não bata o status).
-                elif rel_att_recs.empty and any(s in st.session_state.selected_statuses for s in ["Pendente","---","Não Registrado"]):
-                    show_ids.add(ath_id_filt) # Adiciona se o filtro é para pendente E o atleta NÃO TEM registros para a tarefa.
-
-
             df_filtered = df_filtered[df_filtered["ID"].astype(str).isin(list(show_ids))]
+        
         st.markdown(f"Exibindo **{len(df_filtered)}** de **{len(df_athletes)}** atletas.")
         if not sel_task_actual: st.info("Selecione uma tarefa para opções de registro e filtro.", icon="ℹ️")
 
         for i_l, row in df_filtered.iterrows():
             ath_id_disp, ath_name_disp, ath_event_disp = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             curr_task_stat_disp = "Status: Pendente / Não Registrado"
-            ath_task_recs_df = pd.DataFrame() # Definir fora do if para ter escopo
+            ath_task_recs_df = pd.DataFrame() 
+            latest_rec_for_task = None # Para armazenar o último registro da tarefa
 
             if sel_task_actual:
                 if ID_COLUMN_IN_ATTENDANCE in df_attendance.columns and "Task" in df_attendance.columns:
@@ -253,21 +242,28 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                     if ID_COLUMN_IN_ATTENDANCE in df_att_chk_disp: df_att_chk_disp[ID_COLUMN_IN_ATTENDANCE] = df_att_chk_disp[ID_COLUMN_IN_ATTENDANCE].astype(str)
                     ath_task_recs_df = df_att_chk_disp[(df_att_chk_disp.get(ID_COLUMN_IN_ATTENDANCE)==ath_id_disp) & (df_att_chk_disp.get("Task")==sel_task_actual)]
                 if not ath_task_recs_df.empty and "Status" in ath_task_recs_df.columns:
-                    latest_rec = ath_task_recs_df.iloc[-1].copy() # Fallback
-                    sorted_ok = False
+                    latest_rec_for_task = ath_task_recs_df.iloc[-1].copy() # Fallback
                     if "Timestamp" in ath_task_recs_df.columns:
                         try:
                             temp_df = ath_task_recs_df.copy()
                             temp_df["Timestamp_dt"] = pd.to_datetime(temp_df["Timestamp"], format="%d/%m/%Y %H:%M:%S", errors='coerce')
                             temp_df.dropna(subset=["Timestamp_dt"], inplace=True)
-                            if not temp_df.empty: latest_rec = temp_df.sort_values(by="Timestamp_dt", ascending=False).iloc[0].copy(); sorted_ok = True
+                            if not temp_df.empty: latest_rec_for_task = temp_df.sort_values(by="Timestamp_dt", ascending=False).iloc[0].copy()
                         except: pass
-                    curr_task_stat_disp = f"Status ({sel_task_actual}): **{latest_rec.get('Status','N/A')}**"
-                    if "Notes" in latest_rec and pd.notna(latest_rec.get('Notes')) and latest_rec.get('Notes'): curr_task_stat_disp += f" (Notas: {html.escape(str(latest_rec.get('Notes')))})"
+                    curr_task_stat_disp = f"Status ({sel_task_actual}): **{latest_rec_for_task.get('Status','N/A')}**"
+                    if "Notes" in latest_rec_for_task and pd.notna(latest_rec_for_task.get('Notes')) and latest_rec_for_task.get('Notes'): curr_task_stat_disp += f" (Notas: {html.escape(str(latest_rec_for_task.get('Notes')))})"
             
-            card_bg = "#1e1e1e"
-            if sel_task_actual and not ath_task_recs_df.empty and "Status" in ath_task_recs_df.columns and "Done" in ath_task_recs_df["Status"].values: card_bg="#143d14"
-            elif sel_task_actual=="Blood Test":
+            # --- Lógica de Cor do Card CORRIGIDA ---
+            card_bg = "#1e1e1e" # Default
+            current_status_for_color = None
+            if latest_rec_for_task is not None: # Se temos um latest_rec_for_task
+                current_status_for_color = latest_rec_for_task.get('Status')
+
+            if current_status_for_color == "Done": card_bg = "#143d14" # Verde
+            elif current_status_for_color == "Requested": card_bg = "#634806" # Laranja escuro/marrom para Requested
+            # Adicionar outras cores para outros status aqui se necessário
+            
+            if sel_task_actual == "Blood Test": # Lógica de Blood Test sobrescreve
                 bt_date, has_bt = row.get("BLOOD TEST",""), pd.notna(row.get("BLOOD TEST","")) and str(row.get("BLOOD TEST","")).strip()!=""
                 bt_exp = is_blood_test_expired(bt_date) if has_bt else True
                 if has_bt and not bt_exp: card_bg="#3D3D00"
@@ -288,6 +284,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                 music_keys = [f"music_link_1_{ath_id_disp}",f"music_link_2_{ath_id_disp}",f"music_link_3_{ath_id_disp}"]
                 for mk in music_keys:
                     if mk not in st.session_state:st.session_state[mk]=""
+                
                 if sel_task_actual=="Walkout Music":
                     st.markdown("##### Links para Walkout Music:")
                     for j,mk_k in enumerate(music_keys): st.session_state[mk_k]=st.text_input(f"Música {j+1}",value=st.session_state[mk_k],key=f"music{j+1}_in_{ath_id_disp}_{i_l}",placeholder="Link YouTube")
@@ -299,12 +296,35 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                                 if registrar_log(ath_id_disp,ath_name_disp,ath_event_disp,"Walkout Music","Done",link_url.strip(),uid_log): any_reg=True;st.session_state[music_keys[idx]]=""
                         if any_reg:st.rerun()
                         else:st.warning("Nenhum link de música válido fornecido.",icon="⚠️")
-                else:
-                    is_done=False
-                    if not ath_task_recs_df.empty and "Status" in ath_task_recs_df.columns and "Done" in ath_task_recs_df["Status"].values:is_done=True
-                    btn_lbl,btn_type = (f"'{sel_task_actual}' JÁ CONCLUÍDO (Refazer?)","secondary") if is_done else (f"Marcar '{sel_task_actual}' como CONCLUÍDO","primary")
-                    if st.button(btn_lbl,key=f"mark_done_b_{ath_id_disp}_{sel_task_actual.replace(' ','_')}_{i_l}",type=btn_type,use_container_width=True):
-                        uid_log=st.session_state.get("current_user_ps_id_internal",st.session_state.current_user_id); registrar_log(ath_id_disp,ath_name_disp,ath_event_disp,sel_task_actual,"Done","",uid_log);st.rerun()
+                else: # --- Lógica do Botão Dinâmico CORRIGIDA ---
+                    current_athlete_task_status_for_button = None
+                    if latest_rec_for_task is not None:
+                        current_athlete_task_status_for_button = latest_rec_for_task.get('Status')
+
+                    next_status_to_log = "Requested" # Default action
+                    button_label_task = f"Marcar '{sel_task_actual}' como SOLICITADO"
+                    button_type_task = "primary"
+
+                    if current_athlete_task_status_for_button is None or current_athlete_task_status_for_button in STATUS_PENDING_EQUIVALENTS:
+                        next_status_to_log = "Requested"
+                        button_label_task = f"Marcar '{sel_task_actual}' como SOLICITADO (Requested)"
+                    elif current_athlete_task_status_for_button == "Done":
+                        next_status_to_log = "Requested" 
+                        button_label_task = f"'{sel_task_actual}' FEITO. Solicitar Novamente (Requested)?"
+                        button_type_task = "secondary"
+                    elif current_athlete_task_status_for_button == "Requested":
+                        next_status_to_log = "Done" # Ação principal quando está "Requested"
+                        button_label_task = f"Marcar '{sel_task_actual}' como CONCLUÍDO (Done)"
+                        # Você poderia adicionar um segundo botão aqui para "Cancelar Solicitação" (registrar como "---") se quisesse.
+                        # Ex: if st.button("Cancelar Solicitação", key=f"cancel_req_button_{...}"): registrar_log(..., "---", ...)
+
+                    if st.button(button_label_task, 
+                                 key=f"mark_status_button_{ath_id_disp}_{sel_task_actual.replace(' ', '_')}_{i_l}", 
+                                 type=button_type_task, 
+                                 use_container_width=True):
+                        uid_log=st.session_state.get("current_user_ps_id_internal",st.session_state.current_user_id)
+                        registrar_log(ath_id_disp,ath_name_disp,ath_event_disp,sel_task_actual,next_status_to_log,"",uid_log)
+                        st.rerun()
             st.markdown("<hr style='border-top:1px solid #333;margin-top:10px;margin-bottom:25px;'>",True)
 else:
     if not st.session_state.user_confirmed and not st.session_state.get('warning_message'): st.warning("🚨 Confirme seu ID/Nome de usuário para acessar.",icon="🚨")

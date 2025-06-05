@@ -1,133 +1,165 @@
-/* style.css */
+/* pages/style.css */
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700&display=swap');
 
-body, .main {
-    background-color: #0e1117;
+body, .stApp { /* Aplicar ao container principal do Streamlit também */
+    background-color: #0e1117 !important; /* Cor de fundo geral */
     color: white;
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 14px; /* Base font size */
 }
 
+.main .block-container { /* Para garantir que o conteúdo principal também tenha o fundo escuro */
+    background-color: #0e1117;
+}
+
+h1 { /* Estilo para o título principal da página, se não for via markdown */
+    text-align: center;
+    color: white;
+    margin-bottom: 20px;
+}
+
 .dashboard-table {
     width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 40px;
+    border-collapse: separate; /* Usar separate para border-spacing */
+    border-spacing: 0; /* Remover espaçamento padrão se separate */
+    margin-bottom: 30px; /* Espaço entre tabelas de eventos */
     table-layout: fixed; 
+    background-color: #12171f; /* Fundo sutil para a tabela */
 }
 
 .dashboard-table th, .dashboard-table td {
-    border: 1px solid #2c3e50; 
-    padding: 6px 8px; 
+    border: 1px solid #2a3b4d; /* Borda um pouco mais clara */
+    padding: 8px 10px; 
     text-align: left;
     vertical-align: top;
 }
 
 .dashboard-table th {
     background-color: #1a2533; 
-    color: #ecf0f1;
+    color: #e0e0e0; /* Cinza claro para texto do cabeçalho */
     font-size: 13px;
+    font-weight: bold; /* Adicionado */
     text-transform: uppercase;
     text-align: center;
 }
 
 .event-header-row td { 
-    background-color: #111 !important; 
+    background-color: #000000 !important; /* Preto para header do evento */
     color: white !important;
     font-weight: bold !important;
     text-align: center !important;
     font-size: 20px !important;
-    padding: 10px !important;
+    padding: 12px !important;
     text-transform: uppercase;
-    border: none !important; 
+    border-left: none !important; /* Remove bordas laterais */
+    border-right: none !important;
+    border-top: 2px solid #444 !important; /* Borda superior para separar do anterior */
+    border-bottom: 2px solid #444 !important; /* Borda inferior para separar */
 }
 
 
 .fighter-cell {
-    /* width: 15%; Foi removido para dar mais flexibilidade à tabela */
     text-align: center;
+    vertical-align: middle; /* Centraliza imagem e nome */
 }
 .fighter-img {
-    width: 70px;
-    height: 70px;
+    width: 75px; /* Aumentado um pouco */
+    height: 75px;
     object-fit: cover;
     border-radius: 50%; 
-    border: 2px solid #34495e;
-    margin-bottom: 5px;
-    display: inline-block; /* Para que o placeholder div funcione bem */
+    border: 2px solid #4a6a8a; /* Borda azulada */
+    margin-bottom: 8px;
+    display: inline-block; 
 }
 .fighter-name {
     font-weight: bold;
-    font-size: 1.1em;
+    font-size: 1.2em; /* Um pouco maior */
     display: block;
-    margin-bottom: 3px;
+    color: #ffffff; /* Branco para nome */
+    margin-bottom: 4px;
 }
 .fighter-info-general { 
-    font-size: 0.8em;
-    color: #bdc3c7;
+    font-size: 0.85em;
+    color: #a0b0c0; /* Cinza azulado mais claro */
     display: block;
     margin-bottom: 5px;
 }
 
 .tasks-cell {
-    /* width: 25%; Foi removido */
+    vertical-align: top;
 }
 
 .task-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); /* Aumentado minmax */
-    gap: 5px; /* Aumentado gap */
-    font-size: 0.85em;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); /* Mais espaço para cada tarefa */
+    gap: 6px; 
+    font-size: 0.9em; /* Levemente aumentado */
 }
 .task-item {
     display: flex;
     align-items: center;
-    padding: 4px; /* Aumentado padding */
-    border-radius: 3px;
-    background-color: rgba(28, 43, 58, 0.5); /* Fundo levemente transparente */
+    padding: 5px; 
+    border-radius: 4px; /* Bordas mais arredondadas */
+    background-color: #1f2c3a; /* Fundo mais escuro para item de tarefa */
+    border: 1px solid #2c3e50; /* Borda sutil no item */
 }
 .task-status-indicator {
-    width: 12px;
-    height: 12px;
+    width: 10px; /* Ajustado */
+    height: 10px;
     border-radius: 50%;
-    margin-right: 6px;
+    margin-right: 8px; /* Mais espaço */
     flex-shrink: 0; 
-    border: 1px solid rgba(255, 255, 255, 0.3); /* Borda sutil no indicador */
+    /* Removida borda do indicador, a cor de fundo será suficiente */
 }
 .task-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis; 
-    color: #ecf0f1;
+    color: #c0d0e0; /* Cinza azulado mais claro */
+    flex-grow: 1; /* Para ocupar espaço disponível */
 }
 
 /* Cores dos Indicadores de Status */
-.status-done { background-color: #2ECC71; } /* Verde */
-.status-requested { background-color: #F1C40F; } /* Amarelo */
-.status-not-requested { background-color: #A6E22E; } /* Verde Claro para "---" ou "Não Solicitado" */
-.status-pending { background-color: #566573; } /* Cinza um pouco mais visível para pendente/sem info */
+.status-done { background-color: #2ECC71; } 
+.status-requested { background-color: #F1C40F; } 
+.status-not-requested { background-color: #82E0AA; } /* Verde claro mais suave */
+.status-pending { background-color: #7F8C8D; } /* Cinza mais neutro */
 
 
 .fight-details-cell {
-    /* width: 20%; Foi removido */
     text-align: center;
     font-weight: bold;
-    font-size: 0.9em;
-    background-color: #1f2c3a; 
+    font-size: 1em; /* Aumentado */
+    background-color: #161f29; 
     vertical-align: middle;
+    color: #f0f0f0;
 }
 
-.blue-corner-bg { background-color: rgba(52, 152, 219, 0.05); } /* Muito sutil */
-.red-corner-bg { background-color: rgba(231, 76, 60, 0.05); } /* Muito sutil */
+/* Cores de fundo dos cantos (muito sutis ou podem ser removidas se a borda da tabela for suficiente) */
+.blue-corner-bg { /* background-color: rgba(52, 152, 219, 0.03); */ }
+.red-corner-bg { /* background-color: rgba(231, 76, 60, 0.03); */ }
 
-@media screen and (max-width: 1200px) {
-    body, .main { font-size: 13px; }
+@media screen and (max-width: 1200px) { /* Telas menores que FHD */
+    body, .stApp { font-size: 13px; }
     .fighter-img { width: 60px; height: 60px; }
-    .task-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+    .task-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    .fighter-name { font-size: 1.1em; }
 }
-@media screen and (max-width: 768px) {
-    .dashboard-table th, .dashboard-table td { padding: 4px; font-size: 11px;}
-    .fighter-img { width: 45px; height: 45px; }
-    .task-grid { grid-template-columns: 1fr; } /* Uma tarefa por linha no mobile */
-    .task-item { justify-content: flex-start; } /* Alinha indicador e nome à esquerda */
-    .fighter-info-general { display: none; } /* Oculta info geral no mobile para economizar espaço */
+@media screen and (max-width: 992px) { /* Tablets */
+    .dashboard-table th, .dashboard-table td { padding: 5px; font-size: 12px;}
+    .fighter-img { width: 50px; height: 50px; }
+    .task-grid { grid-template-columns: 1fr; } /* Uma tarefa por linha */
+    .task-item { padding: 4px; }
+    .event-header-row td { font-size: 16px !important; padding: 8px !important; }
+}
+@media screen and (max-width: 576px) { /* Mobile */
+    .dashboard-table th, .dashboard-table td { font-size: 10px; padding: 3px;}
+    .fighter-img { width: 40px; height: 40px; }
+    .fighter-name { font-size: 0.9em; }
+    .fighter-info-general { display: none; } 
+    .task-status-indicator { width: 8px; height: 8px; margin-right: 4px;}
+    .task-grid { gap: 3px; }
+    .task-item { padding: 3px; }
+    .fight-details-cell { font-size: 0.8em;}
+    .event-header-row td { font-size: 14px !important; padding: 6px !important; }
 }

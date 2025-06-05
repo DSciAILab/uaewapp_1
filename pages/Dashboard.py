@@ -2,73 +2,255 @@
 
 import streamlit as st
 import pandas as pd
-import gspread # (Necessário se não estiver no script de utils)
-from google.oauth2.service_account import Credentials # (Necessário)
-from datetime import datetime # (Necessário)
-import html # (Necessário)
+import gspread # Necessário se não estiver no script de utils
+from google.oauth2.service_account import Credentials # Necessário
+from datetime import datetime, timedelta # datetime é usado, timedelta não neste esqueleto, mas pode ser útil
+import html 
 
-# --- Constantes (adapte dos seus outros scripts) ---
-# MAIN_SHEET_NAME = "UAEW_App"
-# ATHLETES_TAB_NAME = "df" # Para dados detalhados dos atletas se necessário além do Fightcard
-# ATTENDANCE_TAB_NAME = "Attendance"
-# CONFIG_TAB_NAME = "Config"
-# ID_COLUMN_IN_ATTENDANCE = "Athlete ID" # ou "ID"
-# STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"]
+# --- 1. Page Configuration ---
+st.set_page_config(layout="wide", page_title="Dashboard de Atletas")
 
-# --- Funções de Conexão e Carregamento de Dados (adapte/importe dos seus outros scripts) ---
-# @st.cache_resource
-# def get_gspread_client(): ...
-# def connect_gsheet_tab(...): ...
+# --- Constants ---
+MAIN_SHEET_NAME = "UAEW_App" 
+ATHLETES_TAB_NAME = "df" 
+USERS_TAB_NAME = "Users" # Não usado diretamente neste dashboard, mas pode ser parte do seu get_gspread_client
+ATTENDANCE_TAB_NAME = "Attendance"
+CONFIG_TAB_NAME = "Config"
+# !!! IMPORTANTE: AJUSTE ESTE NOME DE COLUNA SE NECESSÁRIO !!!
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID" # Nome da coluna de ID do atleta na sua aba Attendance. Se for "ID", mude aqui.
+                                       # E também na lista expected_cols em load_attendance_data
+NAME_COLUMN_IN_ATTENDANCE = "Fighter" # Nome da coluna do NOME do atleta na sua aba Attendance
+STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"]
+NO_TASK_SELECTED_LABEL = "-- Selecione uma Tarefa --" # Se quiser filtro de tarefa no dashboard
 
-# @st.cache_data
-# def load_athlete_details_data(): # Carrega da aba 'df' se precisar de mais detalhes que o Fightcard não tem
-#     # ... similar ao load_athlete_data() anterior, mas focado nos detalhes que podem faltar no fightcard
-#     pass
+# --- CSS Global para a Página ---
+# Movido para fora da função de renderização para melhor organização
+# Se o seu CSS for muito extenso, considere colocá-lo em um arquivo .css separado e carregá-lo.
+PAGE_CSS = """
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700&display=swap');
+        body, .main {
+            background-color: #0e1117; /* Cor de fundo geral */
+            color: white;
+            font-family: 'Barlow Condensed', sans-serif;
+        }
+        .fightcard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 50px;
+            table-layout: fixed; /* Ajuda a controlar larguras das colunas */
+        }
+        .fightcard-table th, .fightcard-table td {
+            padding: 10px; /* Reduzido um pouco */
+            text-align: center;
+            vertical-align: top; /* Alinha conteúdo ao topo da célula */
+            font-size: 15px; /* Ajustado */
+            color: white;
+            border-bottom: 1px solid #444;
+        }
+        .fightcard-img {
+            width: 80px; /* Reduzido um pouco */
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 5px; /* Espaço abaixo da imagem */
+        }
+        .blue-corner-col { /* Coluna inteira do Blue Corner */
+            background-color: #0d2d51; /* Azul escuro */
+        }
+        .red-corner-col { /* Coluna inteira do Red Corner */
+            background-color: #3b1214; /* Vermelho escuro */
+        }
+        .fighter-name {
+            font-weight: bold;
+            font-size: 1.1em; /* Um pouco maior */
+            display: block; /* Para que o margin-bottom funcione */
+            margin-bottom: 8px;
+        }
+        .middle-cell {
+            background-color: #2f2f2f;
+            font-weight: bold;
+            font-size: 14px;
+            vertical-align: middle; /* Detalhes da luta centralizados verticalmente */
+        }
+        .event-header {
+            background-color: #111;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            font-size: 22px; /* Aumentado */
+            padding: 15px; /* Aumentado */
+            text-transform: uppercase;
+        }
+        .fightcard-table th { /* Cabeçalhos da tabela (Blue Corner, Fight Details, Red Corner) */
+            background-color: #1c1c1c;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 16px;
+        }
+        .task-status-list {
+            list-style-type: none;
+            padding-left: 0;
+            font-size: 13px; /* Menor para caber mais tarefas */
+            text-align: left;
+            margin-top: 8px; /* Espaço acima da lista de tarefas */
+        }
+        .task-status-list li {
+            margin-bottom: 3px; /* Menor espaçamento entre tarefas */
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dotted #555; /* Linha sutil entre tarefas */
+            padding-bottom: 3px;
+        }
+        .task-status-list li:last-child {
+            border-bottom: none; /* Remove a borda do último item */
+        }
+        .task-name {
+            font-weight: normal;
+            color: #b0bec5; /* Cinza azulado claro */
+            margin-right: 10px; /* Espaço entre nome da tarefa e status */
+        }
+        .status-text { /* Classe genérica para o texto do status */
+            font-weight: bold;
+            text-align: right;
+        }
+        .status-done { color: #4CAF50; } /* Verde mais vibrante */
+        .status-requested { color: #FFC107; } /* Amarelo âmbar */
+        .status-pending { color: #9E9E9E; font-weight: normal; } /* Cinza */
+        /* Adicione mais classes de status conforme necessário */
+        /* .status-outro-status { color: #cor; } */
 
-# @st.cache_data
-# def load_attendance_data(): # Carrega da aba 'Attendance'
-#     # ... como no script anterior ...
-#     pass
+        @media screen and (max-width: 768px) {
+            .fightcard-table td, .fightcard-table th {
+                font-size: 12px; /* Ainda menor para mobile */
+                padding: 6px;
+            }
+            .fightcard-img {
+                width: 50px;
+                height: 50px;
+            }
+            .event-header { font-size: 18px; padding: 10px; }
+            .task-status-list { font-size: 11px; }
+            .fighter-name { font-size: 1em; }
+        }
+    </style>
+"""
 
-# @st.cache_data
-# def load_config_data(): # Carrega TaskList da aba 'Config'
-#     # ... como no script anterior, retornando (task_list, task_status_list) ...
-#     pass
+# --- Funções de Conexão e Carregamento de Dados (COPIE SUAS FUNÇÕES DEFINIDAS AQUI) ---
+# Se você tem um utils.py, use: from utils import get_gspread_client, ... etc.
+
+@st.cache_resource(ttl=3600)
+def get_gspread_client_placeholder(): # Substitua pelo seu get_gspread_client real
+    # Esta é uma implementação placeholder para o script rodar sem erro de nome.
+    # No seu ambiente, você terá as credenciais e a lógica real.
+    if "gcp_service_account" not in st.secrets:
+        st.error("`gcp_service_account` não encontrado nos segredos.")
+        return None # Ou st.stop()
+    try:
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
+                                                      scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"Falha ao autorizar gspread: {e}")
+        return None
+
+def connect_gsheet_tab_placeholder(gspread_client, sheet_name, tab_name): # Substitua pela sua real
+    if not gspread_client: return None
+    try:
+        spreadsheet = gspread_client.open(sheet_name)
+        return spreadsheet.worksheet(tab_name)
+    except Exception as e:
+        st.error(f"Falha ao conectar à aba '{tab_name}' da planilha '{sheet_name}': {e}")
+        return None
 
 @st.cache_data
-def load_fightcard_data(): # A função que você já tem
+def load_fightcard_data():
+    # Usando um link público direto para Fightcard como no seu exemplo
     url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
-    df = pd.read_csv(url)
-    df.columns = df.columns.str.strip()
-    df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
-    df["Corner"] = df["Corner"].str.strip().str.lower()
-    return df
+    try:
+        df = pd.read_csv(url)
+        df.columns = df.columns.str.strip()
+        df["FightOrder"] = pd.to_numeric(df["FightOrder"], errors="coerce")
+        df["Corner"] = df["Corner"].astype(str).str.strip().str.lower()
+        df["Fighter"] = df["Fighter"].astype(str).str.strip() # Garante que Fighter é string e sem espaços extras
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Fightcard: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=120) # Cache menor para attendance, pois pode mudar mais frequentemente
+def load_attendance_data_placeholder(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME): # Substitua pela sua real
+    gspread_client = get_gspread_client_placeholder()
+    if not gspread_client: return pd.DataFrame()
+    worksheet = connect_gsheet_tab_placeholder(gspread_client, sheet_name, attendance_tab_name)
+    if not worksheet: return pd.DataFrame()
+    try:
+        df_att = pd.DataFrame(worksheet.get_all_records())
+        # Garante que colunas esperadas existam
+        expected_cols = ["#", ID_COLUMN_IN_ATTENDANCE, NAME_COLUMN_IN_ATTENDANCE, "Event", "Task", "Status", "Notes", "User", "Timestamp"]
+        for col in expected_cols:
+            if col not in df_att.columns:
+                df_att[col] = None 
+        # Garante tipos corretos para colunas chave usadas na lógica
+        if ID_COLUMN_IN_ATTENDANCE in df_att.columns:
+            df_att[ID_COLUMN_IN_ATTENDANCE] = df_att[ID_COLUMN_IN_ATTENDANCE].astype(str).str.strip()
+        if NAME_COLUMN_IN_ATTENDANCE in df_att.columns:
+            df_att[NAME_COLUMN_IN_ATTENDANCE] = df_att[NAME_COLUMN_IN_ATTENDANCE].astype(str).str.strip()
+        if "Task" in df_att.columns:
+            df_att["Task"] = df_att["Task"].astype(str).str.strip()
+        if "Status" in df_att.columns:
+            df_att["Status"] = df_att["Status"].astype(str).str.strip()
+
+        return df_att
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da aba Attendance: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=600)
+def load_config_data_placeholder(sheet_name=MAIN_SHEET_NAME, config_tab_name=CONFIG_TAB_NAME): # Substitua pela sua real
+    gspread_client = get_gspread_client_placeholder()
+    if not gspread_client: return [], []
+    worksheet = connect_gsheet_tab_placeholder(gspread_client, sheet_name, config_tab_name)
+    if not worksheet: return [], []
+    try:
+        data = worksheet.get_all_values()
+        if not data or len(data) < 1: return [], []
+        df_conf = pd.DataFrame(data[1:], columns=data[0])
+        tasks = df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
+        # statuses = df_conf["TaskStatus"].dropna().astype(str).str.strip().unique().tolist() if "TaskStatus" in df_conf.columns else [] # Não usado diretamente no dashboard
+        return tasks, [] # Retorna apenas tasks por enquanto
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da aba Config: {e}")
+        return [], []
 
 # --- Função Auxiliar para obter status da tarefa ---
-def get_task_status_for_athlete(athlete_name_or_id, task_name, df_attendance, id_col_attendance, name_col_attendance="Name"):
+def get_task_status_for_athlete(athlete_identifier, task_name, df_attendance, 
+                                id_col_in_attendance, name_col_in_attendance, 
+                                is_identifier_id=False): # Novo parâmetro para saber se o identificador é ID
     """
     Busca o status mais recente de uma tarefa específica para um atleta.
-    Assume que df_attendance tem colunas 'Timestamp', id_col_attendance (ou 'Name'), 'Task', 'Status'.
+    athlete_identifier pode ser nome ou ID.
     """
-    # Primeiro tenta por ID se id_col_attendance for diferente de "Name" e athlete_name_or_id for um ID
-    # Esta parte precisa de um mapeamento robusto entre nome do Fightcard e ID da Attendance
-    # Por simplicidade inicial, vamos focar no nome, assumindo que "Name" existe em Attendance
-    
+    if df_attendance.empty or not task_name:
+        return "Pendente"
+
     # Filtra registros para o atleta e a tarefa
-    # A coluna de nome do atleta na aba Attendance pode ser "Name" ou "Fighter"
-    # Vamos assumir "Name" por enquanto, ajuste se necessário
-    relevant_records = df_attendance[
-        (df_attendance[name_col_attendance].astype(str).str.upper() == str(athlete_name_or_id).upper()) &
-        (df_attendance["Task"].astype(str) == task_name)
-    ]
+    if is_identifier_id:
+        relevant_records = df_attendance[
+            (df_attendance[id_col_in_attendance].astype(str).str.upper() == str(athlete_identifier).upper()) &
+            (df_attendance["Task"].astype(str) == task_name)
+        ]
+    else: # identifier is name
+        relevant_records = df_attendance[
+            (df_attendance[name_col_in_attendance].astype(str).str.upper() == str(athlete_identifier).upper()) &
+            (df_attendance["Task"].astype(str) == task_name)
+        ]
 
     if relevant_records.empty:
-        return "Pendente" # Ou "---"
+        return "Pendente"
 
-    # Ordena por Timestamp para pegar o mais recente
     if "Timestamp" in relevant_records.columns:
         try:
-            # Cria cópia para evitar SettingWithCopyWarning
             relevant_records_sorted = relevant_records.copy()
             relevant_records_sorted["Timestamp_dt"] = pd.to_datetime(
                 relevant_records_sorted["Timestamp"], format="%d/%m/%Y %H:%M:%S", errors='coerce'
@@ -77,158 +259,102 @@ def get_task_status_for_athlete(athlete_name_or_id, task_name, df_attendance, id
             if not relevant_records_sorted.empty:
                 return relevant_records_sorted.sort_values(by="Timestamp_dt", ascending=False).iloc[0]["Status"]
         except Exception:
-            # Se falhar a ordenação, pega o último pela ordem original
-            return relevant_records.iloc[-1]["Status"]
+            return relevant_records.iloc[-1]["Status"] # Fallback
     
-    return relevant_records.iloc[-1]["Status"] # Fallback
+    return relevant_records.iloc[-1]["Status"]
 
 # --- Função Principal de Renderização do Dashboard ---
-def render_dashboard_html(df_fightcard, df_attendance, task_list, id_col_attendance):
-    # df_athlete_details pode ser passado se necessário
+def render_dashboard_html_content(df_fightcard, df_attendance, task_list_all, 
+                                  id_col_att, name_col_att):
     
-    # Seu CSS (pode ser colocado fora da função se for estático)
-    html_output = '''
-    <style>
-        /* Seu CSS da página Fightcard ... */
-        /* Adicionar estilos para a lista de tarefas e status */
-        .task-status-list {
-            list-style-type: none;
-            padding-left: 0;
-            font-size: 14px; /* Ajuste conforme necessário */
-            text-align: left; /* Alinhar texto da lista à esquerda */
-        }
-        .task-status-list li {
-            margin-bottom: 4px;
-            display: flex; /* Para alinhar nome da tarefa e status */
-            justify-content: space-between; /* Espaçar nome da tarefa e status */
-        }
-        .task-name {
-            font-weight: normal;
-            color: #ccc; /* Cor mais clara para nome da tarefa */
-        }
-        .status-done { color: #34A853; font-weight: bold; } /* Verde */
-        .status-requested { color: #FFD700; font-weight: bold; } /* Amarelo/Dourado */
-        .status-pending { color: #E5E5E5; font-weight: normal; } /* Cinza claro */
-        /* Adicione mais classes de status conforme necessário */
-    </style>
-    '''
+    html_string = PAGE_CSS # Adiciona o CSS no início
 
-    grouped_events = df_fightcard.groupby("Event")
+    grouped_events = df_fightcard.groupby("Event", sort=False) # sort=False para manter ordem da planilha
 
     for event_name, event_group in grouped_events:
-        html_output += f"<div class='event-header'>{event_name}</div>"
-        html_output += "<table class='fightcard-table'><thead><tr>"
-        html_output += "<th colspan='2'>Blue Corner & Tasks</th>" # Colspan ajustado
-        html_output += "<th>Fight Details</th>"
-        html_output += "<th colspan='2'>Red Corner & Tasks</th>" # Colspan ajustado
-        html_output += "</tr></thead><tbody>"
+        html_string += f"<div class='event-header'>{html.escape(str(event_name))}</div>"
+        html_string += "<table class='fightcard-table'><thead><tr>"
+        html_string += "<th style='width:50%;'>Blue Corner & Tasks</th>" # Uma célula larga para cada lutador
+        html_string += "<th style='width:0%; display:none;'></th>" # Coluna do meio oculta ou muito fina
+        html_string += "<th style='width:50%;'>Red Corner & Tasks</th>"
+        html_string += "</tr></thead><tbody>"
 
-        fights_in_event = event_group.groupby("FightOrder")
+        # Ordenar lutas dentro do evento
+        fights_in_event = event_group.sort_values(by="FightOrder").groupby("FightOrder")
 
         for fight_order, fight_df in fights_in_event:
-            blue_fighter_series = fight_df[fight_df["Corner"] == "blue"].squeeze()
-            red_fighter_series = fight_df[fight_df["Corner"] == "red"].squeeze()
+            blue_s = fight_df[fight_df["Corner"] == "blue"].squeeze()
+            red_s = fight_df[fight_df["Corner"] == "red"].squeeze()
 
-            blue_name = blue_fighter_series.get("Fighter", "") if isinstance(blue_fighter_series, pd.Series) else ""
-            red_name = red_fighter_series.get("Fighter", "") if isinstance(red_fighter_series, pd.Series) else ""
+            blue_name_val = html.escape(str(blue_s.get("Fighter", ""))) if isinstance(blue_s, pd.Series) else ""
+            red_name_val = html.escape(str(red_s.get("Fighter", ""))) if isinstance(red_s, pd.Series) else ""
             
-            # Construir HTML para as tarefas do lutador AZUL
-            blue_tasks_html = "<ul class='task-status-list'>"
-            if blue_name: # Só processa tarefas se houver um lutador
-                for task in task_list:
-                    status = get_task_status_for_athlete(blue_name, task, df_attendance, id_col_attendance)
-                    status_class = f"status-{str(status).lower().replace(' ', '-')}" # Ex: status-done, status-requested
-                    if status in ["Pendente", "---", "Não Registrado"]: status_class = "status-pending"
-                    blue_tasks_html += f"<li><span class='task-name'>{html.escape(task)}:</span> <span class='{status_class}'>{html.escape(status)}</span></li>"
-            blue_tasks_html += "</ul>"
-
-            # Construir HTML para as tarefas do lutador VERMELHO
-            red_tasks_html = "<ul class='task-status-list'>"
-            if red_name: # Só processa tarefas se houver um lutador
-                for task in task_list:
-                    status = get_task_status_for_athlete(red_name, task, df_attendance, id_col_attendance)
-                    status_class = f"status-{str(status).lower().replace(' ', '-')}"
-                    if status in ["Pendente", "---", "Não Registrado"]: status_class = "status-pending"
-                    red_tasks_html += f"<li><span class='task-name'>{html.escape(task)}:</span> <span class='{status_class}'>{html.escape(status)}</span></li>"
-            red_tasks_html += "</ul>"
-
-            blue_img_html = f"<img src='{blue_fighter_series.get('Picture', '')}' class='fightcard-img'>" if isinstance(blue_fighter_series, pd.Series) and blue_fighter_series.get("Picture") else "<div style='width:100px; height:100px; background-color:#222; border-radius:8px;'></div>" # Placeholder
-            red_img_html = f"<img src='{red_fighter_series.get('Picture', '')}' class='fightcard-img'>" if isinstance(red_fighter_series, pd.Series) and red_fighter_series.get("Picture") else "<div style='width:100px; height:100px; background-color:#222; border-radius:8px;'></div>" # Placeholder
+            blue_img_tag = f"<img src='{html.escape(str(blue_s.get('Picture', '')),True)}' class='fightcard-img'>" if isinstance(blue_s, pd.Series) and blue_s.get("Picture") and isinstance(blue_s.get("Picture"), str) and blue_s.get("Picture").startswith("http") else "<div class='fightcard-img' style='background-color:#222;'></div>"
+            red_img_tag = f"<img src='{html.escape(str(red_s.get('Picture', '')),True)}' class='fightcard-img'>" if isinstance(red_s, pd.Series) and red_s.get("Picture") and isinstance(red_s.get("Picture"), str) and red_s.get("Picture").startswith("http") else "<div class='fightcard-img' style='background-color:#222;'></div>"
             
-            division = blue_fighter_series.get("Division", "") if isinstance(blue_fighter_series, pd.Series) else red_fighter_series.get("Division", "")
-            fight_info = f"FIGHT #{int(fight_order)}<br>{division}"
+            # Supondo que você tem um ID de atleta no df_fightcard, se não, usará o nome.
+            # blue_id_val = blue_s.get("AthleteID_from_df_sheet", None) # Exemplo
+            # red_id_val = red_s.get("AthleteID_from_df_sheet", None)   # Exemplo
 
-            html_output += f"""
+            blue_tasks_disp = "<ul class='task-status-list'>"
+            if blue_name_val:
+                for task_item in task_list_all:
+                    # Se tiver ID, use-o, senão use o nome. Ajuste is_identifier_id=True se passar ID.
+                    # status_val = get_task_status_for_athlete(blue_id_val if blue_id_val else blue_name_val, task_item, df_attendance, id_col_att, name_col_att, is_identifier_id=(blue_id_val is not None))
+                    status_val = get_task_status_for_athlete(blue_name_val, task_item, df_attendance, id_col_att, name_col_att, is_identifier_id=False) # Usando nome por enquanto
+                    
+                    status_cls = f"status-text status-{str(status_val).lower().replace(' ', '-').replace('/','-')}"
+                    if status_val in STATUS_PENDING_EQUIVALENTS: status_cls = "status-text status-pending"
+                    blue_tasks_disp += f"<li><span class='task-name'>{html.escape(task_item)}:</span> <span class='{status_cls}'>{html.escape(str(status_val))}</span></li>"
+            blue_tasks_disp += "</ul>"
+
+            red_tasks_disp = "<ul class='task-status-list'>"
+            if red_name_val:
+                for task_item in task_list_all:
+                    # status_val = get_task_status_for_athlete(red_id_val if red_id_val else red_name_val, task_item, df_attendance, id_col_att, name_col_att, is_identifier_id=(red_id_val is not None))
+                    status_val = get_task_status_for_athlete(red_name_val, task_item, df_attendance, id_col_att, name_col_att, is_identifier_id=False) # Usando nome
+
+                    status_cls = f"status-text status-{str(status_val).lower().replace(' ', '-').replace('/','-')}"
+                    if status_val in STATUS_PENDING_EQUIVALENTS: status_cls = "status-text status-pending"
+                    red_tasks_disp += f"<li><span class='task-name'>{html.escape(task_item)}:</span> <span class='{status_cls}'>{html.escape(str(status_val))}</span></li>"
+            red_tasks_disp += "</ul>"
+            
+            division_val = html.escape(str(blue_s.get("Division", "") if isinstance(blue_s, pd.Series) else (red_s.get("Division", "") if isinstance(red_s, pd.Series) else "")))
+            fight_info_val = f"FIGHT #{int(fight_order)}<br>{division_val}"
+
+            # Estrutura com 2 colunas principais para os lutadores e uma central fina/oculta para os detalhes
+            html_string += f"""
             <tr>
-                <td class='blue'>{blue_img_html}<br/><strong>{html.escape(blue_name)}</strong>{blue_tasks_html if blue_name else ""}</td>
-                <td class='blue' style="display:none;"></td> {/* Coluna vazia para manter colspan, pode ser ocultada/removida se ajustar colspan */}
-                <td class='middle-cell'>{fight_info}</td>
-                <td class='red'>{red_img_html}<br/><strong>{html.escape(red_name)}</strong>{red_tasks_html if red_name else ""}</td>
-                <td class='red' style="display:none;"></td> {/* Coluna vazia para manter colspan */}
+                <td class='blue-corner-col'>
+                    {blue_img_tag}
+                    <span class='fighter-name'>{blue_name_val}</span>
+                    {blue_tasks_disp if blue_name_val else ""}
+                </td>
+                <td class='middle-cell' style="width:180px; max-width:180px; min-width:150px; font-size:13px; white-space:normal;">{fight_info_val}</td> {/* Coluna do meio com largura fixa */}
+                <td class='red-corner-col'>
+                    {red_img_tag}
+                    <span class='fighter-name'>{red_name_val}</span>
+                    {red_tasks_disp if red_name_val else ""}
+                </td>
             </tr>
             """
-            # Se você quiser que nome/foto e tarefas fiquem em células separadas, ajuste o colspan e adicione mais <td>
-            # Por exemplo, colspan='1' para a imagem/nome, e uma nova <td> para as tarefas.
-            # A estrutura acima coloca tarefas abaixo do nome na mesma célula grande.
-            # Para ter imagem/nome em uma célula e tarefas em outra, a estrutura da tabela precisaria de mais colunas (ex: 3 para cada lado).
-            # Exemplo alternativo para células separadas (requer ajuste de colspan e th):
-            # html_output += f"""
-            # <tr>
-            #     <td class='blue'>{blue_img_html}<br/><strong>{html.escape(blue_name)}</strong></td>
-            #     <td class='blue' style="text-align:left;">{blue_tasks_html if blue_name else ""}</td>
-            #     <td class='middle-cell'>{fight_info}</td>
-            #     <td class='red' style="text-align:left;">{red_tasks_html if red_name else ""}</td>
-            #     <td class='red'>{red_img_html}<br/><strong>{html.escape(red_name)}</strong></td>
-            # </tr>
-            # """
-
-
-        html_output += "</tbody></table>"
-    return html_output
+        html_string += "</tbody></table>"
+    return html_string
 
 # --- Configuração da Página Streamlit ---
-st.set_page_config(layout="wide", page_title="Dashboard de Atletas")
 st.markdown("<h1 style='text-align:center; color:white;'>DASHBOARD DE ATLETAS</h1>", unsafe_allow_html=True)
 
 # --- Carregamento de Todos os Dados ---
-# Presume que as funções de carregamento e gspread estão definidas ou importadas.
-# Se estiverem em outro arquivo (ex: utils.py), importe-as.
-# Exemplo: from utils import get_gspread_client, connect_gsheet_tab, load_attendance_data, load_config_data
-
-# Se as funções estiverem no mesmo arquivo, defina-as antes desta seção.
-# Para este exemplo, vou colocar placeholders das funções que você já tem:
-
-# Placeholder para funções de conexão e carregamento (substitua pelas suas reais)
-# Assume que MAIN_SHEET_NAME, ATTENDANCE_TAB_NAME, CONFIG_TAB_NAME, ID_COLUMN_IN_ATTENDANCE
-# estão definidos globalmente ou passados corretamente.
-
-# @st.cache_resource
-# def get_gspread_client(): ... # Sua função existente
-# def connect_gsheet_tab(gspread_client, sheet_name, tab_name): ... # Sua função existente
-
-# @st.cache_data
-# def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME): ... # Sua função existente
-    # Lembre-se de que esta função deve retornar um DataFrame com a coluna ID_COLUMN_IN_ATTENDANCE, "Task", "Status", "Timestamp"
-
-# @st.cache_data
-# def load_config_data(sheet_name=MAIN_SHEET_NAME, config_tab_name=CONFIG_TAB_NAME): ... # Sua função existente
-    # Deve retornar (task_list, task_status_list)
-
-# --- CARREGAMENTO REAL DOS DADOS ---
-df_fightcard_loaded = load_fightcard_data()
-df_attendance_loaded = load_attendance_data() # Adapte os argumentos se necessário
-task_list_loaded, _ = load_config_data()      # Só precisamos da task_list aqui
+df_fc = load_fightcard_data()
+df_att = load_attendance_data_placeholder() 
+tasks, _ = load_config_data_placeholder() 
 
 # --- Renderização ---
-if df_fightcard_loaded.empty:
+if df_fc.empty:
     st.warning("Nenhum dado de Fightcard para exibir.")
-elif df_attendance_loaded.empty:
-    st.warning("Nenhum dado de Attendance para buscar status. O status das tarefas será 'Pendente'.")
-    # Ainda renderiza o fightcard, mas todos os status serão "Pendente"
-    dashboard_html = render_dashboard_html(df_fightcard_loaded, pd.DataFrame(), task_list_loaded, ID_COLUMN_IN_ATTENDANCE)
-    st.components.v1.html(dashboard_html, height=6000, scrolling=True)
-elif not task_list_loaded:
-    st.error("TaskList não carregada da Configuração. Não é possível exibir o status das tarefas.")
+elif not tasks:
+    st.error("TaskList não carregada. Não é possível exibir o status das tarefas.")
 else:
-    dashboard_html = render_dashboard_html(df_fightcard_loaded, df_attendance_loaded, task_list_loaded, ID_COLUMN_IN_ATTENDANCE)
-    st.components.v1.html(dashboard_html, height=6000, scrolling=True)
+    # Se df_att estiver vazio, get_task_status_for_athlete retornará "Pendente"
+    dashboard_html_output = render_dashboard_html_content(df_fc, df_att, tasks, ID_COLUMN_IN_ATTENDANCE, NAME_COLUMN_IN_ATTENDANCE)
+    st.components.v1.html(dashboard_html_output, height=6000, scrolling=True)

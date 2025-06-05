@@ -1,165 +1,83 @@
 /* pages/style.css */
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap'); /* Negrito para Barlow Condensed */
 
-body, .stApp { /* Aplicar ao container principal do Streamlit também */
-    background-color: #0e1117 !important; /* Cor de fundo geral */
+body, .stApp {
+    background-color: #0e1117 !important;
     color: white;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px; /* Base font size */
+    font-size: 16px; /* Aumentado tamanho base da fonte */
 }
+.main .block-container { background-color: #0e1117; }
+h1 { text-align: center; color: white; margin-bottom: 20px; font-size: 2.5em;} /* Título maior */
 
-.main .block-container { /* Para garantir que o conteúdo principal também tenha o fundo escuro */
-    background-color: #0e1117;
-}
-
-h1 { /* Estilo para o título principal da página, se não for via markdown */
-    text-align: center;
-    color: white;
-    margin-bottom: 20px;
-}
-
-.dashboard-table {
+.dashboard-fight-table {
     width: 100%;
-    border-collapse: separate; /* Usar separate para border-spacing */
-    border-spacing: 0; /* Remover espaçamento padrão se separate */
-    margin-bottom: 30px; /* Espaço entre tabelas de eventos */
-    table-layout: fixed; 
-    background-color: #12171f; /* Fundo sutil para a tabela */
+    border-collapse: collapse;
+    margin-bottom: 25px;
+    font-size: 0.95em; /* Fonte da tabela um pouco maior */
 }
-
-.dashboard-table th, .dashboard-table td {
-    border: 1px solid #2a3b4d; /* Borda um pouco mais clara */
-    padding: 8px 10px; 
+.dashboard-fight-table th, .dashboard-fight-table td {
+    border: 1px solid #34495e; /* Borda um pouco mais clara */
+    padding: 8px 10px; /* Mais padding */
     text-align: left;
-    vertical-align: top;
+    vertical-align: middle; /* Centraliza verticalmente */
+    white-space: nowrap; /* Evita quebra de linha em nomes de tarefas */
 }
-
-.dashboard-table th {
-    background-color: #1a2533; 
-    color: #e0e0e0; /* Cinza claro para texto do cabeçalho */
-    font-size: 13px;
-    font-weight: bold; /* Adicionado */
+.dashboard-fight-table th {
+    background-color: #1f2c3a;
+    color: #ecf0f1;
     text-transform: uppercase;
     text-align: center;
+    font-weight: 700; /* Negrito para cabeçalhos */
 }
-
-.event-header-row td { 
-    background-color: #000000 !important; /* Preto para header do evento */
+.event-header-cell { /* Aplicado a um <tr> específico para o nome do evento */
+    background-color: #111 !important;
     color: white !important;
-    font-weight: bold !important;
+    font-weight: 700 !important;
     text-align: center !important;
-    font-size: 20px !important;
+    font-size: 22px !important;
     padding: 12px !important;
     text-transform: uppercase;
-    border-left: none !important; /* Remove bordas laterais */
-    border-right: none !important;
-    border-top: 2px solid #444 !important; /* Borda superior para separar do anterior */
-    border-bottom: 2px solid #444 !important; /* Borda inferior para separar */
+    border-top: 3px solid #4a6a8a !important; /* Borda mais grossa */
+    border-bottom: 3px solid #4a6a8a !important;
 }
-
-
-.fighter-cell {
-    text-align: center;
-    vertical-align: middle; /* Centraliza imagem e nome */
-}
+.fighter-img-cell { text-align: center; width: 80px; } /* Largura fixa para foto */
 .fighter-img {
-    width: 75px; /* Aumentado um pouco */
-    height: 75px;
+    width: 65px;
+    height: 65px;
     object-fit: cover;
-    border-radius: 50%; 
-    border: 2px solid #4a6a8a; /* Borda azulada */
-    margin-bottom: 8px;
-    display: inline-block; 
-}
-.fighter-name {
-    font-weight: bold;
-    font-size: 1.2em; /* Um pouco maior */
-    display: block;
-    color: #ffffff; /* Branco para nome */
-    margin-bottom: 4px;
-}
-.fighter-info-general { 
-    font-size: 0.85em;
-    color: #a0b0c0; /* Cinza azulado mais claro */
-    display: block;
-    margin-bottom: 5px;
-}
-
-.tasks-cell {
-    vertical-align: top;
-}
-
-.task-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); /* Mais espaço para cada tarefa */
-    gap: 6px; 
-    font-size: 0.9em; /* Levemente aumentado */
-}
-.task-item {
-    display: flex;
-    align-items: center;
-    padding: 5px; 
-    border-radius: 4px; /* Bordas mais arredondadas */
-    background-color: #1f2c3a; /* Fundo mais escuro para item de tarefa */
-    border: 1px solid #2c3e50; /* Borda sutil no item */
-}
-.task-status-indicator {
-    width: 10px; /* Ajustado */
-    height: 10px;
     border-radius: 50%;
-    margin-right: 8px; /* Mais espaço */
-    flex-shrink: 0; 
-    /* Removida borda do indicador, a cor de fundo será suficiente */
+    border: 2px solid #566573;
 }
-.task-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis; 
-    color: #c0d0e0; /* Cinza azulado mais claro */
-    flex-grow: 1; /* Para ocupar espaço disponível */
+.fighter-name-cell {
+    font-weight: 700; /* Negrito */
+    font-size: 1.2em; /* Maior */
+    text-align: center;
 }
-
-/* Cores dos Indicadores de Status */
-.status-done { background-color: #2ECC71; } 
-.status-requested { background-color: #F1C40F; } 
-.status-not-requested { background-color: #82E0AA; } /* Verde claro mais suave */
-.status-pending { background-color: #7F8C8D; } /* Cinza mais neutro */
-
-
 .fight-details-cell {
     text-align: center;
-    font-weight: bold;
-    font-size: 1em; /* Aumentado */
-    background-color: #161f29; 
-    vertical-align: middle;
-    color: #f0f0f0;
+    font-weight: 700;
+    background-color: #161f29;
+    min-width: 120px; /* Largura mínima */
 }
 
-/* Cores de fundo dos cantos (muito sutis ou podem ser removidas se a borda da tabela for suficiente) */
-.blue-corner-bg { /* background-color: rgba(52, 152, 219, 0.03); */ }
-.red-corner-bg { /* background-color: rgba(231, 76, 60, 0.03); */ }
+/* Células de Status de Tarefa */
+.task-status-cell {
+    text-align: center !important; /* Força alinhamento */
+    font-weight: 700; /* Negrito para o status */
+    color: #0e1117; /* Texto escuro para contraste com fundo colorido */
+    padding: 10px 5px !important; /* Mais padding vertical, menos horizontal */
+    min-width: 100px; /* Largura mínima para cada tarefa */
+}
 
-@media screen and (max-width: 1200px) { /* Telas menores que FHD */
-    body, .stApp { font-size: 13px; }
-    .fighter-img { width: 60px; height: 60px; }
-    .task-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-    .fighter-name { font-size: 1.1em; }
-}
-@media screen and (max-width: 992px) { /* Tablets */
-    .dashboard-table th, .dashboard-table td { padding: 5px; font-size: 12px;}
-    .fighter-img { width: 50px; height: 50px; }
-    .task-grid { grid-template-columns: 1fr; } /* Uma tarefa por linha */
-    .task-item { padding: 4px; }
-    .event-header-row td { font-size: 16px !important; padding: 8px !important; }
-}
-@media screen and (max-width: 576px) { /* Mobile */
-    .dashboard-table th, .dashboard-table td { font-size: 10px; padding: 3px;}
-    .fighter-img { width: 40px; height: 40px; }
-    .fighter-name { font-size: 0.9em; }
-    .fighter-info-general { display: none; } 
-    .task-status-indicator { width: 8px; height: 8px; margin-right: 4px;}
-    .task-grid { gap: 3px; }
-    .task-item { padding: 3px; }
-    .fight-details-cell { font-size: 0.8em;}
-    .event-header-row td { font-size: 14px !important; padding: 6px !important; }
-}
+.status-done { background-color: #2ECC71 !important; } /* Verde */
+.status-requested { background-color: #F1C40F !important; } /* Amarelo */
+.status-not-requested { background-color: #A6E22E !important; } /* Verde Claro para "---" */
+.status-pending { 
+    background-color: #343a40 !important; /* Cor de fundo escura para pendente */
+    color: #7f8c8d !important; /* Texto cinza para pendente */
+} 
+
+/* Cores de fundo dos cantos (sutis) */
+.blue-corner-bg-text { color: #a9d5f5; } /* Texto azul claro para nome do lutador azul */
+.red-corner-bg-text { color: #f5b7b1; }   /* Texto vermelho claro para nome do lutador vermelho */

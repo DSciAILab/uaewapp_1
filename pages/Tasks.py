@@ -51,9 +51,6 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
 # --- 3.1 Athlete Data ---
 @st.cache_data(ttl=600)
 def load_athlete_data():
-    # Se st.secrets['google_sheet_id'] não estiver configurado ou preferir a URL original:
-    # url = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=df"
-    # Se estiver usando st.secrets:
     if 'google_sheet_id' not in st.secrets:
         st.error("Erro: `google_sheet_id` não encontrado nos segredos do Streamlit. Necessário para carregar dados dos atletas.")
         return pd.DataFrame()
@@ -62,7 +59,7 @@ def load_athlete_data():
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip()
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        df["EVENT"] = df["EVENT"].fillna("Z") # EVENT em maiúsculo
+        df["EVENT"] = df["EVENT"].fillna("Z")
         date_cols = ["DOB", "PASSPORT EXPIRE DATE", "BLOOD TEST"]
         for col in date_cols:
             df[col] = pd.to_datetime(df[col], errors="coerce")
@@ -112,24 +109,20 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
         gspread_client_internal = get_gspread_client()
         config_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, config_tab_name)
         data = config_worksheet.get_all_values()
-        if not data or len(data) < 1: # Check if data or header is missing
+        if not data or len(data) < 1:
             st.error(f"Aba de configuração '{config_tab_name}' está vazia ou não tem cabeçalho.", icon="🚨")
             return [],[]
         df_config = pd.DataFrame(data[1:], columns=data[0])
-
         task_list = []
         if "TaskList" in df_config.columns:
             task_list = df_config["TaskList"].dropna().unique().tolist()
         else:
             st.warning(f"Coluna 'TaskList' não encontrada na aba '{config_tab_name}'.", icon="⚠️")
-
-
         task_status_list = []
         if "TaskStatus" in df_config.columns:
             task_status_list = df_config["TaskStatus"].dropna().unique().tolist()
         else:
             st.warning(f"Coluna 'TaskStatus' não encontrada na aba '{config_tab_name}'.", icon="⚠️")
-
         return task_list, task_status_list
     except Exception as e:
         st.error(f"Erro ao carregar dados da aba de configuração '{config_tab_name}': {e}", icon="🚨")
@@ -143,11 +136,10 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         attendance_worksheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
         records = attendance_worksheet.get_all_records()
         df_attendance = pd.DataFrame(records)
-        
         expected_cols = ["#", "Athlete ID", "Name", "Event", "Task", "Status", "Notes", "User", "Timestamp"]
         for col in expected_cols:
             if col not in df_attendance.columns:
-                df_attendance[col] = None 
+                df_attendance[col] = None
         return df_attendance
     except Exception as e:
         st.error(f"Erro ao carregar dados da aba de presença '{attendance_tab_name}': {e}", icon="🚨")
@@ -160,32 +152,27 @@ def registrar_log(athlete_id: str, athlete_name: str, athlete_event: str,
     try:
         gspread_client_internal = get_gspread_client()
         log_sheet = connect_gsheet_tab(gspread_client_internal, sheet_name, attendance_tab_name)
-
         all_values = log_sheet.get_all_values()
         next_hash_num = 1
-        if len(all_values) > 1: 
+        if len(all_values) > 1:
             try:
-                # Ensure first column exists and is not empty string before int conversion
                 if all_values[-1] and all_values[-1][0] != '':
                     last_hash_num = int(all_values[-1][0])
                     next_hash_num = last_hash_num + 1
-                else: # If last row's first cell is empty or row is empty
-                    next_hash_num = len(all_values) # Approximation, assumes header exists
+                else:
+                    next_hash_num = len(all_values)
             except (ValueError, IndexError):
-                 next_hash_num = len(all_values) 
-        elif len(all_values) == 1: # Only header exists
+                 next_hash_num = len(all_values)
+        elif len(all_values) == 1:
             next_hash_num = 1
-        # If all_values is empty (no header, no data), next_hash_num remains 1 - good for first entry
-
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
         nova_linha = [
             str(next_hash_num), athlete_id, athlete_name, athlete_event,
             task_type, task_status, notes, user_id, timestamp
         ]
         log_sheet.append_row(nova_linha, value_input_option="USER_ENTERED")
         st.success(f"'{task_type}' para {athlete_name} registrado como '{task_status}'.", icon="✍️")
-        st.cache_data.clear() 
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Erro ao registrar na planilha '{attendance_tab_name}': {e}", icon="🚨")
@@ -211,7 +198,6 @@ default_session_state = {
 }
 for key, default_val in default_session_state.items():
     if key not in st.session_state: st.session_state[key] = default_val
-    # Initialize music link session states dynamically later if needed, or ensure they are reset per athlete
 
 if 'user_id_input' not in st.session_state:
     st.session_state['user_id_input'] = st.session_state['current_user_id']
@@ -243,7 +229,6 @@ with st.container(border=True):
                 st.session_state['warning_message'] = "⚠️ O ID do usuário não pode ser vazio."; st.session_state['user_confirmed'] = False; st.session_state['current_user_image_url'] = ""
 
     if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
-        # User greeting display (same as before)
         user_name_display = html.escape(st.session_state['current_user_name'])
         user_id_display = html.escape(st.session_state['current_user_id'])
         user_image_url = st.session_state.get('current_user_image_url', "")
@@ -254,7 +239,6 @@ with st.container(border=True):
             st.markdown(greeting_html, unsafe_allow_html=True)
         else:
             st.success(f"Usuário '{user_name_display}' (PS: {user_id_display}) confirmado!", icon="✅")
-
     elif st.session_state.get('warning_message'):
         st.warning(st.session_state['warning_message'], icon="🚨")
     else:
@@ -267,25 +251,22 @@ with st.container(border=True):
 
 if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
     st.markdown("---")
-    
     TASK_LIST, TASK_STATUS_LIST = load_config_data()
     if not TASK_LIST:
         st.error("Lista de tarefas não carregada da 'Config'. Verifique.", icon="🚨"); st.stop()
-    if not TASK_STATUS_LIST: TASK_STATUS_LIST = ["Pendente", "Requested", "Done", "Approved", "Rejected", "Issue"] # Fallback
+    if not TASK_STATUS_LIST: TASK_STATUS_LIST = ["Pendente", "Requested", "Done", "Approved", "Rejected", "Issue"]
 
     col_control1, col_control2, col_control3 = st.columns([0.4, 0.4, 0.2])
     with col_control1:
         st.session_state.selected_task = st.selectbox(
             "Tipo de verificação para REGISTRO:", options=TASK_LIST,
             index=TASK_LIST.index(st.session_state.selected_task) if st.session_state.selected_task and st.session_state.selected_task in TASK_LIST else 0,
-            key="task_selector"
-        )
+            key="task_selector")
     with col_control2:
         st.session_state.selected_statuses = st.multiselect(
             "Filtrar por Status da Tarefa:", options=TASK_STATUS_LIST,
             default=st.session_state.selected_statuses if st.session_state.selected_statuses else [],
-            key="status_multiselect"
-        )
+            key="status_multiselect")
     with col_control3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Atualizar Dados", key="refresh_data_button", help="Recarrega dados.", use_container_width=True):
@@ -305,26 +286,22 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
         statuses_to_filter = st.session_state.selected_statuses
 
         if task_to_filter and statuses_to_filter:
-            athletes_to_show_ids = set() # Use set for efficiency
+            athletes_to_show_ids = set()
             df_attendance_str_id = df_attendance.copy()
             if "Athlete ID" in df_attendance_str_id.columns:
                  df_attendance_str_id["Athlete ID"] = df_attendance_str_id["Athlete ID"].astype(str)
-
             for index, athlete_row in filtered_athletes.iterrows():
                 athlete_id = str(athlete_row["ID"])
                 relevant_attendance = pd.DataFrame()
                 if "Athlete ID" in df_attendance_str_id.columns and "Task" in df_attendance_str_id.columns:
                     relevant_attendance = df_attendance_str_id[
                         (df_attendance_str_id["Athlete ID"] == athlete_id) &
-                        (df_attendance_str_id["Task"] == task_to_filter)
-                    ]
-
+                        (df_attendance_str_id["Task"] == task_to_filter)]
                 if not relevant_attendance.empty:
                     if "Status" in relevant_attendance.columns and any(status in statuses_to_filter for status in relevant_attendance["Status"].unique()):
                         athletes_to_show_ids.add(athlete_id)
-                elif any(s in statuses_to_filter for s in ["Pendente", "---", "Não Registrado"]): # Default/missing status check
+                elif any(s in statuses_to_filter for s in ["Pendente", "---", "Não Registrado"]):
                     athletes_to_show_ids.add(athlete_id)
-            
             filtered_athletes = filtered_athletes[filtered_athletes["ID"].astype(str).isin(list(athletes_to_show_ids))]
         
         st.markdown(f"Exibindo **{len(filtered_athletes)}** de **{len(df_athletes)}** atletas.")
@@ -333,25 +310,20 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
             athlete_id_str = str(row["ID"])
             athlete_name = str(row["NAME"])
             athlete_event = str(row["EVENT"])
-
-            current_task_status_info = "Status: Pendente / Não Registrado" # Default
+            current_task_status_info = "Status: Pendente / Não Registrado"
             athlete_task_records = pd.DataFrame()
             if "Athlete ID" in df_attendance.columns and "Task" in df_attendance.columns:
                 df_attendance_task_check = df_attendance.copy()
                 df_attendance_task_check["Athlete ID"] = df_attendance_task_check["Athlete ID"].astype(str)
                 athlete_task_records = df_attendance_task_check[
                     (df_attendance_task_check["Athlete ID"] == athlete_id_str) &
-                    (df_attendance_task_check["Task"] == st.session_state.selected_task)
-                ]
-
+                    (df_attendance_task_check["Task"] == st.session_state.selected_task)]
             if not athlete_task_records.empty and "Status" in athlete_task_records.columns:
                 latest_record = athlete_task_records.sort_values(by="Timestamp", ascending=False).iloc[0]
                 current_task_status_info = f"Status Atual: **{latest_record['Status']}**"
                 if "Notes" in latest_record and pd.notna(latest_record['Notes']) and latest_record['Notes']:
                      current_task_status_info += f" (Notas: {html.escape(str(latest_record['Notes']))})"
-            
             card_bg_color = "#1e1e1e"
-            # Card color logic (same as before, simplified for brevity here)
             if not athlete_task_records.empty and "Status" in athlete_task_records.columns and "Done" in athlete_task_records["Status"].values:
                  card_bg_color = "#143d14" 
             elif st.session_state.selected_task == "Blood Test":
@@ -360,7 +332,6 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
                 if has_bt and not bt_expired: card_bg_color = "#3D3D00"
                 elif bt_expired or not has_bt: card_bg_color = "#4D1A00"
             
-            # --- Athlete Card HTML (Corrected: removed {/* ... */} comments) ---
             st.markdown(f"""
             <div style='background-color:{card_bg_color}; padding:20px; border-radius:10px; margin-bottom:15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);'>
                 <div style='display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:20px;'>
@@ -383,7 +354,7 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
                             <tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE", ""))) }</td></tr>
                             {"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='"+html.escape(str(row.get("PASSPORT IMAGE","")),quote=True)+"' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""}
                             {(lambda m: "<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/"+html.escape(m.replace("+",""),quote=True)+"' target='_blank' style='color:#00BFFF;'>Enviar Mensagem</a></td></tr>" if m else "")((lambda raw: ("+" + raw[2:] if raw.startswith("00") else ("+971" + raw.lstrip("0") if len(raw) >= 9 and not raw.startswith("971") and not raw.startswith("+") else ("+" + raw if not raw.startswith("+") else raw)) if raw else "")(str(row.get("MOBILE", "")).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")))}
-                            {(lambda bt_str, bt_exp: f"<tr style='color:{"red" if bt_exp else "#A0F0A0"};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_str)}{' <span style=\\\"font-weight:bold;\\\">(Expirado)</span>' if bt_exp else ''}</td></tr>" if bt_str else "<tr style='color:orange;'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>Não Registrado</td></tr>")(str(row.get("BLOOD TEST", "")), is_blood_test_expired(str(row.get("BLOOD TEST", ""))))}
+                            {(lambda bt_str, bt_exp: f"<tr style='color:{"red" if bt_exp else "#A0F0A0"};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_str)}{(f'<span style="font-weight:bold;">(Expirado)</span>' if bt_exp else '')}</td></tr>" if bt_str else "<tr style='color:orange;'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>Não Registrado</td></tr>")(str(row.get("BLOOD TEST", "")), is_blood_test_expired(str(row.get("BLOOD TEST", ""))))}
                         </table>
                     </div>''' if st.session_state.show_personal_data else "<div style='flex-basis: 300px; flex-grow: 1; font-style:italic; color:#ccc; font-size:13px; text-align:center;'>Dados pessoais ocultos.</div>"}
                 </div>
@@ -391,19 +362,15 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
             """, unsafe_allow_html=True)
 
             current_selected_task = st.session_state.selected_task
-            
-            # Initialize session state keys for music links if they don't exist for this athlete
             music_link_keys = [f"music_link_1_{athlete_id_str}", f"music_link_2_{athlete_id_str}", f"music_link_3_{athlete_id_str}"]
-            for key in music_link_keys:
-                if key not in st.session_state:
-                    st.session_state[key] = ""
+            for key_music in music_link_keys:
+                if key_music not in st.session_state: st.session_state[key_music] = ""
 
             if current_selected_task == "Walkout Music":
                 st.markdown("##### Links para Walkout Music:")
                 st.session_state[music_link_keys[0]] = st.text_input(f"Música 1 (YouTube)", value=st.session_state[music_link_keys[0]], key=f"music1_{athlete_id_str}_{i}", placeholder="Link do YouTube")
                 st.session_state[music_link_keys[1]] = st.text_input(f"Música 2 (YouTube)", value=st.session_state[music_link_keys[1]], key=f"music2_{athlete_id_str}_{i}", placeholder="Link do YouTube")
                 st.session_state[music_link_keys[2]] = st.text_input(f"Música 3 (YouTube)", value=st.session_state[music_link_keys[2]], key=f"music3_{athlete_id_str}_{i}", placeholder="Link do YouTube")
-
                 if st.button(f"Registrar Músicas para {athlete_name}", key=f"register_music_{athlete_id_str}_{i}", type="primary", use_container_width=True):
                     links_to_register = [st.session_state[k] for k in music_link_keys]
                     registered_any = False
@@ -412,27 +379,23 @@ if st.session_state['user_confirmed'] and st.session_state['current_user_id']:
                             success = registrar_log(
                                 athlete_id=athlete_id_str, athlete_name=athlete_name, athlete_event=athlete_event,
                                 task_type="Walkout Music", task_status="Done",
-                                notes=link_url.strip(), user_id=st.session_state['current_user_id']
-                            )
-                            if success: registered_any = True; st.session_state[music_link_keys[idx]] = "" # Clear on success
+                                notes=link_url.strip(), user_id=st.session_state['current_user_id'])
+                            if success: registered_any = True; st.session_state[music_link_keys[idx]] = ""
                     if registered_any: st.rerun()
                     else: st.warning("Nenhum link de música fornecido.", icon="⚠️")
             else:
                 is_already_done = False
                 if not athlete_task_records.empty and "Status" in athlete_task_records.columns:
                     if "Done" in athlete_task_records["Status"].values: is_already_done = True
-                
                 button_label = f"Marcar '{current_selected_task}' como CONCLUÍDO"
                 button_type = "primary"
                 if is_already_done:
                     button_label = f"'{current_selected_task}' CONCLUÍDO (Registrar novamente?)"; button_type = "secondary"
-
                 if st.button(button_label, key=f"mark_done_{athlete_id_str}_{current_selected_task.replace(' ', '_')}_{i}", type=button_type, use_container_width=True):
                     registrar_log(
                         athlete_id=athlete_id_str, athlete_name=athlete_name, athlete_event=athlete_event,
                         task_type=current_selected_task, task_status="Done", notes="",
-                        user_id=st.session_state['current_user_id']
-                    )
+                        user_id=st.session_state['current_user_id'])
                     st.rerun()
             st.markdown("<hr style='border-top: 1px solid #333; margin-top: 10px; margin-bottom: 25px;'>", unsafe_allow_html=True)
 else:

@@ -1,9 +1,8 @@
-# pages/DashboardNovo.py
+# pages/Mobile.py (ou o nome do seu arquivo)
 
 import streamlit as st
 import pandas as pd
 import gspread
-# Removido: from google.oauth2.service_account import Credentials # Não é mais diretamente necessário aqui
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
@@ -45,28 +44,24 @@ def get_gspread_client():
         if "gcp_service_account" not in st.secrets:
             st.error("CRÍTICO: `gcp_service_account` não nos segredos.", icon="🚨")
             st.stop()
-
         creds_info = st.secrets["gcp_service_account"]
-        # Usar gspread.service_account_from_dict para autenticação
-        # Este método lida com a criação do objeto de credenciais e autorização.
         return gspread.service_account_from_dict(creds_info, scopes=scope)
     except Exception as e:
         st.error(f"CRÍTICO: Erro gspread client: {e}", icon="🚨")
         st.stop()
 
-# O restante das funções (connect_gsheet_tab, load_fightcard_data, etc.) permanecem iguais
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     if not gspread_client: st.error("CRÍTICO: Cliente gspread não inicializado.", icon="🚨"); st.stop()
     try: return gspread_client.open(sheet_name).worksheet(tab_name)
     except gspread.exceptions.APIError as e:
         st.error(f"CRÍTICO: Erro de API do Google ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨")
-        st.error(f"Detalhes: {e.response.json()}")
+        if hasattr(e, 'response') and hasattr(e.response, 'json'):
+             st.error(f"Detalhes: {e.response.json()}")
         st.info("Verifique se a conta de serviço tem permissão para acessar esta planilha e se as APIs Google Sheets/Drive estão habilitadas.")
         st.stop()
     except Exception as e:
         st.error(f"CRÍTICO: Erro genérico ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨")
         st.stop()
-
 
 @st.cache_data
 def load_fightcard_data():
@@ -92,7 +87,7 @@ def load_fightcard_data():
 
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
-    gspread_client = get_gspread_client() # Esta função agora usa service_account_from_dict
+    gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
     try:
         df_att = pd.DataFrame(worksheet.get_all_records());
@@ -100,7 +95,7 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
-            else: df_att[col] = pd.NA
+            else: df_att[col] = pd.NA # Usar pd.NA para consistência
         return df_att
     except Exception as e: st.error(f"Erro ao carregar Attendance: {e}"); return pd.DataFrame()
 
@@ -155,10 +150,10 @@ refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh_
 header_cols = st.columns([0.3, 0.4, 0.3])
 with header_cols[0]:
     if st.button("🔄 Atualizar Dados",key="refresh_dash_manual_btn_mobile_v6",use_container_width=True):
-        st.cache_data.clear(); st.cache_resource.clear() # Limpa ambos os caches
+        st.cache_data.clear(); st.cache_resource.clear()
         if 'edited_athlete_df' in st.session_state:
             del st.session_state.edited_athlete_df
-        if 'data_signature_for_highlights' in st.session_state: # Limpar assinatura também
+        if 'data_signature_for_highlights' in st.session_state:
             del st.session_state.data_signature_for_highlights
         st.toast("Dados atualizados!",icon="🎉");st.rerun()
 
@@ -187,26 +182,23 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 st.markdown("<hr style='margin-top:5px;margin-bottom:15px;'>",True)
 
-df_fc_raw=None;df_att_raw=None;all_tsks_raw=None;load_err=False;err_ph=st.empty() # Renomeado para _raw
+df_fc_raw=None;df_att_raw=None;all_tsks_raw=None;load_err=False;err_ph=st.empty()
 with st.spinner("Carregando dados..."):
     try:
         df_fc_raw=load_fightcard_data()
-        df_att_raw=load_attendance_data() # Carrega aqui
-        all_tsks_raw=get_task_list()    # Carrega aqui
-
+        df_att_raw=load_attendance_data()
+        all_tsks_raw=get_task_list()
         if df_fc_raw.empty or not all_tsks_raw:load_err=True
-    except Exception as e:err_ph.error(f"Erro crítico no carregamento inicial de dados: {e}");load_err=True; st.stop()
+    except Exception as e:
+        err_ph.error(f"Erro crítico no carregamento inicial de dados: {e}")
+        load_err=True
+        st.stop()
 
-
-if load_err:
+if load_err: # Este bloco agora é mais para o caso de df_fc_raw.empty ou all_tsks_raw ser vazio
     if df_fc_raw is not None and df_fc_raw.empty:err_ph.warning("Fightcard vazio.")
     if not all_tsks_raw:err_ph.error("Lista de Tarefas vazia.")
-    # A condição abaixo pode ser redundante se o st.stop() acima for atingido
-    if not(df_fc_raw is not None and df_fc_raw.empty) and not(not all_tsks_raw):
-        # Se o erro não foi devido a Fightcard ou TaskList vazios, mas algo no `try`
-        if not err_ph.has_been_set: # Evita sobrescrever erro mais específico do `try`
-            st.error("Falha ao carregar dados. Verifique os logs para detalhes.")
-    st.stop() # Para a execução se houve erro de carregamento
+    st.stop()
+# As verificações abaixo são redundantes se st.stop() foi chamado, mas mantidas por segurança
 elif df_fc_raw.empty:st.warning("Nenhum dado de Fightcard."); st.stop()
 elif not all_tsks_raw:st.error("TaskList não carregada."); st.stop()
 else:
@@ -224,11 +216,11 @@ else:
     
     num_lutas_evento_original = 0
     if not df_fc_filtered_by_event.empty:
-        num_lutas_evento_original = df_fc_filtered_by_event.groupby([FC_EVENT_COL, FC_ORDER_COL]).ngroups
+        num_lutas_evento_original = df_fc_filtered_by_event.groupby([FC_EVENT_COL, FC_ORDER_COL], sort=False).ngroups
 
     if df_fc_filtered_by_event.empty and sel_ev_opt != "Todos os Eventos":
         st.info(f"Nenhuma luta para '{sel_ev_opt}'.");st.stop()
-    elif df_fc_filtered_by_event.empty and sel_ev_opt == "Todos os Eventos": # Caso especial se "Todos os Eventos" resulta em vazio
+    elif df_fc_filtered_by_event.empty and sel_ev_opt == "Todos os Eventos":
          st.info(f"Nenhuma luta encontrada.");st.stop()
 
     dash_data_list=[]
@@ -258,8 +250,8 @@ else:
             fighter_row["Lutador"] = f"{corner_emoji} {name_display_text}".strip()
 
             if fighter_name_fc != "N/A" and athlete_id_fc:
-                for task in all_tsks_raw: # Usar all_tsks_raw
-                    emoji_status = get_task_status_representation(athlete_id_fc, task, df_att_raw) # Usar df_att_raw
+                for task in all_tsks_raw:
+                    emoji_status = get_task_status_representation(athlete_id_fc, task, df_att_raw)
                     fighter_row[task] = emoji_status
             else:
                 for task in all_tsks_raw:
@@ -282,13 +274,12 @@ else:
             del st.session_state.edited_athlete_df
         st.session_state.data_signature_for_highlights = current_data_signature
 
-    # Reset index for proper alignment if 'edited_athlete_df' is used for merging/joining highlights
     df_to_display_filtered_by_search = df_to_display_filtered_by_search.reset_index(drop=True)
 
     if 'edited_athlete_df' in st.session_state and \
        len(st.session_state.edited_athlete_df) == len(df_to_display_filtered_by_search) and \
        list(st.session_state.edited_athlete_df.index) == list(df_to_display_filtered_by_search.index) and \
-       HIGHLIGHT_COL_NAME in st.session_state.edited_athlete_df.columns: # Check if column exists
+       HIGHLIGHT_COL_NAME in st.session_state.edited_athlete_df.columns:
         df_to_display_filtered_by_search[HIGHLIGHT_COL_NAME] = st.session_state.edited_athlete_df[HIGHLIGHT_COL_NAME]
     else:
         df_to_display_filtered_by_search[HIGHLIGHT_COL_NAME] = False
@@ -298,23 +289,22 @@ else:
         if search_term:
             st.info(f"Nenhum lutador encontrado com o termo '{search_term}' no evento '{sel_ev_opt}'.")
         else:
-             # Se df_fc_filtered_by_event não estava vazio mas dash_data_list sim, ou df_dashboard_processed sim.
             st.info(f"Nenhum lutador para exibir no evento '{sel_ev_opt}'.")
         st.stop()
 
     col_conf_edit = {
         HIGHLIGHT_COL_NAME: st.column_config.CheckboxColumn("HL", width="small", default=False),
         "Evento": st.column_config.TextColumn(width="small", disabled=True),
-        "Foto": st.column_config.ImageColumn("Foto", width="small", disabled=True),
+        "Foto": st.column_config.ImageColumn("Foto", width="small"), # Removido disabled=True
         "Lutador": st.column_config.TextColumn("Lutador (ID - Nome)", width="large", disabled=True),
     }
     col_ord_list = [HIGHLIGHT_COL_NAME, "Evento", "Foto", "Lutador"]
-    for task_name_col in all_tsks_raw: col_ord_list.append(task_name_col) # Usar all_tsks_raw
+    for task_name_col in all_tsks_raw: col_ord_list.append(task_name_col)
 
     leg_parts=[f"{emo}: {dsc}"for emo,dsc in EMOJI_LEGEND.items()if emo.strip()!=""]
     help_txt_leg_disp=", ".join(leg_parts)
 
-    for task_name_col in all_tsks_raw: # Usar all_tsks_raw
+    for task_name_col in all_tsks_raw:
         col_conf_edit[task_name_col] = st.column_config.TextColumn(
             label=task_name_col, width="small", help=f"Status: {help_txt_leg_disp}", disabled=True
         )
@@ -336,14 +326,12 @@ else:
         key="athlete_editor_with_highlight"
     )
     
-    # Sempre atualizar o session_state com a saída do editor
     st.session_state.edited_athlete_df = edited_df_output.copy()
-
 
     st.markdown("---")
     st.subheader(f"Estatísticas: {sel_ev_opt}{f' (Busca: "{search_term}")' if search_term else ''}")
     
-    df_stats_source = edited_df_output # Usar a saída mais recente do editor
+    df_stats_source = edited_df_output
     
     if not df_stats_source.empty:
         valid_athlete_ids_display = df_stats_source[df_stats_source["Lutador"] != "N/A"]["Lutador"].apply(
@@ -354,7 +342,7 @@ else:
         done_c, req_c, not_sol_c, pend_c, tot_tsk_slots = 0, 0, 0, 0, 0
         df_valid_fighters_tasks_display = df_stats_source[df_stats_source["Lutador"] != "N/A"]
 
-        for tsk in all_tsks_raw: # Usar all_tsks_raw
+        for tsk in all_tsks_raw:
             if tsk in df_valid_fighters_tasks_display.columns:
                 task_emojis_series = df_valid_fighters_tasks_display[tsk]
                 tot_tsk_slots += len(task_emojis_series)

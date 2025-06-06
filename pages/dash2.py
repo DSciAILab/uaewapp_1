@@ -20,9 +20,6 @@ ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
-# NAME_COLUMN_IN_ATTENDANCE: Usado se você precisar buscar por nome na aba Attendance.
-# Se você sempre usa ID para buscar em Attendance, esta constante pode não ser necessária para get_numeric_task_status.
-# No entanto, load_attendance_data pode usá-la para garantir que a coluna exista.
 NAME_COLUMN_IN_ATTENDANCE = "Fighter"  
 
 FC_EVENT_COL = "Event"
@@ -104,12 +101,10 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
     try:
         df_att = pd.DataFrame(worksheet.get_all_records()); 
         if df_att.empty: return pd.DataFrame()
-        
-        cols_to_ensure_str_strip = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, NAME_COLUMN_IN_ATTENDANCE]
-        for col in cols_to_ensure_str_strip:
+        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, NAME_COLUMN_IN_ATTENDANCE]
+        for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
             else: df_att[col] = None 
-        
         expected_cols_for_logic = ["#", ATTENDANCE_ATHLETE_ID_COL, NAME_COLUMN_IN_ATTENDANCE, "Event", ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, "Notes", "User", ATTENDANCE_TIMESTAMP_COL]
         for col_exp in expected_cols_for_logic:
             if col_exp not in df_att.columns: df_att[col_exp] = None
@@ -130,7 +125,6 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
 def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
     if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip() == "" or not task_name: return 0 
     if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or ATTENDANCE_TASK_COL not in df_attendance.columns or ATTENDANCE_STATUS_COL not in df_attendance.columns: return 0 
-    
     athlete_id_str = str(athlete_id_to_check).strip()
     task_name_str = str(task_name).strip()
     relevant_records = df_attendance[
@@ -138,25 +132,21 @@ def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
         (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == task_name_str)
     ]
     if relevant_records.empty: return 0
-    
-    latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL] # Fallback
+    latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL] 
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
         try:
             relevant_records_sorted = relevant_records.copy()
-            relevant_records_sorted.loc[:, "Timestamp_dt"] = pd.to_datetime(
-                relevant_records_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce'
-            )
+            relevant_records_sorted.loc[:, "Timestamp_dt"] = pd.to_datetime(relevant_records_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
             if relevant_records_sorted["Timestamp_dt"].notna().any():
                  latest_record = relevant_records_sorted.sort_values(by="Timestamp_dt", ascending=False, na_position='last').iloc[0]
                  latest_status_str = latest_record[ATTENDANCE_STATUS_COL]
         except Exception: pass 
     return STATUS_TO_NUM.get(str(latest_status_str).strip(), 0)
 
-def render_fight_table_html_with_colored_tasks(df_fc, df_att, tasks_all, fighter_id_map_param): # fighter_id_map_param é usado aqui
+def render_fight_table_html_with_colored_tasks(df_fc, df_att, tasks_all, fighter_id_map_param):
     html_content = ""
     grouped_events = df_fc.groupby(FC_EVENT_COL, sort=False)
     colspan_val = 4 + (2 * len(tasks_all)) 
-
     for ev_name, ev_group in grouped_events:
         html_content += f"<table><tr><td colspan='{colspan_val}' class='event-header-cell'>{html.escape(str(ev_name))}</td></tr></table>"
         html_content += "<table class='dashboard-fight-table'>"
@@ -166,24 +156,20 @@ def render_fight_table_html_with_colored_tasks(df_fc, df_att, tasks_all, fighter
         for task in tasks_all: header_html += f"<th>{html.escape(task)}</th>"
         header_html += "<th>Lutador Vermelho</th><th>Foto</th></tr></thead><tbody>"
         html_content += header_html
-
         fights = ev_group.sort_values(by=FC_ORDER_COL).groupby(FC_ORDER_COL)
         for f_order, f_df in fights:
             blue_s = f_df[f_df[FC_CORNER_COL] == "blue"].squeeze(axis=0)
             red_s = f_df[f_df[FC_CORNER_COL] == "red"].squeeze(axis=0)
             html_content += "<tr>"
-
             for corner_data in [(blue_s, "blue-corner-text"), (red_s, "red-corner-text")]:
                 series_data, name_class_color = corner_data
                 fighter_name = html.escape(str(series_data.get(FC_FIGHTER_COL, ""))) if isinstance(series_data, pd.Series) else ""
                 athlete_id = fighter_id_map_param.get(str(series_data.get(FC_FIGHTER_COL, "")).strip(), None) if isinstance(series_data, pd.Series) else None
                 img_src = series_data.get(FC_PICTURE_COL, '') if isinstance(series_data, pd.Series) else ''
                 img_tag = f"<img src='{html.escape(str(img_src))}' class='fighter-img'>" if img_src and isinstance(img_src, str) and img_src.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
-
-                if corner_data[0] is blue_s: # Lutador Azul
+                if corner_data[0] is blue_s:
                     html_content += f"<td class='fighter-img-cell'>{img_tag}</td>"
                     html_content += f"<td class='fighter-name-cell {name_class_color}'>{fighter_name}</td>"
-                
                 if fighter_name and fighter_name != "N/A" and athlete_id:
                     for task_item in tasks_all:
                         status_num = get_numeric_task_status(athlete_id, task_item, df_att)
@@ -191,20 +177,19 @@ def render_fight_table_html_with_colored_tasks(df_fc, df_att, tasks_all, fighter
                         html_content += f"<td class='task-status-html-cell {status_class}'>{status_num}</td>"
                 else:
                     for _ in tasks_all: html_content += f"<td class='task-status-html-cell status-cell-0'>0</td>"
-                
-                if corner_data[0] is blue_s: # Detalhes da luta após tarefas do azul
+                if corner_data[0] is blue_s: 
                     division = html.escape(str(series_data.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "") if isinstance(red_s, pd.Series) else "")))
                     fight_order_disp = int(f_order) if pd.notna(f_order) else ""
                     html_content += f"<td class='fight-details-cell'>FIGHT #{fight_order_disp}<br>{division}</td>"
-            
-            # Nome e foto do lutador vermelho no final (já que o loop externo agora é por corner_data)
-            # Isso foi simplificado, pois o loop acima já lida com ambos os corners.
-            # A lógica para adicionar o lutador vermelho e sua foto no final da linha já foi coberta.
+            fighter_name_red = html.escape(str(red_s.get(FC_FIGHTER_COL, ""))) if isinstance(red_s, pd.Series) else ""
+            img_src_red = red_s.get(FC_PICTURE_COL, '') if isinstance(red_s, pd.Series) else ''
+            img_tag_red = f"<img src='{html.escape(str(img_src_red))}' class='fighter-img'>" if img_src_red and isinstance(img_src_red, str) and img_src_red.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
+            html_content += f"<td class='fighter-name-cell red-corner-text'>{fighter_name_red}</td>"
+            html_content += f"<td class='fighter-img-cell'>{img_tag_red}</td>"
             html_content += "</tr>"
         html_content += "</tbody></table>"
     return html_content
 
-# --- Função de Cálculo de Altura CORRIGIDA ---
 def calculate_table_height_html(df_fightcard, base_event_h=60, fight_h_estimate=95, header_footer_h=100):
     num_events = 0; num_fights = 0
     if isinstance(df_fightcard, pd.DataFrame) and not df_fightcard.empty:
@@ -223,22 +208,17 @@ st.title("DASHBOARD DE ATLETAS E TAREFAS")
 local_css("style.css") 
 st.markdown("---")
 
-# Inicialização de flags de erro
-if 'error_flags_initialized_dashnovo' not in st.session_state: # Chave única para esta página
-    st.session_state.fc_load_error_shown_dn = False
-    st.session_state.task_load_error_shown_dn = False
-    st.session_state.att_empty_info_shown_dn = False
-    st.session_state.error_flags_initialized_dashnovo = True
+if 'error_flags_initialized_dashnovo' not in st.session_state:
+    st.session_state.fc_load_error_shown_dn = False; st.session_state.task_load_error_shown_dn = False
+    st.session_state.att_empty_info_shown_dn = False; st.session_state.error_flags_initialized_dashnovo = True
 
 df_fc_data = None; df_att_data = None; all_tasks_list = []; df_athletes_lookup = None
 loading_error_flag = False; error_placeholder = st.empty()
 
 with st.spinner("Carregando todos os dados... Aguarde!"):
     try:
-        df_fc_data = load_fightcard_data() 
-        df_att_data = load_attendance_data() 
-        all_tasks_list = get_task_list() 
-        df_athletes_lookup = load_athletes_info_df()
+        df_fc_data = load_fightcard_data(); df_att_data = load_attendance_data() 
+        all_tasks_list = get_task_list(); df_athletes_lookup = load_athletes_info_df()
         if df_fc_data.empty: loading_error_flag = True
         if not all_tasks_list: loading_error_flag = True
     except Exception as e: error_placeholder.error(f"Erro crítico durante carregamento: {e}"); loading_error_flag = True
@@ -256,41 +236,38 @@ if loading_error_flag:
         error_placeholder.warning("Fightcard vazio ou não carregado."); st.session_state.fc_load_error_shown_dn = True
     if not all_tasks_list and not st.session_state.task_load_error_shown_dn:
         error_placeholder.error("Lista de Tarefas vazia ou não carregada."); st.session_state.task_load_error_shown_dn = True
-    if not (df_fc_data is not None and df_fc_data.empty) and not (not all_tasks_list) : # Se não foi um dos erros acima
-        st.error("Falha ao carregar dados essenciais. Verifique os logs ou mensagens de erro anteriores.")
-elif df_fc_data.empty: # Verificação redundante, mas segura
-    st.warning("Nenhum dado de Fightcard para exibir.")
-elif not all_tasks_list:
-    st.error("A lista de tarefas (TaskList) não foi carregada. Dashboard incompleto.")
+    if not (df_fc_data is not None and df_fc_data.empty) and not (not all_tasks_list) : 
+        st.error("Falha ao carregar dados essenciais. Verifique os logs ou mensagens.")
+elif df_fc_data.empty: st.warning("Nenhum dado de Fightcard para exibir.")
+elif not all_tasks_list: st.error("A lista de tarefas (TaskList) não foi carregada.")
 else:
     if df_athletes_lookup.empty and not st.session_state.get('ath_info_empty_warn_dn', False):
-        st.warning("Informações detalhadas dos atletas (aba 'df') não carregadas. Mapeamento de ID pode falhar ou estar incompleto.")
+        st.warning("Infos de Atletas (aba 'df') vazias. Mapeamento de ID pode falhar.")
         st.session_state.ath_info_empty_warn_dn = True
         df_athletes_lookup = pd.DataFrame(columns=[ATHLETE_SHEET_NAME_COL, ATHLETE_SHEET_ID_COL]) 
-
     fighter_id_mapping = {}
     if not df_athletes_lookup.empty and ATHLETE_SHEET_NAME_COL in df_athletes_lookup.columns and ATHLETE_SHEET_ID_COL in df_athletes_lookup.columns:
         df_ath_unique = df_athletes_lookup.dropna(subset=[ATHLETE_SHEET_NAME_COL]).drop_duplicates(subset=[ATHLETE_SHEET_NAME_COL], keep='first')
-        fighter_id_mapping = pd.Series(
-            df_ath_unique[ATHLETE_SHEET_ID_COL].astype(str).str.strip().values, 
-            index=df_ath_unique[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()
-        ).to_dict()
+        fighter_id_mapping = pd.Series(df_ath_unique[ATHLETE_SHEET_ID_COL].astype(str).str.strip().values, index=df_ath_unique[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()).to_dict()
+    else: st.warning("Mapeamento de ID de atleta não pôde ser criado (dados da aba 'df' ausentes).")
     
     available_events_list = sorted(df_fc_data[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
     if not available_events_list: st.warning("Nenhum evento no Fightcard para selecionar."); st.stop()
     event_options_list = ["Todos os Eventos"] + available_events_list
     selected_event_val = st.selectbox("Selecione o Evento:", options=event_options_list, index=0, key="event_selector_dashboard_novo")
-
     df_fc_display = df_fc_data.copy()
     if selected_event_val != "Todos os Eventos":
         df_fc_display = df_fc_data[df_fc_data[FC_EVENT_COL] == selected_event_val].copy()
     if df_fc_display.empty: st.info(f"Nenhuma luta para o evento '{selected_event_val}'."); st.stop()
 
     st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_val}")
-    status_legend_parts_disp = [] 
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    status_legends_parts_disp = [] 
     for key_n, value_d in NUM_TO_STATUS_VERBOSE.items():
         status_legends_parts_disp.append(f"`{key_n}`: {value_d.split(' (')[0]}") 
     help_text_general_legend_disp = ", ".join(status_legends_parts_disp)
+    # --- FIM DA CORREÇÃO ---
     st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend_disp}")
 
     if df_att_data is None: df_att_data = pd.DataFrame() 
@@ -302,14 +279,32 @@ else:
     st.components.v1.html(html_table_output, height=table_render_height, scrolling=True)
     st.markdown("---")
 
-    # Estatísticas (simplificadas para focar na tabela HTML)
-    st.subheader(f"Estatísticas Globais (Todos Eventos)")
-    if not df_fc_data.empty:
-        total_lutas_geral = df_fc_data[FC_ORDER_COL].nunique() # Lutas únicas em todos os eventos
-        atletas_azuis_geral = [ath for ath in df_fc_data[df_fc_data[FC_CORNER_COL]=='blue'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
-        atletas_vermelhos_geral = [ath for ath in df_fc_data[df_fc_data[FC_CORNER_COL]=='red'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
-        total_atletas_unicos_geral = len(set(atletas_azuis_geral + atletas_vermelhos_geral))
-        st.metric("Total de Lutas (Todos Eventos)", total_lutas_geral)
-        st.metric("Atletas Únicos (Todos Eventos)", total_atletas_unicos_geral)
-    else: st.info("Nenhum dado para estatísticas globais.")
+    st.subheader(f"Estatísticas do Evento: {selected_event_val}")
+    if not df_fc_display.empty:
+        total_lutas_evento = df_fc_display[FC_ORDER_COL].nunique()
+        atletas_azuis_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='blue'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
+        atletas_vermelhos_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='red'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
+        total_atletas_unicos_ev = len(set(atletas_azuis_ev + atletas_vermelhos_ev))
+        total_slots_tarefas_glob = 0; done_count_glob = 0; req_count_glob = 0; not_sol_count_glob = 0
+        if not df_att_data.empty and all_tasks_list:
+             all_athlete_ids_in_event = []
+             if fighter_id_mapping:
+                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_azuis_ev if fighter_id_mapping.get(name) is not None])
+                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_vermelhos_ev if fighter_id_mapping.get(name) is not None])
+                 all_athlete_ids_in_event = list(set(all_athlete_ids_in_event))
+             if all_athlete_ids_in_event:
+                 df_att_evento = df_att_data[df_att_data[ATTENDANCE_ATHLETE_ID_COL].isin(all_athlete_ids_in_event)]
+                 if not df_att_evento.empty: # Verifica se há dados de attendance para os atletas do evento
+                    for task in all_tasks_list:
+                        relevant_statuses = df_att_evento[df_att_evento[ATTENDANCE_TASK_COL] == task][ATTENDANCE_STATUS_COL]
+                        total_slots_tarefas_glob += len(relevant_statuses) 
+                        done_count_glob += (relevant_statuses == "Done").sum()
+                        req_count_glob += (relevant_statuses == "Requested").sum()
+                        not_sol_count_glob += (relevant_statuses.isin(["---", "Não Solicitado"])).sum()
+        stat_cols = st.columns(4) 
+        stat_cols[0].metric("Lutas no Evento", total_lutas_evento)
+        stat_cols[1].metric("Atletas Únicos no Evento", total_atletas_unicos_ev)
+        stat_cols[2].metric("Tarefas 'Done'", done_count_glob, help=f"Status 'Done' para atletas deste evento.")
+        stat_cols[3].metric("Tarefas 'Requested'", req_count_glob)
+    else: st.info("Nenhum dado para estatísticas do evento selecionado.")
 st.markdown(f"--- \n *Dashboard atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*")

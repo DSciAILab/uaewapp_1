@@ -1,16 +1,22 @@
-# pages/DashboardNovo.py (ou como você nomeou o arquivo que está adaptando para mobile)
+# pages/Mobile.py (ou o nome do seu arquivo)
 
 import streamlit as st
 import pandas as pd
 import gspread
-# from google.oauth2.service_account import Credentials # Removido, usando gspread.service_account_from_dict
-from datetime import datetime
+from datetime import datetime, date # Adicionado date para checagem
 from streamlit_autorefresh import st_autorefresh
 
 # --- Constantes ---
 MAIN_SHEET_NAME = "UAEW_App"
 CONFIG_TAB_NAME = "Config"
-ANNOUNCEMENTS_TAB_NAME = "Announcements" # Nova constante para a aba de avisos
+ANNOUNCEMENTS_TAB_NAME = "Announcements"
+# Novas constantes para a aba de avisos baseadas nas suas colunas
+ANNOUNCEMENT_TEXT_COL = "Announcement" # Sua coluna "Announcement"
+ANNOUNCEMENT_DAY_COL = "Day"           # Sua coluna "Day"
+ANNOUNCEMENT_TIME_COL = "Time"         # Sua coluna "Time"
+ANNOUNCEMENT_NOTES_COL = "Notes"        # Sua coluna "Notes"
+ANNOUNCEMENT_STATUS_COL = "Status"     # Coluna opcional para ativar/desativar (ex: "ATIVO", "INATIVO")
+
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 ATTENDANCE_TAB_NAME = "Attendance"
 ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
@@ -24,23 +30,19 @@ FC_ATHLETE_ID_COL = "AthleteID"
 FC_CORNER_COL = "Corner"
 FC_ORDER_COL = "FightOrder"
 FC_PICTURE_COL = "Picture"
-FC_DIVISION_COL = "Division" # Mantida para carregamento, mas não usada na UI mobile
+FC_DIVISION_COL = "Division"
 
 STATUS_TO_EMOJI = {
-    "Done": "🟩", "Requested": "🟨", "---": "➖", "Não Solicitado": "➖", # Confirmado 🟨
+    "Done": "🟩", "Requested": "🟨", "---": "➖", "Não Solicitado": "➖",
     "Pendente": "🟥", "Não Registrado": "🟥"
 }
 DEFAULT_EMOJI = "🟥"
 EMOJI_LEGEND = {
-    "🟩": "Done", "🟨": "Requested", "➖": "---", "🟥": "Pendente" # Confirmado 🟨
+    "🟩": "Done", "🟨": "Requested", "➖": "---", "🟥": "Pendente"
 }
 CORNER_EMOJI_MAP = {"blue": "🔵", "red": "🔴", "n/a": ""}
 HIGHLIGHT_COL_NAME = "_HIGHLIGHT_"
 
-# Colunas esperadas na aba "Announcements" (ajuste conforme sua planilha)
-ANNOUNCEMENT_MESSAGE_COL = "Mensagem"
-ANNOUNCEMENT_TYPE_COL = "Tipo" # Opcional: Info, Alerta, Erro, Sucesso
-ANNOUNCEMENT_ACTIVE_COL = "Ativo" # Opcional: SIM/NAO
 
 # --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)
@@ -69,7 +71,7 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
         st.error(f"CRÍTICO: Erro genérico ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨")
         st.stop()
 
-@st.cache_data(ttl=300) # Cache mais curto para anúncios, se desejar que atualizem mais rápido
+@st.cache_data(ttl=180) # Cache para anúncios (ex: 3 minutos)
 def load_announcements_data(sheet_name=MAIN_SHEET_NAME, announcements_tab=ANNOUNCEMENTS_TAB_NAME):
     gspread_client = get_gspread_client()
     try:
@@ -78,24 +80,40 @@ def load_announcements_data(sheet_name=MAIN_SHEET_NAME, announcements_tab=ANNOUN
         if df_ann.empty:
             return pd.DataFrame()
 
-        # Padroniza as colunas esperadas
-        if ANNOUNCEMENT_MESSAGE_COL not in df_ann.columns:
-            st.warning(f"Aba '{announcements_tab}' não contém a coluna obrigatória '{ANNOUNCEMENT_MESSAGE_COL}'.")
-            return pd.DataFrame() # Retorna DF vazio se coluna obrigatória falta
+        # Verificar se a coluna principal de anúncio existe
+        if ANNOUNCEMENT_TEXT_COL not in df_ann.columns:
+            st.warning(f"Aba '{announcements_tab}' não contém a coluna obrigatória '{ANNOUNCEMENT_TEXT_COL}'.")
+            return pd.DataFrame()
 
-        if ANNOUNCEMENT_TYPE_COL not in df_ann.columns:
-            df_ann[ANNOUNCEMENT_TYPE_COL] = "Info" # Padrão para Info se não existir
-        else:
-            df_ann[ANNOUNCEMENT_TYPE_COL] = df_ann[ANNOUNCEMENT_TYPE_COL].astype(str).str.strip().fillna("Info")
+        # Tratar colunas opcionais e padronizar
+        cols_to_keep = [ANNOUNCEMENT_TEXT_COL]
 
-        if ANNOUNCEMENT_ACTIVE_COL not in df_ann.columns:
-            df_ann[ANNOUNCEMENT_ACTIVE_COL] = "SIM" # Padrão para Ativo se não existir
-        else:
-            df_ann[ANNOUNCEMENT_ACTIVE_COL] = df_ann[ANNOUNCEMENT_ACTIVE_COL].astype(str).str.strip().str.upper().fillna("NAO")
+        for col, default_val in [
+            (ANNOUNCEMENT_DAY_COL, None),
+            (ANNOUNCEMENT_TIME_COL, None),
+            (ANNOUNCEMENT_NOTES_COL, ""),
+            (ANNOUNCEMENT_STATUS_COL, "ATIVO") # Se não houver coluna Status, assume ATIVO
+        ]:
+            if col in df_ann.columns:
+                df_ann[col] = df_ann[col].astype(str).str.strip()
+                if default_val is not None and col != ANNOUNCEMENT_STATUS_COL : # Não preencher status com default_val aqui
+                    df_ann[col] = df_ann[col].replace('', default_val) # Preenche strings vazias com default
+                cols_to_keep.append(col)
+            elif default_val is not None: # Se a coluna não existe, cria com valor padrão
+                df_ann[col] = default_val
+                cols_to_keep.append(col)
+            # Se col não existe e default_val é None, não adiciona (ex: Day/Time podem ser opcionais)
 
-        # Filtrar apenas anúncios ativos
-        df_ann_active = df_ann[df_ann[ANNOUNCEMENT_ACTIVE_COL] == "SIM"]
-        return df_ann_active[[ANNOUNCEMENT_MESSAGE_COL, ANNOUNCEMENT_TYPE_COL]].reset_index(drop=True)
+        # Filtrar por status se a coluna existir e for usada
+        if ANNOUNCEMENT_STATUS_COL in df_ann.columns:
+            df_ann_active = df_ann[df_ann[ANNOUNCEMENT_STATUS_COL].fillna("").str.upper() == "ATIVO"]
+        else: # Se não há coluna de status, considera todos ativos
+            df_ann_active = df_ann.copy()
+        
+        # Selecionar apenas as colunas relevantes após o filtro
+        # Garantir que todas as colunas em cols_to_keep realmente existem em df_ann_active
+        final_cols = [col for col in cols_to_keep if col in df_ann_active.columns]
+        return df_ann_active[final_cols].reset_index(drop=True)
 
     except Exception as e:
         st.error(f"Erro ao carregar Avisos da aba '{announcements_tab}': {e}")
@@ -117,11 +135,10 @@ def load_fightcard_data():
         else:
             st.error(f"CRÍTICO: Coluna '{FC_ATHLETE_ID_COL}' não encontrada no Fightcard. Verifique a planilha.")
             df[FC_ATHLETE_ID_COL] = ""
-        if FC_DIVISION_COL not in df.columns: # Apenas para garantir que não dê erro se a coluna não existir no CSV
+        if FC_DIVISION_COL not in df.columns:
             df[FC_DIVISION_COL] = "N/A"
         else:
             df[FC_DIVISION_COL] = df[FC_DIVISION_COL].astype(str).str.strip().fillna("N/A")
-
         return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL, FC_ATHLETE_ID_COL])
     except Exception as e: st.error(f"Erro ao carregar Fightcard: {e}"); return pd.DataFrame()
 
@@ -185,19 +202,17 @@ def extract_id_from_display_name(display_name_with_emoji):
 # --- Início da Página Streamlit ---
 st.set_page_config(layout="wide")
 st.markdown("<h1 style='text-align: center; font-size: 2em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS</h1>",unsafe_allow_html=True)
-refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh_v7_mobile") # Nova key para autorefresh
+refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh_v8_mobile")
 
-# Controles: Botão de refresh, seletor de evento, busca
 header_cols = st.columns([0.3, 0.4, 0.3])
 with header_cols[0]:
-    if st.button("🔄 Atualizar Dados",key="refresh_dash_manual_btn_mobile_v7",use_container_width=True): # Nova key
+    if st.button("🔄 Atualizar Dados",key="refresh_dash_manual_btn_mobile_v8",use_container_width=True):
         st.cache_data.clear(); st.cache_resource.clear()
         if 'edited_athlete_df' in st.session_state: del st.session_state.edited_athlete_df
         if 'data_signature_for_highlights' in st.session_state: del st.session_state.data_signature_for_highlights
         st.toast("Dados atualizados!",icon="🎉");st.rerun()
 
-# CSS (Sem opção de tamanho de fonte, apenas estilos da tabela e highlight)
-HIGHLIGHT_COLOR = "#FFF3C4" # Amarelo claro para highlight
+HIGHLIGHT_COLOR = "#FFF3C4"
 st.markdown(f"""
     <style>
         div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] > div {{
@@ -218,25 +233,30 @@ st.markdown(f"""
         div[data-testid="stDataFrameResizable"] tbody tr:has(td div[data-baseweb="checkbox"] input[type="checkbox"]:checked) {{
             background-color: {HIGHLIGHT_COLOR} !important;
         }}
+        /* Estilo para a caixa de aviso */
+        .custom-announcement {{
+            border-left: 5px solid #1E90FF; /* Azul Dodger */
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f0f8ff; /* AliceBlue */
+            border-radius: 5px;
+        }}
+        .custom-announcement p {{ margin-bottom: 5px; }} /* Espaçamento dentro do aviso */
+        .custom-announcement small {{ color: #555; }} /* Cor para notas e data/hora */
     </style>
 """, unsafe_allow_html=True)
-# Removido o st.markdown("<hr>") daqui, será colocado após os avisos
 
-# Carregamento de dados
 df_fc_raw=None; df_att_raw=None; all_tsks_raw=None; df_announcements_raw=None; load_err=False; err_ph=st.empty()
 with st.spinner("Carregando dados..."):
     try:
         df_fc_raw=load_fightcard_data()
         df_att_raw=load_attendance_data()
         all_tsks_raw=get_task_list()
-        df_announcements_raw = load_announcements_data() # Carregar avisos
-
-        if df_fc_raw.empty or not all_tsks_raw: # A ausência de anúncios não é um erro crítico
-            load_err=True
+        df_announcements_raw = load_announcements_data()
+        if df_fc_raw.empty or not all_tsks_raw:load_err=True
     except Exception as e:
         err_ph.error(f"Erro crítico no carregamento inicial de dados: {e}")
-        load_err=True
-        st.stop()
+        load_err=True; st.stop()
 
 if load_err:
     if df_fc_raw is not None and df_fc_raw.empty:err_ph.warning("Fightcard vazio.")
@@ -245,35 +265,78 @@ if load_err:
 elif df_fc_raw.empty:st.warning("Nenhum dado de Fightcard."); st.stop()
 elif not all_tsks_raw:st.error("TaskList não carregada."); st.stop()
 else:
-    # Exibir Avisos ANTES do seletor de evento e da tabela
     if df_announcements_raw is not None and not df_announcements_raw.empty:
-        st.markdown("---") # Linha separadora antes dos avisos
-        st.subheader("📢 Avisos Importantes")
+        st.markdown("---")
+        st.subheader("📢 Avisos") # Título mais genérico
         for index, row in df_announcements_raw.iterrows():
-            msg = row[ANNOUNCEMENT_MESSAGE_COL]
-            msg_type = row[ANNOUNCEMENT_TYPE_COL].lower() # para case-insensitive match
+            message = row.get(ANNOUNCEMENT_TEXT_COL, "Aviso sem mensagem.")
+            day_val = row.get(ANNOUNCEMENT_DAY_COL)
+            time_val = row.get(ANNOUNCEMENT_TIME_COL)
+            notes_val = row.get(ANNOUNCEMENT_NOTES_COL, "")
 
-            if msg_type == "alerta":
-                st.warning(msg, icon="⚠️")
-            elif msg_type == "erro":
-                st.error(msg, icon="🚨")
-            elif msg_type == "sucesso":
-                st.success(msg, icon="✅")
-            else: # Padrão para "info" ou qualquer outro tipo
-                st.info(msg, icon="ℹ️")
-        st.markdown("---") # Linha separadora após os avisos
+            # Tenta formatar Day e Time
+            date_str = ""
+            if day_val:
+                try:
+                    # Tenta converter para objeto data para formatar, se for string
+                    if isinstance(day_val, str):
+                        # Heurística para formatos comuns como DD/MM/YYYY ou YYYY-MM-DD
+                        if '/' in day_val:
+                            dt_obj = datetime.strptime(day_val, "%d/%m/%Y")
+                        elif '-' in day_val:
+                            dt_obj = datetime.strptime(day_val, "%Y-%m-%d")
+                        else: # Assume que já está num formato legível ou é um número de série do Excel
+                            dt_obj = None # Não tenta converter se formato desconhecido
+
+                        if dt_obj: date_str = dt_obj.strftime("%d/%m/%Y")
+                        else: date_str = str(day_val) # Usa como está se não puder converter
+                    elif isinstance(day_val, (datetime, date)):
+                         date_str = day_val.strftime("%d/%m/%Y")
+                    else: # Se for número (timestamp Excel?) ou outro tipo, apenas converte para string
+                        date_str = str(day_val)
+                except ValueError:
+                    date_str = str(day_val) # Se falhar a conversão, usa o valor original
+
+            time_str = str(time_val) if time_val else ""
+            
+            # Determina o tipo de alerta com base no notes_val
+            # Você pode customizar essa lógica. Ex: se notes_val contiver "URGENTE" -> st.error
+            alert_type = "info" # padrão
+            icon = "ℹ️"
+            if notes_val:
+                if "URGENTE" in notes_val.upper() or "CRÍTICO" in notes_val.upper():
+                    alert_type = "error"
+                    icon = "🚨"
+                elif "ALERTA" in notes_val.upper() or "ATENÇÃO" in notes_val.upper():
+                    alert_type = "warning"
+                    icon = "⚠️"
+            
+            # Monta a mensagem do aviso
+            full_message = f"<p><strong>{message}</strong></p>"
+            if date_str or time_str:
+                full_message += f"<p><small><i>Data/Hora: {date_str} {time_str}</i></small></p>"
+            if notes_val:
+                full_message += f"<p><small><i>Notas: {notes_val}</i></small></p>"
+
+            # Usar st.markdown para mais controle sobre o HTML e aplicar a classe CSS
+            st.markdown(f"""
+            <div class="custom-announcement">
+                {full_message}
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
     else:
-        st.markdown("<hr style='margin-top:5px;margin-bottom:15px;'>",True) # Linha padrão se não houver avisos
+        st.markdown("<hr style='margin-top:5px;margin-bottom:15px;'>",True)
 
-    # Controles restantes (após avisos)
     avail_evs=sorted(df_fc_raw[FC_EVENT_COL].dropna().unique().tolist(),reverse=True)
     if not avail_evs:st.warning("Nenhum evento no Fightcard.");st.stop()
     ev_opts=["Todos os Eventos"]+avail_evs
     
     with header_cols[1]:
-        sel_ev_opt=st.selectbox("Evento:",options=ev_opts,index=0,key="ev_sel_dn_mobile_v7", label_visibility="collapsed")
+        sel_ev_opt=st.selectbox("Evento:",options=ev_opts,index=0,key="ev_sel_dn_mobile_v8", label_visibility="collapsed")
     with header_cols[2]:
-        search_term = st.text_input("Buscar Lutador:", key="search_athlete_v7", placeholder="Nome ou ID...", label_visibility="collapsed")
+        search_term = st.text_input("Buscar Lutador:", key="search_athlete_v8", placeholder="Nome ou ID...", label_visibility="collapsed")
 
     df_fc_filtered_by_event=df_fc_raw.copy()
     if sel_ev_opt!="Todos os Eventos":df_fc_filtered_by_event=df_fc_raw[df_fc_raw[FC_EVENT_COL]==sel_ev_opt].copy()
@@ -359,7 +422,7 @@ else:
     col_conf_edit = {
         HIGHLIGHT_COL_NAME: st.column_config.CheckboxColumn("HL", width="small", default=False),
         "Evento": st.column_config.TextColumn(width="small", disabled=True),
-        "Foto": st.column_config.ImageColumn("Foto", width="small"), # Removido disabled=True
+        "Foto": st.column_config.ImageColumn("Foto", width="small"),
         "Lutador": st.column_config.TextColumn("Lutador (ID - Nome)", width="large", disabled=True),
     }
     col_ord_list = [HIGHLIGHT_COL_NAME, "Evento", "Foto", "Lutador"]
@@ -387,7 +450,7 @@ else:
         use_container_width=True, num_rows="fixed",
         disabled=False,
         height=int(table_height),
-        key="athlete_editor_with_highlight" # Mantida a key para o editor
+        key="athlete_editor_with_highlight"
     )
     
     st.session_state.edited_athlete_df = edited_df_output.copy()
@@ -411,25 +474,19 @@ else:
                 task_emojis_series = df_valid_fighters_tasks_display[tsk]
                 tot_tsk_slots += len(task_emojis_series)
                 done_c += (task_emojis_series == STATUS_TO_EMOJI.get("Done")).sum()
-                req_c += (task_emojis_series == STATUS_TO_EMOJI.get("Requested")).sum() # Usando o emoji correto de STATUS_TO_EMOJI
+                req_c += (task_emojis_series == STATUS_TO_EMOJI.get("Requested")).sum()
                 not_sol_c += (task_emojis_series == STATUS_TO_EMOJI.get("---")).sum()
                 pend_c += (task_emojis_series == STATUS_TO_EMOJI.get("Pendente")).sum()
         
-        stat_cs = st.columns(3) # Mantido em 3 colunas para mobile
-        
+        stat_cs = st.columns(3)
         stat_cs[0].metric("Lutas no Evento", num_lutas_evento_original)
         stat_cs[1].metric("Atletas Exibidos", tot_ath_uniq_display)
-        
+        metric_help_text = f"Das {tot_tsk_slots} tarefas para atletas exibidos."
         if tot_tsk_slots > 0:
-            # Exibe a contagem de "Done" e "Requested" se houver espaço
-            # Ou pode usar um expander para mais detalhes
-            metric_help_text = f"Das {tot_tsk_slots} tarefas para atletas exibidos."
             stat_cs[2].metric(f"Tarefas {STATUS_TO_EMOJI['Done']} / {STATUS_TO_EMOJI['Requested']}", 
-                              f"{done_c} / {req_c}", 
-                              help=metric_help_text)
+                              f"{done_c} / {req_c}", help=metric_help_text)
         else:
             stat_cs[2].metric("Tarefas (Exib.)", "N/A")
-
     else:
         if search_term: st.info(f"Nenhum dado para estatísticas com o termo '{search_term}'.")
         else: st.info("Nenhum dado para estatísticas do evento.")

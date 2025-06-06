@@ -6,19 +6,8 @@ import gspread
 from google.oauth2.service_account import Credentials 
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh 
-# import html # Não é estritamente necessário para esta versão
-# import os  # Não é estritamente necessário para esta versão
 
-# --- 1. Configuração da Página ---
-# Se este script for rodado como uma página de um app multipáginas, 
-# st.set_page_config é chamado no script principal (ex: MainApp.py).
-# Se este for um app de uma única página, descomente e configure aqui.
-# if 'page_config_set_dashboard_novo' not in st.session_state:
-#     st.set_page_config(layout="wide", page_title="Dashboard de Atletas v2")
-#     st.session_state.page_config_set_dashboard_novo = True
-
-
-# --- Constantes ---
+# --- Constantes (MANTENHA AS SUAS CONSTANTES COMO ANTES) ---
 MAIN_SHEET_NAME = "UAEW_App" 
 CONFIG_TAB_NAME = "Config"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -40,24 +29,15 @@ FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
 STATUS_TO_EMOJI = {
-    "Done": "🟩",       
-    "Requested": "🟧", 
-    "---": "➖",        
-    "Não Solicitado": "➖",
-    "Pendente": "🟥",      
-    "Não Registrado": "🟥" 
+    "Done": "🟩", "Requested": "🟧", "---": "➖", "Não Solicitado": "➖",
+    "Pendente": "🟥", "Não Registrado": "🟥" 
 }
-DEFAULT_EMOJI = "🟥" # Emoji padrão se o status não for reconhecido
-
-# Legenda para o usuário
+DEFAULT_EMOJI = "🟥" 
 EMOJI_LEGEND = {
-    "🟩": "Done (Concluído)",
-    "🟧": "Requested (Solicitado)",
-    "➖": "--- (Não Solicitado/Cancelado)",
-    "🟥": "Pendente / Sem Info"
+    "🟩": "Done", "🟧": "Requested", "➖": "---", "🟥": "Pendente"
 }
 
-# --- Funções de Conexão e Carregamento de Dados ---
+# --- Funções de Conexão e Carregamento de Dados (COMO ANTES) ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -126,165 +106,133 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
         return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
     except Exception as e: st.error(f"Erro ao carregar TaskList da Config: {e}"); return []
 
-def get_task_status_representation(athlete_id_to_check, task_name, df_attendance):
-    if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip() == "" or not task_name:
-        return STATUS_TO_EMOJI.get("Pendente", DEFAULT_EMOJI) 
-    if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or \
-       ATTENDANCE_TASK_COL not in df_attendance.columns or \
-       ATTENDANCE_STATUS_COL not in df_attendance.columns:
-        return STATUS_TO_EMOJI.get("Pendente", DEFAULT_EMOJI) 
-    athlete_id_str = str(athlete_id_to_check).strip()
-    task_name_str = str(task_name).strip()
-    relevant_records = df_attendance[
-        (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == athlete_id_str) &
-        (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == task_name_str)
-    ]
-    if relevant_records.empty: return STATUS_TO_EMOJI.get("Pendente", DEFAULT_EMOJI)
-    latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL] 
+def get_task_status_representation(athlete_id_to_check, task_name, df_attendance): # Função como antes
+    if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip()=="" or not task_name: return STATUS_TO_EMOJI.get("Pendente",DEFAULT_EMOJI)
+    if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or ATTENDANCE_TASK_COL not in df_attendance.columns or ATTENDANCE_STATUS_COL not in df_attendance.columns: return STATUS_TO_EMOJI.get("Pendente",DEFAULT_EMOJI)
+    athlete_id_str=str(athlete_id_to_check).strip(); task_name_str=str(task_name).strip()
+    relevant_records=df_attendance[(df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip()==athlete_id_str)&(df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip()==task_name_str)]
+    if relevant_records.empty: return STATUS_TO_EMOJI.get("Pendente",DEFAULT_EMOJI)
+    latest_status_str=relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
         try:
-            relevant_records_sorted = relevant_records.copy()
-            relevant_records_sorted.loc[:, "Timestamp_dt"] = pd.to_datetime(relevant_records_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-            if relevant_records_sorted["Timestamp_dt"].notna().any():
-                 latest_record = relevant_records_sorted.sort_values(by="Timestamp_dt", ascending=False, na_position='last').iloc[0]
-                 latest_status_str = latest_record[ATTENDANCE_STATUS_COL]
-        except Exception: pass 
-    return STATUS_TO_EMOJI.get(str(latest_status_str).strip(), DEFAULT_EMOJI)
+            rel_sorted=relevant_records.copy();rel_sorted.loc[:,"Timestamp_dt"]=pd.to_datetime(rel_sorted[ATTENDANCE_TIMESTAMP_COL],format="%d/%m/%Y %H:%M:%S",errors='coerce')
+            if rel_sorted["Timestamp_dt"].notna().any():latest_status_str=rel_sorted.sort_values(by="Timestamp_dt",ascending=False,na_position='last').iloc[0][ATTENDANCE_STATUS_COL]
+        except:pass
+    return STATUS_TO_EMOJI.get(str(latest_status_str).strip(),DEFAULT_EMOJI)
 
 # --- Início da Página Streamlit ---
-st.markdown("<h1 style='text-align: center; font-size: 2.5em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS E TAREFAS</h1>", unsafe_allow_html=True)
-refresh_count = st_autorefresh(interval=60 * 1000, limit=None, key="dashboard_auto_refresh")
+st.markdown("<h1 style='text-align:center;font-size:2.5em;margin-bottom:5px;'>DASHBOARD DE ATLETAS E TAREFAS</h1>",True)
+refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh") # 1 minuto
 
-if 'font_size_preference_dn' not in st.session_state: st.session_state.font_size_preference_dn = "Normal" 
-font_size_options = {"Normal": "1.0rem", "Médio": "1.1rem", "Grande": "1.2rem"}
-control_cols = st.columns([0.25, 0.25, 0.5])
-with control_cols[0]:
-    if st.button("🔄 Atualizar Agora", key="refresh_dashboard_manual_btn", use_container_width=True):
-        load_fightcard_data.clear(); load_attendance_data.clear(); get_task_list.clear(); load_athletes_info_df.clear()
-        st.toast("Dados atualizados!", icon="🎉"); st.rerun()
-with control_cols[1]:
-    font_selection = st.selectbox("Fonte da Tabela:", options=list(font_size_options.keys()),index=list(font_size_options.keys()).index(st.session_state.font_size_preference_dn),key="font_size_selector_dn")
-    if font_selection != st.session_state.font_size_preference_dn:
-        st.session_state.font_size_preference_dn = font_selection; st.rerun()
-current_font_css = font_size_options[st.session_state.font_size_preference_dn]
-st.markdown(f"""<style> div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"], div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {{ font-size: {current_font_css} !important; text-align: center !important; vertical-align: middle !important; }} div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {{ font-weight: bold !important; text-transform: uppercase; }} </style>""", unsafe_allow_html=True)
-st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+if 'font_size_pref_dn2' not in st.session_state: st.session_state.font_size_pref_dn2="Normal"
+font_options_map={"Normal":"1.0rem","Médio":"1.1rem","Grande":"1.2rem"}
+ctrl_cols=st.columns([0.25,0.25,0.5])
+with ctrl_cols[0]:
+    if st.button("🔄 Atualizar Agora",key="refresh_dash_manual_btn2",use_container_width=True):
+        load_fightcard_data.clear();load_attendance_data.clear();get_task_list.clear();load_athletes_info_df.clear()
+        st.toast("Dados atualizados!",icon="🎉");st.rerun()
+with ctrl_cols[1]:
+    font_sel=st.selectbox("Fonte Tabela:",options=list(font_options_map.keys()),index=list(font_options_map.keys()).index(st.session_state.font_size_pref_dn2),key="font_sel_dn2")
+    if font_sel!=st.session_state.font_size_pref_dn2:st.session_state.font_size_pref_dn2=font_sel;st.rerun()
+curr_font_css=font_options_map[st.session_state.font_size_pref_dn2]
+st.markdown(f"""<style>
+div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] > div {{ margin: auto; }} /* Centraliza conteúdo do wrapper interno da célula */
+div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] {{ font-size:{curr_font_css} !important; text-align:center !important; vertical-align:middle !important; display:flex !important; align-items:center !important; justify-content:center !important;}}
+div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {{ font-size:calc({curr_font_css} + 0.05rem) !important; font-weight:bold !important; text-transform:uppercase; text-align:center !important; white-space:normal !important; word-break:break-word !important;}}
+</style>""",True)
+st.markdown("<hr style='margin-top:5px;margin-bottom:15px;'>",True)
 
-df_fightcard = None; df_attendance = None; all_tasks = None; df_athletes_info = None; loading_error = False
-error_placeholder = st.empty()
-with st.spinner("Carregando todos os dados... Aguarde!"):
+df_fc=None;df_att=None;all_tsks=None;df_ath_info=None;load_err=False;err_ph=st.empty()
+with st.spinner("Carregando dados..."):
     try:
-        df_fightcard = load_fightcard_data(); df_attendance = load_attendance_data() 
-        all_tasks = get_task_list(); df_athletes_info = load_athletes_info_df()
-        if df_fightcard.empty: loading_error = True
-        if not all_tasks: loading_error = True
-    except Exception as e: error_placeholder.error(f"Erro crítico durante carregamento: {e}"); loading_error = True
+        df_fc=load_fightcard_data();df_att=load_attendance_data();all_tsks=get_task_list();df_ath_info=load_athletes_info_df()
+        if df_fc.empty or not all_tsks:load_err=True
+    except Exception as e:err_ph.error(f"Erro crítico carregamento: {e}");load_err=True
 
-if loading_error:
-    if df_fightcard is not None and df_fightcard.empty : error_placeholder.warning("Fightcard vazio.")
-    if not all_tasks : error_placeholder.error("Lista de Tarefas vazia.")
-    if not (df_fightcard is not None and df_fightcard.empty) and not (not all_tasks) : st.error("Falha ao carregar dados.")
-elif df_fightcard.empty: st.warning("Nenhum dado de Fightcard para exibir.")
-elif not all_tasks: st.error("A lista de tarefas (TaskList) não foi carregada.")
+if load_err:
+    if df_fc is not None and df_fc.empty:err_ph.warning("Fightcard vazio.")
+    if not all_tsks:err_ph.error("Lista de Tarefas vazia.")
+    if not(df_fc is not None and df_fc.empty)and not(not all_tsks):st.error("Falha carregar dados.")
+elif df_fc.empty:st.warning("Nenhum dado de Fightcard.")
+elif not all_tsks:st.error("TaskList não carregada.")
 else:
-    available_events = sorted(df_fightcard[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) 
-    if not available_events: st.warning("Nenhum evento no Fightcard para selecionar."); st.stop()
-    event_options = ["Todos os Eventos"] + available_events
-    selected_event_option = st.selectbox("Selecione o Evento:", options=event_options, index=0, key="event_selector_dashboard_novo")
-    df_fightcard_display = df_fightcard.copy()
-    if selected_event_option != "Todos os Eventos":
-        df_fightcard_display = df_fightcard[df_fightcard[FC_EVENT_COL] == selected_event_option].copy()
-    if df_fightcard_display.empty: st.info(f"Nenhuma luta para o evento '{selected_event_option}'."); st.stop()
-
-    fighter_to_id_map = {}
-    if not df_athletes_info.empty and ATHLETE_SHEET_NAME_COL in df_athletes_info.columns and ATHLETE_SHEET_ID_COL in df_athletes_info.columns:
-        df_ath_unique = df_athletes_info.dropna(subset=[ATHLETE_SHEET_NAME_COL]).drop_duplicates(subset=[ATHLETE_SHEET_NAME_COL], keep='first')
-        fighter_to_id_map = pd.Series(df_ath_unique[ATHLETE_SHEET_ID_COL].astype(str).str.strip().values, index=df_ath_unique[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()).to_dict()
-    else: st.warning("Mapeamento de ID de atleta não pôde ser criado.")
-
-    dashboard_data_list = []
-    for order, group in df_fightcard_display.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
-        event, fight_order = order
-        blue_s = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0); red_s = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
-        row_data = {"Evento": event, "Luta #": int(fight_order) if pd.notna(fight_order) else ""}
-        for corner_prefix, series_data in [("Azul", blue_s), ("Vermelho", red_s)]:
-            fighter_name_fc = str(series_data.get(FC_FIGHTER_COL, "N/A")).strip() if isinstance(series_data, pd.Series) else "N/A"
-            athlete_id_from_map = fighter_to_id_map.get(fighter_name_fc, None) 
-            pic_url = series_data.get(FC_PICTURE_COL, "") if isinstance(series_data, pd.Series) else ""
-            row_data[f"Foto {corner_prefix}"] = pic_url if isinstance(pic_url, str) and pic_url.startswith("http") else None
-            fighter_id_display = athlete_id_from_map if athlete_id_from_map else "N/D"
-            row_data[f"Lutador {corner_prefix}"] = f"{fighter_id_display} - {fighter_name_fc}" if fighter_name_fc != "N/A" else "N/A"
-            
-            identifier_for_status = athlete_id_from_map 
-            if pd.notna(fighter_name_fc) and fighter_name_fc != "N/A":
-                for task in all_tasks:
-                    emoji_status = DEFAULT_EMOJI 
-                    if identifier_for_status: 
-                        emoji_status = get_task_status_representation(identifier_for_status, task, df_attendance)
-                    row_data[f"{task} ({corner_prefix})"] = emoji_status
-            else:
-                for task in all_tasks: row_data[f"{task} ({corner_prefix})"] = STATUS_TO_EMOJI.get("Pendente", DEFAULT_EMOJI)
-        row_data["Divisão"] = blue_s.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "N/A")) if isinstance(blue_s, pd.Series) else (red_s.get(FC_DIVISION_COL, "N/A") if isinstance(red_s, pd.Series) else "N/A")
-        dashboard_data_list.append(row_data)
-
-    if not dashboard_data_list: st.info(f"Nenhuma luta processada para '{selected_event_option}'."); st.stop()
-    df_dashboard = pd.DataFrame(dashboard_data_list)
-
-    column_config_editor = {
-        "Evento": st.column_config.TextColumn(width="small", disabled=True),
-        "Luta #": st.column_config.NumberColumn(width="small", format="%d", disabled=True),
-        "Foto Azul": st.column_config.ImageColumn("Foto (A)", width="small"),
-        "Lutador Azul": st.column_config.TextColumn("Lutador (A)", width="large", disabled=True),
-        "Divisão": st.column_config.TextColumn(width="medium", disabled=True),
-        "Lutador Vermelho": st.column_config.TextColumn("Lutador (V)", width="large", disabled=True),
-        "Foto Vermelho": st.column_config.ImageColumn("Foto (V)", width="small"),
-    }
-    column_order_list = ["Evento", "Luta #", "Foto Azul", "Lutador Azul"] # Removidas colunas de ID separadas
-    for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Azul)")
-    column_order_list.append("Divisão")
-    for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Vermelho)")
-    column_order_list.extend(["Lutador Vermelho", "Foto Vermelho"]) # Removidas colunas de ID separadas
+    avail_evs=sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(),reverse=True)
+    if not avail_evs:st.warning("Nenhum evento no Fightcard.");st.stop()
+    ev_opts=["Todos os Eventos"]+avail_evs;sel_ev_opt=st.selectbox("Selecione Evento:",options=ev_opts,index=0,key="ev_sel_dn2")
+    df_fc_disp=df_fc.copy()
+    if sel_ev_opt!="Todos os Eventos":df_fc_disp=df_fc[df_fc[FC_EVENT_COL]==sel_ev_opt].copy()
+    if df_fc_disp.empty:st.info(f"Nenhuma luta para '{sel_ev_opt}'.");st.stop()
     
-    legend_parts = [f"{emoji}: {desc}" for emoji, desc in EMOJI_LEGEND.items() if emoji.strip() != ""]
-    help_text_general_legend_disp = ", ".join(legend_parts)
+    f_to_id_map={}
+    if not df_ath_info.empty and ATHLETE_SHEET_NAME_COL in df_ath_info.columns and ATHLETE_SHEET_ID_COL in df_ath_info.columns:
+        df_ath_unq=df_ath_info.dropna(subset=[ATHLETE_SHEET_NAME_COL]).drop_duplicates(subset=[ATHLETE_SHEET_NAME_COL],keep='first')
+        f_to_id_map=pd.Series(df_ath_unq[ATHLETE_SHEET_ID_COL].astype(str).str.strip().values,index=df_ath_unq[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()).to_dict()
+    else:st.warning("Mapeamento de ID não criado (infos atletas ausentes).")
+    
+    dash_data_list=[]
+    for order,group in df_fc_disp.sort_values(by=[FC_EVENT_COL,FC_ORDER_COL]).groupby([FC_EVENT_COL,FC_ORDER_COL]):
+        ev,f_ord=order;bl_s=group[group[FC_CORNER_COL]=="blue"].squeeze(axis=0);rd_s=group[group[FC_CORNER_COL]=="red"].squeeze(axis=0)
+        row_d={"Evento":ev,"Luta #":int(f_ord)if pd.notna(f_ord)else""}
+        for corn_pref,ser_data in[("Azul",bl_s),("Vermelho",rd_s)]:
+            f_name_fc=str(ser_data.get(FC_FIGHTER_COL,"N/A")).strip()if isinstance(ser_data,pd.Series)else"N/A"
+            ath_id_map=f_to_id_map.get(f_name_fc,None);pic_u=ser_data.get(FC_PICTURE_COL,"")if isinstance(ser_data,pd.Series)else""
+            row_d[f"Foto {corn_pref}"]=pic_u if isinstance(pic_u,str)and pic_u.startswith("http")else None
+            f_id_disp=ath_id_map if ath_id_map else"N/D"
+            row_d[f"Lutador {corn_pref}"]=f"{f_id_disp} - {f_name_fc}"if f_name_fc!="N/A"else"N/A"
+            ident_stat=ath_id_map
+            if pd.notna(f_name_fc)and f_name_fc!="N/A":
+                for tsk in all_tsks:row_d[f"{tsk} ({corn_pref})"]=get_task_status_representation(ident_stat,tsk,df_att)if ident_stat else STATUS_TO_EMOJI.get("Pendente",DEFAULT_EMOJI)
+            else:
+                for tsk in all_tsks:row_d[f"{tsk} ({corn_pref})"]=STATUS_TO_EMOJI.get("Pendente",DEFAULT_EMOJI)
+        row_d["Divisão"]=bl_s.get(FC_DIVISION_COL,rd_s.get(FC_DIVISION_COL,"N/A"))if isinstance(bl_s,pd.Series)else(rd_s.get(FC_DIVISION_COL,"N/A")if isinstance(rd_s,pd.Series)else"N/A")
+        dash_data_list.append(row_d)
+    if not dash_data_list:st.info(f"Nenhuma luta processada para '{sel_ev_opt}'.");st.stop()
+    df_dash=pd.DataFrame(dash_data_list)
 
-    for task_name_col in all_tasks:
-        column_config_editor[f"{task_name_col} (Azul)"] = st.column_config.TextColumn(label=task_name_col, width="small", help=f"Status: {help_text_general_legend_disp}", disabled=True)
-        column_config_editor[f"{task_name_col} (Vermelho)"] = st.column_config.TextColumn(label=task_name_col, width="small", help=f"Status: {help_text_general_legend_disp}", disabled=True)
+    col_conf_edit={
+        "Evento":st.column_config.TextColumn(width="small",disabled=True),"Luta #":st.column_config.NumberColumn(width="small",format="%d",disabled=True),
+        "Foto Azul":st.column_config.ImageColumn("Foto(A)",width="small"),"Lutador Azul":st.column_config.TextColumn("Lutador(A)",width="large",disabled=True),
+        "Divisão":st.column_config.TextColumn(width="medium",disabled=True),
+        "Lutador Vermelho":st.column_config.TextColumn("Lutador(V)",width="large",disabled=True),"Foto Vermelho":st.column_config.ImageColumn("Foto(V)",width="small"),
+    }
+    col_ord_list=["Evento","Luta #","Foto Azul","Lutador Azul"]
+    for tsk_n_col in all_tsks:col_ord_list.append(f"{tsk_n_col} (Azul)")
+    col_ord_list.append("Divisão")
+    for tsk_n_col in all_tsks:col_ord_list.append(f"{tsk_n_col} (Vermelho)")
+    col_ord_list.extend(["Lutador Vermelho","Foto Vermelho"])
+    
+    leg_parts=[f"{emo}: {dsc}"for emo,dsc in EMOJI_LEGEND.items()if emo.strip()!=""]
+    help_txt_leg_disp=", ".join(leg_parts)
+    for tsk_n_col in all_tsks:
+        col_conf_edit[f"{tsk_n_col} (Azul)"]=st.column_config.TextColumn(label=tsk_n_col,width="small",help=f"Status:{help_txt_leg_disp}",disabled=True)
+        col_conf_edit[f"{tsk_n_col} (Vermelho)"]=st.column_config.TextColumn(label=tsk_n_col,width="small",help=f"Status:{help_txt_leg_disp}",disabled=True)
 
-    st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_option}")
-    st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend_disp}")
-    table_height = (len(df_dashboard) + 1) * 45 + 10; table_height = max(400, min(table_height, 1200)) 
-    st.data_editor(df_dashboard, column_config=column_config_editor, column_order=column_order_list, hide_index=True, use_container_width=True, num_rows="fixed", disabled=True, height=table_height)
+    st.subheader(f"Detalhes das Lutas e Tarefas: {sel_ev_opt}")
+    st.markdown(f"**Legenda Status Tarefas:** {help_txt_leg_disp}")
+    tbl_h=(len(df_dash)+1)*45+10;tbl_h=max(400,min(tbl_h,1200))
+    st.data_editor(df_dash,column_config=col_conf_edit,column_order=col_ord_list,hide_index=True,use_container_width=True,num_rows="fixed",disabled=True,height=tbl_h)
     st.markdown("---")
 
-    st.subheader(f"Estatísticas do Evento: {selected_event_option}")
-    if not df_dashboard.empty:
-        total_lutas_evento = df_dashboard["Luta #"].nunique()
-        unique_fighters_event = set()
-        for _, row in df_dashboard.iterrows():
-            if row["Lutador Azul"] != "N/A": unique_fighters_event.add(row["Lutador Azul"].split(" - ",1)[0].strip())
-            if row["Lutador Vermelho"] != "N/A": unique_fighters_event.add(row["Lutador Vermelho"].split(" - ",1)[0].strip())
-        total_atletas_unicos_ev = len(unique_fighters_event)
-        
-        done_count = 0; req_count = 0; not_sol_count = 0; pend_count = 0; total_task_slots_considered = 0
-        for task in all_tasks:
-            for corner in ["Azul", "Vermelho"]:
-                col_name = f"{task} ({corner})"
-                if col_name in df_dashboard.columns:
-                    valid_fighter_mask = df_dashboard[f"Lutador {corner}"] != "N/A"
-                    task_emojis_series = df_dashboard.loc[valid_fighter_mask, col_name]
-                    total_task_slots_considered += len(task_emojis_series)
-                    done_count += (task_emojis_series == STATUS_TO_EMOJI["Done"]).sum()
-                    req_count += (task_emojis_series == STATUS_TO_EMOJI["Requested"]).sum()
-                    not_sol_count += (task_emojis_series == STATUS_TO_EMOJI["---"]).sum() # ou "Não Solicitado"
-                    pend_count += (task_emojis_series == STATUS_TO_EMOJI["Pendente"]).sum() # ou "Não Registrado" ou DEFAULT_EMOJI
-        
-        stat_cols = st.columns(5)
-        stat_cols[0].metric("Lutas", total_lutas_evento)
-        stat_cols[1].metric("Atletas Únicos", total_atletas_unicos_ev)
-        stat_cols[2].metric(f"Tarefas {STATUS_TO_EMOJI['Done']}", done_count, help=f"De {total_task_slots_considered} slots.")
-        stat_cols[3].metric(f"Tarefas {STATUS_TO_EMOJI['Requested']}", req_count)
-        stat_cols[4].metric(f"Tarefas {STATUS_TO_EMOJI['---']}", not_sol_count)
-    else: st.info("Nenhum dado para estatísticas do evento.")
+    st.subheader(f"Estatísticas do Evento: {sel_ev_opt}")
+    if not df_dash.empty:
+        tot_lutas_ev=df_dash["Luta #"].nunique();uniq_f_ev=set()
+        for _,r in df_dash.iterrows():
+            if r["Lutador Azul"]!="N/A":uniq_f_ev.add(r["Lutador Azul"].split(" - ",1)[0].strip())
+            if r["Lutador Vermelho"]!="N/A":uniq_f_ev.add(r["Lutador Vermelho"].split(" - ",1)[0].strip())
+        tot_ath_uniq_ev=len(uniq_f_ev)
+        done_c,req_c,not_sol_c,pend_c,tot_tsk_slots=0,0,0,0,0
+        for tsk in all_tsks:
+            for corn in["Azul","Vermelho"]:
+                col_n=f"{tsk} ({corn})"
+                if col_n in df_dash.columns:
+                    val_f_mask=df_dash[f"Lutador {corn}"]!="N/A";tsk_emo_ser=df_dash.loc[val_f_mask,col_n]
+                    tot_tsk_slots+=len(tsk_emo_ser)
+                    done_c+=(tsk_emo_ser==STATUS_TO_EMOJI["Done"]).sum();req_c+=(tsk_emo_ser==STATUS_TO_EMOJI["Requested"]).sum()
+                    not_sol_c+=(tsk_emo_ser==STATUS_TO_EMOJI["---"]).sum();pend_c+=(tsk_emo_ser==STATUS_TO_EMOJI["Pendente"]).sum()
+        stat_cs=st.columns(5)
+        stat_cs[0].metric("Lutas",tot_lutas_ev);stat_cs[1].metric("Atletas Únicos",tot_ath_uniq_ev)
+        stat_cs[2].metric(f"Tarefas {STATUS_TO_EMOJI['Done']}",done_c,help=f"De {tot_tsk_slots} slots.")
+        stat_cs[3].metric(f"Tarefas {STATUS_TO_EMOJI['Requested']}",req_c)
+        stat_cs[4].metric(f"Tarefas {STATUS_TO_EMOJI['---']}",not_sol_c)
+    else:st.info("Nenhum dado para estatísticas do evento.")
     st.markdown(f"--- \n *Dashboard atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*")

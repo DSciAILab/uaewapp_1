@@ -38,37 +38,36 @@ NUM_TO_STATUS_VERBOSE = {
     2: "Solicitado (Requested)", 3: "Concluído (Done)"
 }
 
-# --- Função para Carregar CSS Externo ---
-def local_css(file_name):
-    current_script_path = os.path.dirname(__file__)
-    css_file_path = os.path.join(current_script_path, file_name)
-    try:
-        with open(css_file_path, "r", encoding="utf-8") as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    except FileNotFoundError:
-        st.error(f"CSS '{file_name}' NÃO encontrado em: {css_file_path}.")
-    except Exception as e:
-        st.error(f"Erro ao carregar CSS '{css_file_path}': {e}")
-
 # --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        if "gcp_service_account" not in st.secrets: st.error("CRÍTICO: `gcp_service_account` não nos segredos.", icon="🚨"); st.stop()
+        if "gcp_service_account" not in st.secrets:
+            st.error("Erro: Credenciais `gcp_service_account` não encontradas.", icon="🚨"); st.stop()
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
-    except Exception as e: st.error(f"CRÍTICO: Erro gspread client: {e}", icon="🚨"); st.stop()
+    except KeyError: 
+        st.error("Erro config: Chave GCP `gcp_service_account` ausente.", icon="🚨"); st.stop()
+    except Exception as e:
+        st.error(f"Erro API Google/gspread auth: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    if not gspread_client: st.error("CRÍTICO: Cliente gspread não inicializado.", icon="🚨"); st.stop()
-    try: return gspread_client.open(sheet_name).worksheet(tab_name)
-    except Exception as e: st.error(f"CRÍTICO: Erro ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
+    if not gspread_client: st.error("Cliente gspread não inicializado.", icon="🚨"); st.stop()
+    try:
+        spreadsheet = gspread_client.open(sheet_name)
+        return spreadsheet.worksheet(tab_name)
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Erro: Planilha '{sheet_name}' não encontrada.", icon="🚨"); st.stop()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"Erro: Aba '{tab_name}' não encontrada em '{sheet_name}'.", icon="🚨"); st.stop()
+    except Exception as e:
+        st.error(f"Erro ao conectar à aba '{tab_name}' ({sheet_name}): {e}", icon="🚨"); st.stop()
 
 @st.cache_data
 def load_fightcard_data(): 
     try:
-        df = pd.read_csv(FIGHTCARD_SHEET_URL);
+        df = pd.read_csv(FIGHTCARD_SHEET_URL)
         if df.empty: return pd.DataFrame()
         df.columns = df.columns.str.strip()
         df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce")
@@ -76,20 +75,24 @@ def load_fightcard_data():
         df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip() 
         df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip().fillna("") 
         return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL])
-    except Exception as e: st.error(f"Erro ao carregar Fightcard: {e}"); return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Fightcard: {e}"); return pd.DataFrame()
 
 @st.cache_data(ttl=600)
 def load_athletes_info_df(sheet_name=MAIN_SHEET_NAME, athletes_tab=ATHLETES_INFO_TAB_NAME):
     g_client = get_gspread_client()
     ws = connect_gsheet_tab(g_client, sheet_name, athletes_tab)
     try:
-        df_ath = pd.DataFrame(ws.get_all_records());
+        df_ath = pd.DataFrame(ws.get_all_records())
         if df_ath.empty: return pd.DataFrame()
-        if ATHLETE_SHEET_ID_COL in df_ath.columns: df_ath[ATHLETE_SHEET_ID_COL] = df_ath[ATHLETE_SHEET_ID_COL].astype(str).str.strip()
+        if ATHLETE_SHEET_ID_COL in df_ath.columns:
+            df_ath[ATHLETE_SHEET_ID_COL] = df_ath[ATHLETE_SHEET_ID_COL].astype(str).str.strip()
         else: df_ath[ATHLETE_SHEET_ID_COL] = None
-        if ATHLETE_SHEET_NAME_COL in df_ath.columns: df_ath[ATHLETE_SHEET_NAME_COL] = df_ath[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()
+        if ATHLETE_SHEET_NAME_COL in df_ath.columns:
+            df_ath[ATHLETE_SHEET_NAME_COL] = df_ath[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()
         else: df_ath[ATHLETE_SHEET_NAME_COL] = None
-        if "INACTIVE" in df_ath.columns: df_ath["INACTIVE"] = df_ath["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+        if "INACTIVE" in df_ath.columns: 
+            df_ath["INACTIVE"] = df_ath["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         else: df_ath["INACTIVE"] = False
         return df_ath
     except Exception as e: st.error(f"Erro ao carregar infos dos atletas '{athletes_tab}': {e}"); return pd.DataFrame()
@@ -99,9 +102,10 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
     try:
-        df_att = pd.DataFrame(worksheet.get_all_records()); 
+        df_att = pd.DataFrame(worksheet.get_all_records())
         if df_att.empty: return pd.DataFrame()
-        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, NAME_COLUMN_IN_ATTENDANCE]
+        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
+        if NAME_COLUMN_IN_ATTENDANCE not in cols_to_process: cols_to_process.append(NAME_COLUMN_IN_ATTENDANCE)
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
             else: df_att[col] = None 
@@ -116,15 +120,19 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
     try:
-        data = worksheet.get_all_values();
+        data = worksheet.get_all_values()
         if not data or len(data) < 1: return [] 
         df_conf = pd.DataFrame(data[1:], columns=data[0])
         return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
     except Exception as e: st.error(f"Erro ao carregar TaskList da Config: {e}"); return []
 
 def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
-    if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip() == "" or not task_name: return 0 
-    if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or ATTENDANCE_TASK_COL not in df_attendance.columns or ATTENDANCE_STATUS_COL not in df_attendance.columns: return 0 
+    if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip() == "" or not task_name:
+        return 0 
+    if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or \
+       ATTENDANCE_TASK_COL not in df_attendance.columns or \
+       ATTENDANCE_STATUS_COL not in df_attendance.columns:
+        return 0 
     athlete_id_str = str(athlete_id_to_check).strip()
     task_name_str = str(task_name).strip()
     relevant_records = df_attendance[
@@ -132,179 +140,141 @@ def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
         (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == task_name_str)
     ]
     if relevant_records.empty: return 0
-    latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL] 
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
         try:
             relevant_records_sorted = relevant_records.copy()
-            relevant_records_sorted.loc[:, "Timestamp_dt"] = pd.to_datetime(relevant_records_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+            relevant_records_sorted.loc[:, "Timestamp_dt"] = pd.to_datetime(
+                relevant_records_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce'
+            )
             if relevant_records_sorted["Timestamp_dt"].notna().any():
                  latest_record = relevant_records_sorted.sort_values(by="Timestamp_dt", ascending=False, na_position='last').iloc[0]
-                 latest_status_str = latest_record[ATTENDANCE_STATUS_COL]
-        except Exception: pass 
-    return STATUS_TO_NUM.get(str(latest_status_str).strip(), 0)
-
-def render_fight_table_html_with_colored_tasks(df_fc, df_att, tasks_all, fighter_id_map_param):
-    html_content = ""
-    grouped_events = df_fc.groupby(FC_EVENT_COL, sort=False)
-    colspan_val = 4 + (2 * len(tasks_all)) 
-    for ev_name, ev_group in grouped_events:
-        html_content += f"<table><tr><td colspan='{colspan_val}' class='event-header-cell'>{html.escape(str(ev_name))}</td></tr></table>"
-        html_content += "<table class='dashboard-fight-table'>"
-        header_html = "<thead><tr><th>Foto</th><th>Lutador Azul</th>"
-        for task in tasks_all: header_html += f"<th>{html.escape(task)}</th>"
-        header_html += "<th>Detalhes</th>"
-        for task in tasks_all: header_html += f"<th>{html.escape(task)}</th>"
-        header_html += "<th>Lutador Vermelho</th><th>Foto</th></tr></thead><tbody>"
-        html_content += header_html
-        fights = ev_group.sort_values(by=FC_ORDER_COL).groupby(FC_ORDER_COL)
-        for f_order, f_df in fights:
-            blue_s = f_df[f_df[FC_CORNER_COL] == "blue"].squeeze(axis=0)
-            red_s = f_df[f_df[FC_CORNER_COL] == "red"].squeeze(axis=0)
-            html_content += "<tr>"
-            for corner_data in [(blue_s, "blue-corner-text"), (red_s, "red-corner-text")]:
-                series_data, name_class_color = corner_data
-                fighter_name = html.escape(str(series_data.get(FC_FIGHTER_COL, ""))) if isinstance(series_data, pd.Series) else ""
-                athlete_id = fighter_id_map_param.get(str(series_data.get(FC_FIGHTER_COL, "")).strip(), None) if isinstance(series_data, pd.Series) else None
-                img_src = series_data.get(FC_PICTURE_COL, '') if isinstance(series_data, pd.Series) else ''
-                img_tag = f"<img src='{html.escape(str(img_src))}' class='fighter-img'>" if img_src and isinstance(img_src, str) and img_src.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
-                if corner_data[0] is blue_s:
-                    html_content += f"<td class='fighter-img-cell'>{img_tag}</td>"
-                    html_content += f"<td class='fighter-name-cell {name_class_color}'>{fighter_name}</td>"
-                if fighter_name and fighter_name != "N/A" and athlete_id:
-                    for task_item in tasks_all:
-                        status_num = get_numeric_task_status(athlete_id, task_item, df_att)
-                        status_class = f"status-cell-{status_num}"
-                        html_content += f"<td class='task-status-html-cell {status_class}'>{status_num}</td>"
-                else:
-                    for _ in tasks_all: html_content += f"<td class='task-status-html-cell status-cell-0'>0</td>"
-                if corner_data[0] is blue_s: 
-                    division = html.escape(str(series_data.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "") if isinstance(red_s, pd.Series) else "")))
-                    fight_order_disp = int(f_order) if pd.notna(f_order) else ""
-                    html_content += f"<td class='fight-details-cell'>FIGHT #{fight_order_disp}<br>{division}</td>"
-            fighter_name_red = html.escape(str(red_s.get(FC_FIGHTER_COL, ""))) if isinstance(red_s, pd.Series) else ""
-            img_src_red = red_s.get(FC_PICTURE_COL, '') if isinstance(red_s, pd.Series) else ''
-            img_tag_red = f"<img src='{html.escape(str(img_src_red))}' class='fighter-img'>" if img_src_red and isinstance(img_src_red, str) and img_src_red.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
-            html_content += f"<td class='fighter-name-cell red-corner-text'>{fighter_name_red}</td>"
-            html_content += f"<td class='fighter-img-cell'>{img_tag_red}</td>"
-            html_content += "</tr>"
-        html_content += "</tbody></table>"
-    return html_content
-
-def calculate_table_height_html(df_fightcard, base_event_h=60, fight_h_estimate=95, header_footer_h=100):
-    num_events = 0; num_fights = 0
-    if isinstance(df_fightcard, pd.DataFrame) and not df_fightcard.empty:
-        if FC_EVENT_COL in df_fightcard.columns: num_events = df_fightcard[FC_EVENT_COL].nunique()
-        if FC_EVENT_COL in df_fightcard.columns and FC_ORDER_COL in df_fightcard.columns:
-            try:
-                subset_cols = [col for col in [FC_EVENT_COL, FC_ORDER_COL] if col in df_fightcard.columns]
-                if len(subset_cols) == 2: num_fights = len(df_fightcard.drop_duplicates(subset=subset_cols))
-                elif FC_ORDER_COL in df_fightcard.columns : num_fights = df_fightcard[FC_ORDER_COL].nunique()
-            except KeyError: pass 
-    total_h = (int(num_events) * int(base_event_h)) + (int(num_fights) * int(fight_h_estimate)) + int(header_footer_h)
-    return max(total_h, 600) 
+                 return STATUS_TO_NUM.get(str(latest_record[ATTENDANCE_STATUS_COL]).strip(), 0)
+            else: return STATUS_TO_NUM.get(str(relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]).strip(), 0)
+        except Exception: return STATUS_TO_NUM.get(str(relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]).strip(), 0)
+    return STATUS_TO_NUM.get(str(relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]).strip(), 0)
 
 # --- Início da Página Streamlit ---
 st.title("DASHBOARD DE ATLETAS E TAREFAS")
-local_css("style.css") 
 st.markdown("---")
 
-if 'error_flags_initialized_dashnovo' not in st.session_state:
-    st.session_state.fc_load_error_shown_dn = False; st.session_state.task_load_error_shown_dn = False
-    st.session_state.att_empty_info_shown_dn = False; st.session_state.error_flags_initialized_dashnovo = True
+with st.spinner("Carregando dados das planilhas..."):
+    df_fightcard = load_fightcard_data()
+    df_attendance = load_attendance_data()
+    all_tasks = get_task_list()
+    df_athletes_info = load_athletes_info_df()
 
-df_fc_data = None; df_att_data = None; all_tasks_list = []; df_athletes_lookup = None
-loading_error_flag = False; error_placeholder = st.empty()
+if df_fightcard.empty or not all_tasks:
+    st.error("CRÍTICO: Falha ao carregar Fightcard ou Lista de Tarefas. Dashboard não pode ser gerado."); st.stop()
+if df_athletes_info.empty:
+    st.warning("Aviso: Infos de atletas (da aba 'df') não carregadas. Mapeamento de ID pode falhar.")
+    df_athletes_info = pd.DataFrame(columns=[ATHLETE_SHEET_NAME_COL, ATHLETE_SHEET_ID_COL])
 
-with st.spinner("Carregando todos os dados... Aguarde!"):
-    try:
-        df_fc_data = load_fightcard_data(); df_att_data = load_attendance_data() 
-        all_tasks_list = get_task_list(); df_athletes_lookup = load_athletes_info_df()
-        if df_fc_data.empty: loading_error_flag = True
-        if not all_tasks_list: loading_error_flag = True
-    except Exception as e: error_placeholder.error(f"Erro crítico durante carregamento: {e}"); loading_error_flag = True
+available_events = sorted(df_fightcard[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) 
+if not available_events: st.warning("Nenhum evento encontrado no Fightcard."); st.stop()
+event_options = ["Todos os Eventos"] + available_events
+selected_event_option = st.selectbox("Selecione o Evento:", options=event_options, index=0)
 
-col_btn_refresh_main, _ = st.columns([0.25, 0.75]) 
-with col_btn_refresh_main:
-    if st.button("🔄 Atualizar Dados", key="refresh_dashboard_btn_novo", use_container_width=True):
-        st.session_state.error_flags_initialized_dashnovo = False 
-        load_fightcard_data.clear(); load_attendance_data.clear(); get_task_list.clear(); load_athletes_info_df.clear()
-        st.toast("Dados atualizados!", icon="🎉"); st.rerun()
-st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+df_fightcard_display = df_fightcard.copy()
+if selected_event_option != "Todos os Eventos":
+    df_fightcard_display = df_fightcard[df_fightcard[FC_EVENT_COL] == selected_event_option].copy()
+if df_fightcard_display.empty: st.info(f"Nenhuma luta para o evento '{selected_event_option}'."); st.stop()
 
-if loading_error_flag:
-    if df_fc_data is not None and df_fc_data.empty and not st.session_state.fc_load_error_shown_dn:
-        error_placeholder.warning("Fightcard vazio ou não carregado."); st.session_state.fc_load_error_shown_dn = True
-    if not all_tasks_list and not st.session_state.task_load_error_shown_dn:
-        error_placeholder.error("Lista de Tarefas vazia ou não carregada."); st.session_state.task_load_error_shown_dn = True
-    if not (df_fc_data is not None and df_fc_data.empty) and not (not all_tasks_list) : 
-        st.error("Falha ao carregar dados essenciais. Verifique os logs ou mensagens.")
-elif df_fc_data.empty: st.warning("Nenhum dado de Fightcard para exibir.")
-elif not all_tasks_list: st.error("A lista de tarefas (TaskList) não foi carregada.")
-else:
-    if df_athletes_lookup.empty and not st.session_state.get('ath_info_empty_warn_dn', False):
-        st.warning("Infos de Atletas (aba 'df') vazias. Mapeamento de ID pode falhar.")
-        st.session_state.ath_info_empty_warn_dn = True
-        df_athletes_lookup = pd.DataFrame(columns=[ATHLETE_SHEET_NAME_COL, ATHLETE_SHEET_ID_COL]) 
-    fighter_id_mapping = {}
-    if not df_athletes_lookup.empty and ATHLETE_SHEET_NAME_COL in df_athletes_lookup.columns and ATHLETE_SHEET_ID_COL in df_athletes_lookup.columns:
-        df_ath_unique = df_athletes_lookup.dropna(subset=[ATHLETE_SHEET_NAME_COL]).drop_duplicates(subset=[ATHLETE_SHEET_NAME_COL], keep='first')
-        fighter_id_mapping = pd.Series(df_ath_unique[ATHLETE_SHEET_ID_COL].astype(str).str.strip().values, index=df_ath_unique[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()).to_dict()
-    else: st.warning("Mapeamento de ID de atleta não pôde ser criado (dados da aba 'df' ausentes).")
-    
-    available_events_list = sorted(df_fc_data[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
-    if not available_events_list: st.warning("Nenhum evento no Fightcard para selecionar."); st.stop()
-    event_options_list = ["Todos os Eventos"] + available_events_list
-    selected_event_val = st.selectbox("Selecione o Evento:", options=event_options_list, index=0, key="event_selector_dashboard_novo")
-    df_fc_display = df_fc_data.copy()
-    if selected_event_val != "Todos os Eventos":
-        df_fc_display = df_fc_data[df_fc_data[FC_EVENT_COL] == selected_event_val].copy()
-    if df_fc_display.empty: st.info(f"Nenhuma luta para o evento '{selected_event_val}'."); st.stop()
+dashboard_data_list = []
+fighter_to_id_map = {}
+if not df_athletes_info.empty and ATHLETE_SHEET_NAME_COL in df_athletes_info.columns and ATHLETE_SHEET_ID_COL in df_athletes_info.columns:
+    df_athletes_unique_names = df_athletes_info.dropna(subset=[ATHLETE_SHEET_NAME_COL]).drop_duplicates(subset=[ATHLETE_SHEET_NAME_COL], keep='first')
+    fighter_to_id_map = pd.Series(
+        df_athletes_unique_names[ATHLETE_SHEET_ID_COL].values, 
+        index=df_athletes_unique_names[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()
+    ).to_dict()
 
-    st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_val}")
-    
-    # --- CORREÇÃO APLICADA AQUI ---
-    status_legends_parts_disp = [] 
-    for key_n, value_d in NUM_TO_STATUS_VERBOSE.items():
-        status_legends_parts_disp.append(f"`{key_n}`: {value_d.split(' (')[0]}") 
-    help_text_general_legend_disp = ", ".join(status_legends_parts_disp)
-    # --- FIM DA CORREÇÃO ---
-    st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend_disp}")
+for order, group in df_fightcard_display.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby(
+    [FC_EVENT_COL, FC_ORDER_COL]
+):
+    event, fight_order = order
+    blue_s = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0)
+    red_s = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
+    row_data = {"Evento": event, "Luta #": int(fight_order) if pd.notna(fight_order) else ""}
 
-    if df_att_data is None: df_att_data = pd.DataFrame() 
-    elif df_att_data.empty and not st.session_state.att_empty_info_shown_dn:
-        st.info("Dados de presença vazios. Status como 'Pendente'."); st.session_state.att_empty_info_shown_dn = True
-    
-    html_table_output = render_fight_table_html_with_colored_tasks(df_fc_display, df_att_data, all_tasks_list, fighter_id_mapping)
-    table_render_height = calculate_table_height_html(df_fc_display)
-    st.components.v1.html(html_table_output, height=table_render_height, scrolling=True)
-    st.markdown("---")
+    for corner_prefix, series_data in [("Azul", blue_s), ("Vermelho", red_s)]:
+        fighter_name_fc = str(series_data.get(FC_FIGHTER_COL, "N/A")).strip() if isinstance(series_data, pd.Series) else "N/A"
+        athlete_id_from_map = fighter_to_id_map.get(fighter_name_fc, None) 
+        pic_url = series_data.get(FC_PICTURE_COL, "") if isinstance(series_data, pd.Series) else ""
+        row_data[f"Foto {corner_prefix}"] = pic_url if isinstance(pic_url, str) and pic_url.startswith("http") else None
+        row_data[f"Lutador {corner_prefix}"] = fighter_name_fc
+        row_data[f"ID {corner_prefix}"] = athlete_id_from_map if athlete_id_from_map else "N/D"
+        
+        if pd.notna(fighter_name_fc) and fighter_name_fc != "N/A" and athlete_id_from_map:
+            for task in all_tasks:
+                status_num = get_numeric_task_status(athlete_id_from_map, task, df_attendance)
+                row_data[f"{task} ({corner_prefix})"] = status_num
+        else:
+            for task in all_tasks: row_data[f"{task} ({corner_prefix})"] = 0 
+    row_data["Divisão"] = blue_s.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "N/A")) if isinstance(blue_s, pd.Series) else (red_s.get(FC_DIVISION_COL, "N/A") if isinstance(red_s, pd.Series) else "N/A")
+    dashboard_data_list.append(row_data)
 
-    st.subheader(f"Estatísticas do Evento: {selected_event_val}")
-    if not df_fc_display.empty:
-        total_lutas_evento = df_fc_display[FC_ORDER_COL].nunique()
-        atletas_azuis_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='blue'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
-        atletas_vermelhos_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='red'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
-        total_atletas_unicos_ev = len(set(atletas_azuis_ev + atletas_vermelhos_ev))
-        total_slots_tarefas_glob = 0; done_count_glob = 0; req_count_glob = 0; not_sol_count_glob = 0
-        if not df_att_data.empty and all_tasks_list:
-             all_athlete_ids_in_event = []
-             if fighter_id_mapping:
-                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_azuis_ev if fighter_id_mapping.get(name) is not None])
-                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_vermelhos_ev if fighter_id_mapping.get(name) is not None])
-                 all_athlete_ids_in_event = list(set(all_athlete_ids_in_event))
-             if all_athlete_ids_in_event:
-                 df_att_evento = df_att_data[df_att_data[ATTENDANCE_ATHLETE_ID_COL].isin(all_athlete_ids_in_event)]
-                 if not df_att_evento.empty: # Verifica se há dados de attendance para os atletas do evento
-                    for task in all_tasks_list:
-                        relevant_statuses = df_att_evento[df_att_evento[ATTENDANCE_TASK_COL] == task][ATTENDANCE_STATUS_COL]
-                        total_slots_tarefas_glob += len(relevant_statuses) 
-                        done_count_glob += (relevant_statuses == "Done").sum()
-                        req_count_glob += (relevant_statuses == "Requested").sum()
-                        not_sol_count_glob += (relevant_statuses.isin(["---", "Não Solicitado"])).sum()
-        stat_cols = st.columns(4) 
-        stat_cols[0].metric("Lutas no Evento", total_lutas_evento)
-        stat_cols[1].metric("Atletas Únicos no Evento", total_atletas_unicos_ev)
-        stat_cols[2].metric("Tarefas 'Done'", done_count_glob, help=f"Status 'Done' para atletas deste evento.")
-        stat_cols[3].metric("Tarefas 'Requested'", req_count_glob)
-    else: st.info("Nenhum dado para estatísticas do evento selecionado.")
+if not dashboard_data_list: st.info(f"Nenhuma luta processada para '{selected_event_option}'."); st.stop()
+df_dashboard = pd.DataFrame(dashboard_data_list)
+
+column_config_editor = {
+    "Evento": st.column_config.TextColumn(width="small", disabled=True),
+    "Luta #": st.column_config.NumberColumn(width="small", format="%d", disabled=True),
+    "Foto Azul": st.column_config.ImageColumn("Foto (A)", width="small"),
+    "ID Azul": st.column_config.TextColumn("ID (A)", width="small", disabled=True),
+    "Lutador Azul": st.column_config.TextColumn("Lutador (A)", width="medium", disabled=True),
+    "Divisão": st.column_config.TextColumn(width="medium", disabled=True),
+    "ID Vermelho": st.column_config.TextColumn("ID (V)", width="small", disabled=True),
+    "Lutador Vermelho": st.column_config.TextColumn("Lutador (V)", width="medium", disabled=True),
+    "Foto Vermelho": st.column_config.ImageColumn("Foto (V)", width="small"),
+}
+column_order_list = ["Evento", "Luta #", "Foto Azul", "ID Azul", "Lutador Azul"]
+for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Azul)")
+column_order_list.append("Divisão")
+for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Vermelho)")
+column_order_list.extend(["Lutador Vermelho", "ID Vermelho", "Foto Vermelho"])
+
+# --- CORREÇÃO APLICADA AQUI ---
+status_legends_parts = [] 
+for key_num, value_desc in NUM_TO_STATUS_VERBOSE.items():
+    status_legends_parts.append(f"`{key_num}`: {value_desc.split(' (')[0]}") 
+help_text_general_legend = ", ".join(status_legends_parts)
+# --- FIM DA CORREÇÃO ---
+
+for task_name_col in all_tasks:
+    column_config_editor[f"{task_name_col} (Azul)"] = st.column_config.NumberColumn(label=task_name_col, width="small", help=f"Status de {task_name_col}. Legenda: {help_text_general_legend}", disabled=True)
+    column_config_editor[f"{task_name_col} (Vermelho)"] = st.column_config.NumberColumn(label=task_name_col, width="small", help=f"Status de {task_name_col}. Legenda: {help_text_general_legend}", disabled=True)
+
+st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_option}")
+st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend}")
+st.markdown(""" <style> .stDataFrame div[data-testid="stHorizontalBlock"] > div { font-size: 15px !important; } </style> """, unsafe_allow_html=True)
+table_height = (len(df_dashboard) + 1) * 38 + 10; table_height = max(400, min(table_height, 1000))
+st.data_editor(df_dashboard, column_config=column_config_editor, column_order=column_order_list, hide_index=True, use_container_width=True, num_rows="fixed", disabled=True, height=table_height)
+st.markdown("---")
+
+st.subheader(f"Estatísticas do Evento: {selected_event_option}")
+if not df_dashboard.empty:
+    total_lutas_evento = df_dashboard["Luta #"].nunique()
+    atletas_azuis = [ath for ath in df_dashboard["Lutador Azul"].dropna().unique() if ath != "N/A"]
+    atletas_vermelhos = [ath for ath in df_dashboard["Lutador Vermelho"].dropna().unique() if ath != "N/A"]
+    total_atletas_unicos = len(set(atletas_azuis + atletas_vermelhos))
+    total_slots_tarefas = 0; done_count = 0; req_count = 0; not_sol_count = 0; pend_count = 0
+    for task in all_tasks:
+        for corner in ["Azul", "Vermelho"]:
+            col_name = f"{task} ({corner})"
+            if col_name in df_dashboard.columns:
+                valid_fighter_mask = df_dashboard[f"Lutador {corner}"] != "N/A"
+                # Garante que estamos somando apenas números (status 0,1,2,3)
+                task_values = pd.to_numeric(df_dashboard.loc[valid_fighter_mask, col_name], errors='coerce').dropna()
+                total_slots_tarefas += len(task_values) # Conta apenas os numéricos válidos
+                done_count += (task_values == 3).sum()
+                req_count += (task_values == 2).sum()
+                not_sol_count += (task_values == 1).sum()
+                pend_count += (task_values == 0).sum()
+    stat_cols = st.columns(5)
+    stat_cols[0].metric("Lutas", total_lutas_evento)
+    stat_cols[1].metric("Atletas Únicos", total_atletas_unicos)
+    stat_cols[2].metric("Tarefas 'Done' (3)", done_count, help=f"De {total_slots_tarefas} slots de tarefa considerados para atletas válidos.")
+    stat_cols[3].metric("Tarefas 'Requested' (2)", req_count)
+    stat_cols[4].metric("Tarefas '---' (1)", not_sol_count)
+else: st.info("Nenhum dado para estatísticas do evento selecionado.")
 st.markdown(f"--- \n *Dashboard atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*")

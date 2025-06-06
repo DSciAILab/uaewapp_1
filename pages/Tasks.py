@@ -16,8 +16,8 @@ USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance" 
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID" # Confirme se este é o nome da coluna na sua aba Attendance
 CONFIG_TAB_NAME = "Config"
-NO_TASK_SELECTED_LABEL = "-- Selecione uma Tarefa --"
-STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"] 
+NO_TASK_SELECTED_LABEL = "-- Choose Task --"
+STATUS_PENDING_EQUIVALENTS = ["Pending", "---", "Not Registred"] 
 
 # --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
@@ -151,22 +151,22 @@ def is_blood_test_expired(date_str: str) -> bool:
     except: return True
 
 # --- 6. Main Application Logic ---
-st.title("Consulta e Registro de Atletas")
-default_ss = {"warning_message":None, "user_confirmed":False, "current_user_id":"", "current_user_name":"Usuário",
+st.title("UAEW | Task Control")
+default_ss = {"warning_message":None, "user_confirmed":False, "current_user_id":"", "current_user_name":"User",
               "current_user_image_url":"", "show_personal_data":True, "selected_task":NO_TASK_SELECTED_LABEL, "selected_statuses":[]}
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
 
 with st.container(border=True): # User Auth Section
-    st.subheader("Identificação do Usuário")
+    st.subheader("User")
     col_input_ps, col_user_status_display = st.columns([0.6, 0.4]) 
     with col_input_ps:
         st.session_state['user_id_input'] = st.text_input(
-            "PS (ID de usuário) ou Nome", value=st.session_state['user_id_input'], 
-            max_chars=50, key="uid_w", label_visibility="collapsed", placeholder="Digite seu PS ou Nome"
+            "PS Number", value=st.session_state['user_id_input'], 
+            max_chars=50, key="uid_w", label_visibility="collapsed", placeholder="Typer 4 digits of your PS"
         )
-        if st.button("Confirmar Usuário", key="confirm_b_w", use_container_width=True, type="primary"):
+        if st.button("Login", key="confirm_b_w", use_container_width=True, type="primary"):
             u_in=st.session_state['user_id_input'].strip()
             if u_in:
                 u_inf=get_valid_user_info(u_in)

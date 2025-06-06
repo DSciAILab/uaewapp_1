@@ -5,8 +5,8 @@ import pandas as pd
 import gspread 
 from google.oauth2.service_account import Credentials 
 from datetime import datetime
-# import html # Não usado ativamente se focarmos em st.data_editor
-# import os  # Não usado ativamente se não usarmos local_css para a tabela
+# import html # Não estritamente necessário
+# import os  # Não estritamente necessário se não usarmos local_css para a tabela
 
 # --- Constantes (MANTENHA AS SUAS CONSTANTES COMO ANTES) ---
 MAIN_SHEET_NAME = "UAEW_App" 
@@ -132,28 +132,54 @@ def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
     return STATUS_TO_NUM.get(str(latest_status_str).strip(), 0)
 
 # --- Início da Página Streamlit ---
-st.markdown("<h1 style='text-align: center; font-size: 2.5em; margin-bottom: 15px;'>DASHBOARD DE ATLETAS E TAREFAS</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; font-size: 2.5em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS E TAREFAS</h1>", unsafe_allow_html=True)
+# Removido local_css("style.css") pois vamos injetar CSS dinamicamente
 
-# --- CSS para Fontes Maiores na Tabela ---
-st.markdown("""
+# --- Controle de Tamanho da Fonte ---
+if 'font_size_preference' not in st.session_state:
+    st.session_state.font_size_preference = "Normal" # Default
+
+font_size_options = {
+    "Normal": "1.0rem",  # Aprox 15-16px dependendo da base do browser
+    "Médio": "1.15rem", # Aprox 17-18px
+    "Grande": "1.3rem"  # Aprox 19-20px
+}
+
+# Função para ser chamada quando o selectbox de tamanho da fonte mudar
+def update_font_size():
+    # Apenas armazena a preferência, o rerun fará o resto
+    st.session_state.font_size_preference = st.session_state.font_size_selector 
+    # Não é necessário st.rerun() aqui se o selectbox já causa um por padrão
+    # Se não causar, adicione st.rerun()
+
+selected_font_size_label = st.sidebar.selectbox( # Adicionado à sidebar
+    "Tamanho da Fonte da Tabela:",
+    options=list(font_size_options.keys()),
+    index=list(font_size_options.keys()).index(st.session_state.font_size_preference),
+    key="font_size_selector",
+    on_change=update_font_size # Chama a função quando o valor muda
+)
+
+# Injeta o CSS com base na seleção
+current_font_size_css = font_size_options[st.session_state.font_size_preference]
+st.markdown(f"""
 <style>
-    /* Aumenta a fonte dentro das células de dados e cabeçalhos do st.data_editor */
-    div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"],
-    div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {
-        font-size: 1.05rem !important; /* Ajuste este valor (ex: 16px, 1.1rem) */
-    }
-    /* Especificamente para o cabeçalho, se precisar de mais destaque */
-    div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {
+    /* Para o corpo da tabela st.data_editor */
+    div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] {{
+        font-size: {current_font_size_css} !important;
+    }}
+    /* Para o cabeçalho da tabela st.data_editor */
+    div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {{
+        font-size: calc({current_font_size_css} + 0.05rem) !important; /* Um pouco maior que as células */
         font-weight: bold !important;
-        text-transform: uppercase; /* Opcional: para cabeçalhos em maiúsculas */
-    }
+        text-transform: uppercase;
+    }}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("---")
 
 
 # --- Carregamento Inicial de Todos os Dados ---
-# ... (lógica de carregamento como na versão anterior) ...
 df_fightcard = None; df_attendance = None; all_tasks = None; df_athletes_info = None
 loading_error = False; error_placeholder = st.empty()
 with st.spinner("Carregando todos os dados... Aguarde!"):
@@ -166,14 +192,15 @@ with st.spinner("Carregando todos os dados... Aguarde!"):
 
 col_btn_refresh_main, _ = st.columns([0.25, 0.75]) 
 with col_btn_refresh_main:
-    if st.button("🔄 Atualizar Dados", key="refresh_dashboard_btn_novo", use_container_width=True):
+    if st.button("🔄 Atualizar Dados", key="refresh_dashboard_all_btn", use_container_width=True):
         load_fightcard_data.clear(); load_attendance_data.clear(); get_task_list.clear(); load_athletes_info_df.clear()
         st.toast("Dados atualizados!", icon="🎉"); st.rerun()
 st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
-# --- Lógica de Exibição Principal ---
+# --- Lógica de Exibição Principal (COMO ANTES) ---
 if loading_error:
-    if df_fightcard is not None and df_fightcard.empty: error_placeholder.warning("Fightcard vazio ou não carregado.")
+    # ... (lógica de erro como antes) ...
+    if df_fightcard is not None and df_fightcard.empty : error_placeholder.warning("Fightcard vazio ou não carregado.")
     if not all_tasks : error_placeholder.error("Lista de Tarefas vazia ou não carregada.")
     if not (df_fightcard is not None and df_fightcard.empty) and not (not all_tasks) : st.error("Falha ao carregar dados. Verifique logs.")
 elif df_fightcard.empty: st.warning("Nenhum dado de Fightcard para exibir.")
@@ -236,6 +263,7 @@ else:
     column_order_list.append("Divisão")
     for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Vermelho)")
     column_order_list.extend(["Lutador Vermelho", "ID Vermelho", "Foto Vermelho"])
+    
     status_legends_parts_disp = [] 
     for key_n, value_d in NUM_TO_STATUS_VERBOSE.items(): status_legends_parts_disp.append(f"`{key_n}`: {value_d.split(' (')[0]}") 
     help_text_general_legend_disp = ", ".join(status_legends_parts_disp)
@@ -245,12 +273,13 @@ else:
 
     st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_option}")
     st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend_disp}")
-    table_height = (len(df_dashboard) + 1) * 45 + 10; table_height = max(400, min(table_height, 1200)) # Aumentada altura por linha
+    table_height = (len(df_dashboard) + 1) * 45 + 10; table_height = max(400, min(table_height, 1200)) 
     st.data_editor(df_dashboard, column_config=column_config_editor, column_order=column_order_list, hide_index=True, use_container_width=True, num_rows="fixed", disabled=True, height=table_height)
     st.markdown("---")
 
     st.subheader(f"Estatísticas do Evento: {selected_event_option}")
     if not df_dashboard.empty:
+        # ... (lógica de estatísticas como antes) ...
         total_lutas_evento = df_dashboard["Luta #"].nunique()
         atletas_azuis_ev = [ath for ath in df_dashboard["Lutador Azul"].dropna().unique() if ath != "N/A"]
         atletas_vermelhos_ev = [ath for ath in df_dashboard["Lutador Vermelho"].dropna().unique() if ath != "N/A"]

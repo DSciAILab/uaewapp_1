@@ -8,9 +8,6 @@ from datetime import datetime
 import html 
 import os 
 
-# --- 1. Configuração da Página ---
-# (Definido no MainApp.py para apps multipágina)
-
 # --- Constantes ---
 MAIN_SHEET_NAME = "UAEW_App" 
 CONFIG_TAB_NAME = "Config"
@@ -236,22 +233,19 @@ column_order_list.append("Divisão")
 for task_name_col in all_tasks: column_order_list.append(f"{task_name_col} (Vermelho)")
 column_order_list.extend(["Lutador Vermelho", "ID Vermelho", "Foto Vermelho"])
 
-# --- CORREÇÃO AQUI ---
-status_legend_parts = []
-for key, value in NUM_TO_STATUS_VERBOSE.items():
-    # value.split(' (')[0] pega a parte principal antes do parêntese, se houver
-    status_legends_parts.append(f"`{key}`: {value.split(' (')[0]}") 
+# --- CORREÇÃO APLICADA AQUI ---
+status_legends_parts = [] 
+for key_num, value_desc in NUM_TO_STATUS_VERBOSE.items():
+    status_legends_parts.append(f"`{key_num}`: {value_desc.split(' (')[0]}") 
 help_text_general_legend = ", ".join(status_legends_parts)
 # --- FIM DA CORREÇÃO ---
 
-
 for task_name_col in all_tasks:
-    # Usa a legenda geral para todas as tarefas
     column_config_editor[f"{task_name_col} (Azul)"] = st.column_config.NumberColumn(label=task_name_col, width="small", help=f"Status de {task_name_col}. Legenda: {help_text_general_legend}", disabled=True)
     column_config_editor[f"{task_name_col} (Vermelho)"] = st.column_config.NumberColumn(label=task_name_col, width="small", help=f"Status de {task_name_col}. Legenda: {help_text_general_legend}", disabled=True)
 
 st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_option}")
-st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend}") # Usa a legenda geral
+st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend}")
 st.markdown(""" <style> .stDataFrame div[data-testid="stHorizontalBlock"] > div { font-size: 15px !important; } </style> """, unsafe_allow_html=True)
 table_height = (len(df_dashboard) + 1) * 38 + 10; table_height = max(400, min(table_height, 1000))
 st.data_editor(df_dashboard, column_config=column_config_editor, column_order=column_order_list, hide_index=True, use_container_width=True, num_rows="fixed", disabled=True, height=table_height)
@@ -269,15 +263,17 @@ if not df_dashboard.empty:
             col_name = f"{task} ({corner})"
             if col_name in df_dashboard.columns:
                 valid_fighter_mask = df_dashboard[f"Lutador {corner}"] != "N/A"
-                total_slots_tarefas += df_dashboard.loc[valid_fighter_mask, col_name].count()
-                done_count += (df_dashboard.loc[valid_fighter_mask, col_name] == 3).sum()
-                req_count += (df_dashboard.loc[valid_fighter_mask, col_name] == 2).sum()
-                not_sol_count += (df_dashboard.loc[valid_fighter_mask, col_name] == 1).sum()
-                pend_count += (df_dashboard.loc[valid_fighter_mask, col_name] == 0).sum()
+                # Garante que estamos somando apenas números (status 0,1,2,3)
+                task_values = pd.to_numeric(df_dashboard.loc[valid_fighter_mask, col_name], errors='coerce').dropna()
+                total_slots_tarefas += len(task_values) # Conta apenas os numéricos válidos
+                done_count += (task_values == 3).sum()
+                req_count += (task_values == 2).sum()
+                not_sol_count += (task_values == 1).sum()
+                pend_count += (task_values == 0).sum()
     stat_cols = st.columns(5)
     stat_cols[0].metric("Lutas", total_lutas_evento)
     stat_cols[1].metric("Atletas Únicos", total_atletas_unicos)
-    stat_cols[2].metric("Tarefas 'Done' (3)", done_count, help=f"De {total_slots_tarefas} slots de tarefa considerados.")
+    stat_cols[2].metric("Tarefas 'Done' (3)", done_count, help=f"De {total_slots_tarefas} slots de tarefa considerados para atletas válidos.")
     stat_cols[3].metric("Tarefas 'Requested' (2)", req_count)
     stat_cols[4].metric("Tarefas '---' (1)", not_sol_count)
 else: st.info("Nenhum dado para estatísticas do evento selecionado.")

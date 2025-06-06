@@ -121,7 +121,7 @@ def get_task_status_representation(athlete_id_to_check, task_name, df_attendance
     return STATUS_TO_EMOJI.get(str(latest_status_str).strip(),DEFAULT_EMOJI)
 
 # --- Início da Página Streamlit ---
-st.markdown("<h1 style='text-align:center;font-size:2.5em;margin-bottom:5px;'>DASHBOARD DE ATLETAS E TAREFAS</h1>",True)
+st.markdown("<h1 style='text-align:center;font-size:2.5em;margin-bottom:5px;'>UAE Warriors | Fighters Dashboard</h1>",True)
 refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh") # 1 minuto
 
 if 'font_size_pref_dn2' not in st.session_state: st.session_state.font_size_pref_dn2="Normal"

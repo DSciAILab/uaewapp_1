@@ -17,14 +17,13 @@ ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
 
-# Novas Constantes para Fightcard
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
 FC_CORNER_COL = "Corner"
 FC_ORDER_COL = "FightOrder"
 FC_PICTURE_COL = "Picture"
-FC_DIVISION_COL = "Division"
+FC_DIVISION_COL = "Division" # Mantida aqui caso a fonte de dados ainda a tenha, mas não será usada na UI
 
 STATUS_TO_EMOJI = {
     "Done": "🟩", "Requested": "🟧", "---": "➖", "Não Solicitado": "➖",
@@ -34,6 +33,8 @@ DEFAULT_EMOJI = "🟥"
 EMOJI_LEGEND = {
     "🟩": "Done", "🟧": "Requested", "➖": "---", "🟥": "Pendente"
 }
+CORNER_EMOJI_MAP = {"blue": "🔵", "red": "🔴", "n/a": ""}
+
 
 # --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)
@@ -65,6 +66,12 @@ def load_fightcard_data():
         else:
             st.error(f"CRÍTICO: Coluna '{FC_ATHLETE_ID_COL}' não encontrada no Fightcard. Verifique a planilha.")
             df[FC_ATHLETE_ID_COL] = ""
+        # A coluna FC_DIVISION_COL é carregada se existir, mas não será usada na UI
+        if FC_DIVISION_COL not in df.columns: # Adiciona coluna vazia se não existir para evitar erros posteriores
+            df[FC_DIVISION_COL] = "N/A"
+        else:
+            df[FC_DIVISION_COL] = df[FC_DIVISION_COL].astype(str).str.strip().fillna("N/A")
+
         return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL, FC_ATHLETE_ID_COL])
     except Exception as e: st.error(f"Erro ao carregar Fightcard: {e}"); return pd.DataFrame()
 
@@ -78,7 +85,7 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
-            else: df_att[col] = pd.NA # Usar pd.NA para consistência com outros NAs
+            else: df_att[col] = pd.NA
         return df_att
     except Exception as e: st.error(f"Erro ao carregar Attendance: {e}"); return pd.DataFrame()
 
@@ -109,46 +116,52 @@ def get_task_status_representation(athlete_id_to_check, task_name, df_attendance
     latest_status_str=relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns and relevant_records[ATTENDANCE_TIMESTAMP_COL].notna().any():
         try:
-            # Garantir que a coluna Timestamp seja convertida corretamente, tratando NaNs
             relevant_records_copy = relevant_records.copy()
             relevant_records_copy["Timestamp_dt"] = pd.to_datetime(relevant_records_copy[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-            
-            # Filtrar NaT (Not a Time) antes de ordenar, se houver algum
             valid_timestamps = relevant_records_copy.dropna(subset=["Timestamp_dt"])
             if not valid_timestamps.empty:
                 latest_status_str = valid_timestamps.sort_values(by="Timestamp_dt", ascending=False).iloc[0][ATTENDANCE_STATUS_COL]
-        except Exception: # Captura qualquer exceção durante a conversão/ordenação
-            pass # Mantém o latest_status_str original se a ordenação falhar
+        except Exception:
+            pass
     return STATUS_TO_EMOJI.get(str(latest_status_str).strip(),DEFAULT_EMOJI)
+
+def extract_id_from_display_name(display_name_with_emoji):
+    if not isinstance(display_name_with_emoji, str) or display_name_with_emoji == "N/A":
+        return pd.NA
+    # Remove o emoji (primeiro caractere se for um emoji conhecido, ou primeiro token antes do espaço)
+    parts = display_name_with_emoji.split(" ", 1)
+    name_part = parts[1] if len(parts) > 1 else parts[0] # Pega "ID - Nome" ou apenas "Nome" se não houver ID
+
+    id_name_parts = name_part.split(" - ", 1)
+    if len(id_name_parts) > 0:
+        potential_id = id_name_parts[0].strip()
+        if potential_id and potential_id != "N/D":
+            return potential_id
+    return pd.NA
 
 
 # --- Início da Página Streamlit ---
-st.set_page_config(layout="wide") # Usar layout amplo pode ajudar, mesmo em mobile
-st.markdown("<h1 style='text-align: center; font-size: 2em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS</h1>",unsafe_allow_html=True) # Título um pouco menor
-refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh_v3_mobile")
+st.set_page_config(layout="wide")
+st.markdown("<h1 style='text-align: center; font-size: 2em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS</h1>",unsafe_allow_html=True)
+refresh_count = st_autorefresh(interval=60000,limit=None,key="dash_auto_refresh_v4_mobile")
 
-if 'font_size_pref_dn_mobile' not in st.session_state: st.session_state.font_size_pref_dn_mobile="Pequeno"
-font_options_map={"Pequeno":"0.8rem", "Normal":"0.9rem","Médio":"1.0rem"} # Ajustado para mobile
-ctrl_cols=st.columns([0.35,0.35,0.3]) # Ajuste para botões e seletor
-with ctrl_cols[0]:
-    if st.button("🔄 Atualizar",key="refresh_dash_manual_btn_mobile",use_container_width=True):
+# Controles (Botão de refresh e seletor de evento)
+header_cols = st.columns([0.4, 0.6])
+with header_cols[0]:
+    if st.button("🔄 Atualizar Dados",key="refresh_dash_manual_btn_mobile_v4",use_container_width=True):
         st.cache_data.clear(); st.cache_resource.clear()
         st.toast("Dados atualizados!",icon="🎉");st.rerun()
-with ctrl_cols[1]:
-    font_sel=st.selectbox("Fonte:",options=list(font_options_map.keys()),index=list(font_options_map.keys()).index(st.session_state.font_size_pref_dn_mobile),key="font_sel_dn_mobile")
-    if font_sel!=st.session_state.font_size_pref_dn_mobile:st.session_state.font_size_pref_dn_mobile=font_sel;st.rerun()
-curr_font_css=font_options_map[st.session_state.font_size_pref_dn_mobile]
 
-# CSS para centralizar conteúdo das células e ajustar tamanho da fonte
+# CSS para centralizar conteúdo das células, quebra de linha e estilo do cabeçalho.
+# Tamanho da fonte será o padrão do Streamlit, que é responsivo.
 st.markdown(f"""
     <style>
         div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] > div {{
             margin: auto;
-            white-space: normal !important; /* Permite quebra de linha no nome do lutador */
-            word-break: break-word !important; /* Quebra palavras longas */
+            white-space: normal !important;
+            word-break: break-word !important;
         }}
         div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] {{
-            font-size:{curr_font_css} !important;
             text-align:center !important;
             vertical-align:middle !important;
             display:flex !important;
@@ -158,17 +171,15 @@ st.markdown(f"""
             padding-bottom: 5px !important;
         }}
         div[data-testid="stDataFrameResizable"] div[data-baseweb="table-header-cell"] {{
-            font-size:calc({curr_font_css} + 0.05rem) !important;
             font-weight:bold !important;
             text-transform:uppercase;
             text-align:center !important;
             white-space:normal !important;
             word-break:break-word !important;
-            background-color: #f0f2f6; /* Cor de fundo leve para o cabeçalho */
+            background-color: #f0f2f6;
         }}
-        /* Para imagens, limitar a altura para não esticar demais a linha */
         div[data-testid="stDataFrameResizable"] img {{
-            max-height: 50px;
+            max-height: 50px; /* Limita altura da imagem */
             object-fit: contain;
         }}
     </style>
@@ -192,50 +203,46 @@ else:
     avail_evs=sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(),reverse=True)
     if not avail_evs:st.warning("Nenhum evento no Fightcard.");st.stop()
     ev_opts=["Todos os Eventos"]+avail_evs
-    sel_ev_opt=st.selectbox("Selecione Evento:",options=ev_opts,index=0,key="ev_sel_dn_mobile")
+    
+    with header_cols[1]: # Seletor de evento na segunda coluna do header
+        sel_ev_opt=st.selectbox("Selecione Evento:",options=ev_opts,index=0,key="ev_sel_dn_mobile_v4")
+    
     df_fc_disp=df_fc.copy()
     if sel_ev_opt!="Todos os Eventos":df_fc_disp=df_fc[df_fc[FC_EVENT_COL]==sel_ev_opt].copy()
     if df_fc_disp.empty:st.info(f"Nenhuma luta para '{sel_ev_opt}'.");st.stop()
 
     dash_data_list=[]
     # Agrupa por Evento e Ordem da Luta para processar cada luta
-    for (event, fight_order), group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL], sort=False):
+    for (event, fight_order_original), group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL], sort=False):
+        
+        fighters_in_fight = []
         blue_fighter_series = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0)
         red_fighter_series = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
 
-        # Determina a divisão da luta (pega do primeiro lutador válido que tiver)
-        division = "N/A"
-        if isinstance(blue_fighter_series, pd.Series) and pd.notna(blue_fighter_series.get(FC_DIVISION_COL)):
-            division = blue_fighter_series.get(FC_DIVISION_COL)
-        elif isinstance(red_fighter_series, pd.Series) and pd.notna(red_fighter_series.get(FC_DIVISION_COL)):
-            division = red_fighter_series.get(FC_DIVISION_COL)
-
-        fighters_in_fight = []
         if isinstance(blue_fighter_series, pd.Series) and blue_fighter_series.get(FC_FIGHTER_COL, "N/A") != "N/A":
-            fighters_in_fight.append(("Azul", blue_fighter_series))
+            fighters_in_fight.append(blue_fighter_series)
         if isinstance(red_fighter_series, pd.Series) and red_fighter_series.get(FC_FIGHTER_COL, "N/A") != "N/A":
-            fighters_in_fight.append(("Vermelho", red_fighter_series))
+            fighters_in_fight.append(red_fighter_series)
         
-        # Se não houver lutadores válidos para esta "luta", pula
         if not fighters_in_fight:
             continue
 
-        for corner_name, fighter_data in fighters_in_fight:
-            fighter_row = {
-                "Evento": event,
-                "Luta #": int(fight_order) if pd.notna(fight_order) else "",
-                "Canto": corner_name,
-                "Divisão": division
-            }
+        for fighter_data in fighters_in_fight:
+            fighter_row = { "Evento": event } # "Luta #" e "Divisão" removidas
 
             fighter_name_fc = str(fighter_data.get(FC_FIGHTER_COL, "N/A")).strip()
             athlete_id_fc = str(fighter_data.get(FC_ATHLETE_ID_COL, "")).strip()
             picture_url = fighter_data.get(FC_PICTURE_COL, "")
+            corner_color = fighter_data.get(FC_CORNER_COL, "n/a").lower() # Obtém a cor do corner
 
             fighter_row["Foto"] = picture_url if isinstance(picture_url, str) and picture_url.startswith("http") else None
             
             id_display = athlete_id_fc if athlete_id_fc else "N/D"
-            fighter_row["Lutador [ID - Nome]"] = f"{id_display} - {fighter_name_fc}" if fighter_name_fc != "N/A" else "N/A"
+            name_display_text = f"{id_display} - {fighter_name_fc}" if fighter_name_fc != "N/A" else "N/A"
+            
+            corner_emoji = CORNER_EMOJI_MAP.get(corner_color, "")
+            fighter_row["Lutador"] = f"{corner_emoji} {name_display_text}".strip()
+
 
             if fighter_name_fc != "N/A" and athlete_id_fc:
                 for task in all_tsks:
@@ -250,43 +257,34 @@ else:
     if not dash_data_list:st.info(f"Nenhuma luta processada para '{sel_ev_opt}'.");st.stop()
     df_dash=pd.DataFrame(dash_data_list)
 
-    # Configuração das colunas para o data_editor
     col_conf_edit = {
         "Evento": st.column_config.TextColumn(width="small", disabled=True),
-        "Luta #": st.column_config.NumberColumn(width="small", format="%d", disabled=True),
-        "Canto": st.column_config.TextColumn(width="small", disabled=True, 
-                                             help="Canto do Lutador (Azul/Vermelho)"),
-        "Foto": st.column_config.ImageColumn("Foto", width="small"), # Largura 'small' para mobile
-        "Lutador [ID - Nome]": st.column_config.TextColumn("Lutador", width="medium", disabled=True), # Medium para caber nome
-        "Divisão": st.column_config.TextColumn(width="small", disabled=True),
+        "Foto": st.column_config.ImageColumn("Foto", width="small"),
+        "Lutador": st.column_config.TextColumn("Lutador (ID - Nome)", width="large", disabled=True), # Largura large para mais espaço
     }
 
-    # Ordem das colunas
-    col_ord_list = ["Evento", "Luta #", "Canto", "Foto", "Lutador [ID - Nome]"]
-    # Adiciona colunas de tarefas dinamicamente
+    col_ord_list = ["Evento", "Foto", "Lutador"]
     for task_name_col in all_tsks:
         col_ord_list.append(task_name_col)
-    col_ord_list.append("Divisão")
 
     leg_parts=[f"{emo}: {dsc}"for emo,dsc in EMOJI_LEGEND.items()if emo.strip()!=""]
     help_txt_leg_disp=", ".join(leg_parts)
 
     for task_name_col in all_tsks:
         col_conf_edit[task_name_col] = st.column_config.TextColumn(
-            label=task_name_col, # Nome curto da tarefa
-            width="small", # Pequeno para os emojis
-            help=f"Status da Tarefa: {help_txt_leg_disp}",
+            label=task_name_col,
+            width="small",
+            help=f"Status: {help_txt_leg_disp}",
             disabled=True
         )
 
-    st.subheader(f"Detalhes dos Lutadores: {sel_ev_opt}")
-    st.markdown(f"**Legenda:** {help_txt_leg_disp}")
+    st.subheader(f"Detalhes dos Atletas: {sel_ev_opt}")
+    st.markdown(f"**Legenda Status:** {help_txt_leg_disp}")
     
-    # Ajuste dinâmico da altura da tabela
     num_rows_display = len(df_dash)
-    row_height_approx = 65 # Altura aproximada de uma linha com imagem, ajuste conforme necessário
+    row_height_approx = 60 # Altura aproximada por linha (ajuste se necessário)
     header_height = 45
-    table_height = min(max(300, (num_rows_display * row_height_approx) + header_height), 800) # min 300px, max 800px
+    table_height = min(max(300, (num_rows_display * row_height_approx) + header_height), 800)
 
     st.data_editor(
         df_dash,
@@ -294,27 +292,28 @@ else:
         column_order=col_ord_list,
         hide_index=True,
         use_container_width=True,
-        num_rows="fixed", # "dynamic" pode ser melhor para mobile se a altura fixa for um problema
+        num_rows="fixed",
         disabled=True,
-        height=int(table_height) # Convertido para int
+        height=int(table_height)
     )
     st.markdown("---")
 
     st.subheader(f"Estatísticas do Evento: {sel_ev_opt}")
     if not df_dash.empty:
-        # Lutas únicas: agrupa por Evento e Luta # e conta os grupos
-        tot_lutas_ev = df_dash.groupby([FC_EVENT_COL, "Luta #"]).ngroups
+        # Contar lutas únicas a partir do df_fc_disp (antes da transformação para uma linha por lutador)
+        if not df_fc_disp.empty:
+            tot_lutas_ev = df_fc_disp.groupby([FC_EVENT_COL, FC_ORDER_COL]).ngroups
+        else:
+            tot_lutas_ev = 0
         
-        # Atletas únicos: extrai ID da coluna "Lutador [ID - Nome]" e conta os únicos válidos
-        valid_athlete_ids = df_dash[df_dash["Lutador [ID - Nome]"] != "N/A"]["Lutador [ID - Nome]"].apply(
-            lambda x: x.split(" - ", 1)[0].strip() if isinstance(x, str) and " - " in x else pd.NA
+        # Atletas únicos
+        valid_athlete_ids = df_dash[df_dash["Lutador"] != "N/A"]["Lutador"].apply(
+            extract_id_from_display_name # Usando a nova função de extração
         ).dropna().unique()
         tot_ath_uniq_ev = len(valid_athlete_ids)
 
         done_c, req_c, not_sol_c, pend_c, tot_tsk_slots = 0, 0, 0, 0, 0
-        
-        # Filtra apenas linhas com lutadores válidos para contagem de tarefas
-        df_valid_fighters_tasks = df_dash[df_dash["Lutador [ID - Nome]"] != "N/A"]
+        df_valid_fighters_tasks = df_dash[df_dash["Lutador"] != "N/A"] # Usa a coluna "Lutador"
 
         for tsk in all_tsks:
             if tsk in df_valid_fighters_tasks.columns:
@@ -322,36 +321,26 @@ else:
                 tot_tsk_slots += len(task_emojis_series)
                 done_c += (task_emojis_series == STATUS_TO_EMOJI.get("Done")).sum()
                 req_c += (task_emojis_series == STATUS_TO_EMOJI.get("Requested")).sum()
-                not_sol_c += (task_emojis_series == STATUS_TO_EMOJI.get("---")).sum() # Inclui "Não Solicitado"
-                pend_c += (task_emojis_series == STATUS_TO_EMOJI.get("Pendente")).sum() # Inclui "Não Registrado"
+                not_sol_c += (task_emojis_series == STATUS_TO_EMOJI.get("---")).sum()
+                pend_c += (task_emojis_series == STATUS_TO_EMOJI.get("Pendente")).sum()
         
-        # Para mobile, 2 ou 3 colunas de métricas podem ser melhores
-        stat_cols_count = 3 if tot_ath_uniq_ev > 0 else 2 # Ajuste conforme necessário
+        stat_cols_count = 3
         stat_cs = st.columns(stat_cols_count)
         
         stat_cs[0].metric("Lutas", tot_lutas_ev)
-        if tot_ath_uniq_ev > 0 :
-             stat_cs[1].metric("Atletas Únicos", tot_ath_uniq_ev)
+        stat_cs[1].metric("Atletas Únicos", tot_ath_uniq_ev)
         
-        # As métricas de tarefas podem ir para uma segunda linha de colunas ou expanders
-        # Tentativa com as colunas restantes:
-        next_col_idx = 2 if tot_ath_uniq_ev > 0 else 1
-
-        if next_col_idx < stat_cols_count:
-            stat_cs[next_col_idx].metric(f"Tarefas {STATUS_TO_EMOJI['Done']}", done_c, help=f"De {tot_tsk_slots} slots de tarefas.")
-        else: # Se não houver mais colunas, cria uma nova linha para elas
-            extra_stat_cols = st.columns(3) # Para Done, Requested, ---
-            extra_stat_cols[0].metric(f"Tarefas {STATUS_TO_EMOJI['Done']}", done_c, help=f"De {tot_tsk_slots} slots de tarefas.")
-            if len(extra_stat_cols) > 1:
-                extra_stat_cols[1].metric(f"Tarefas {STATUS_TO_EMOJI['Requested']}", req_c)
-            if len(extra_stat_cols) > 2:
-                extra_stat_cols[2].metric(f"Tarefas {STATUS_TO_EMOJI['---']}", not_sol_c)
-
-        # Se ainda precisar mostrar pendentes e houver espaço:
-        # if next_col_idx + 1 < stat_cols_count:
-        #     stat_cs[next_col_idx + 1].metric(f"Tarefas {STATUS_TO_EMOJI['Requested']}", req_c)
-        # if next_col_idx + 2 < stat_cols_count:
-        #     stat_cs[next_col_idx + 2].metric(f"Tarefas {STATUS_TO_EMOJI['---']}", not_sol_c)
+        # Para as tarefas, podemos usar uma nova linha de colunas para melhor espaçamento
+        if tot_tsk_slots > 0:
+             stat_cs[2].metric(f"Tarefas {STATUS_TO_EMOJI['Done']}", done_c, help=f"De {tot_tsk_slots} slots de tarefas.")
+             # Poderia adicionar mais métricas de tarefas se couber ou em expander
+             # Exemplo:
+             # with st.expander("Mais estatísticas de tarefas"):
+             # st.metric(f"Tarefas {STATUS_TO_EMOJI['Requested']}", req_c)
+             # st.metric(f"Tarefas {STATUS_TO_EMOJI['---']}", not_sol_c)
+             # st.metric(f"Tarefas {STATUS_TO_EMOJI['Pendente']}", pend_c)
+        else:
+            stat_cs[2].metric("Tarefas", "N/A")
 
 
     else:st.info("Nenhum dado para estatísticas do evento.")

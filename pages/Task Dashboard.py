@@ -31,12 +31,12 @@ FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
 STATUS_TO_EMOJI = {
-    "Done": "🟩", "Requested": "🟧", "---": "➖", "Não Solicitado": "➖",
+    "Done": "🟩", "Requested": "🟨", "---": "➖", "Não Solicitado": "➖",
     "Pendente": "🟥", "Não Registrado": "🟥" 
 }
 DEFAULT_EMOJI = "🟥" 
 EMOJI_LEGEND = {
-    "🟩": "Done", "🟧": "Requested", "➖": "---", "🟥": "Pendente"
+    "🟩": "Done", "🟨": "Requested", "➖": "---", "🟥": "Pendente"
 }
 
 # --- Funções de Conexão e Carregamento de Dados ---

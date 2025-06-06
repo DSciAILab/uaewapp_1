@@ -1,8 +1,9 @@
-# pages/Mobile.py (ou o nome do seu arquivo)
+# pages/DashboardNovo.py
 
 import streamlit as st
 import pandas as pd
 import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
@@ -34,34 +35,22 @@ EMOJI_LEGEND = {
 }
 CORNER_EMOJI_MAP = {"blue": "🔵", "red": "🔴", "n/a": ""}
 
-HIGHLIGHT_COL_NAME = "_HIGHLIGHT_"
+HIGHLIGHT_COL_NAME = "_HIGHLIGHT_" # Nome da coluna interna para o checkbox de highlight
 
 # --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        if "gcp_service_account" not in st.secrets:
-            st.error("CRÍTICO: `gcp_service_account` não nos segredos.", icon="🚨")
-            st.stop()
-        creds_info = st.secrets["gcp_service_account"]
-        return gspread.service_account_from_dict(creds_info, scopes=scope)
-    except Exception as e:
-        st.error(f"CRÍTICO: Erro gspread client: {e}", icon="🚨")
-        st.stop()
+        scope = ["https.www.googleapis.com/auth/spreadsheets", "https.www.googleapis.com/auth/drive"]
+        if "gcp_service_account" not in st.secrets: st.error("CRÍTICO: `gcp_service_account` não nos segredos.", icon="🚨"); st.stop()
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        return gspread.authorize(creds)
+    except Exception as e: st.error(f"CRÍTICO: Erro gspread client: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     if not gspread_client: st.error("CRÍTICO: Cliente gspread não inicializado.", icon="🚨"); st.stop()
     try: return gspread_client.open(sheet_name).worksheet(tab_name)
-    except gspread.exceptions.APIError as e:
-        st.error(f"CRÍTICO: Erro de API do Google ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨")
-        if hasattr(e, 'response') and hasattr(e.response, 'json'):
-             st.error(f"Detalhes: {e.response.json()}")
-        st.info("Verifique se a conta de serviço tem permissão para acessar esta planilha e se as APIs Google Sheets/Drive estão habilitadas.")
-        st.stop()
-    except Exception as e:
-        st.error(f"CRÍTICO: Erro genérico ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨")
-        st.stop()
+    except Exception as e: st.error(f"CRÍTICO: Erro ao conectar {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
 
 @st.cache_data
 def load_fightcard_data():
@@ -95,7 +84,7 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
-            else: df_att[col] = pd.NA # Usar pd.NA para consistência
+            else: df_att[col] = pd.NA
         return df_att
     except Exception as e: st.error(f"Erro ao carregar Attendance: {e}"); return pd.DataFrame()
 
@@ -151,15 +140,15 @@ header_cols = st.columns([0.3, 0.4, 0.3])
 with header_cols[0]:
     if st.button("🔄 Atualizar Dados",key="refresh_dash_manual_btn_mobile_v6",use_container_width=True):
         st.cache_data.clear(); st.cache_resource.clear()
-        if 'edited_athlete_df' in st.session_state:
+        if 'edited_athlete_df' in st.session_state: # Limpar o estado do DF editado
             del st.session_state.edited_athlete_df
-        if 'data_signature_for_highlights' in st.session_state:
-            del st.session_state.data_signature_for_highlights
         st.toast("Dados atualizados!",icon="🎉");st.rerun()
 
-HIGHLIGHT_COLOR = "#FFF3C4"
+# CSS para highlight e outros estilos
+HIGHLIGHT_COLOR = "#FFF3C4" # Amarelo claro para highlight
 st.markdown(f"""
     <style>
+        /* Estilos gerais da tabela */
         div[data-testid="stDataFrameResizable"] div[data-baseweb="table-cell"] > div {{
             margin: auto; white-space: normal !important; word-break: break-word !important;
         }}
@@ -175,32 +164,32 @@ st.markdown(f"""
         div[data-testid="stDataFrameResizable"] img {{
             max-height: 50px; object-fit: contain;
         }}
+
+        /* CSS para highlight da linha baseado no checkbox */
+        /* Localiza a linha (tr) que contém (has) uma célula (td) com um checkbox marcado */
         div[data-testid="stDataFrameResizable"] tbody tr:has(td div[data-baseweb="checkbox"] input[type="checkbox"]:checked) {{
             background-color: {HIGHLIGHT_COLOR} !important;
         }}
+        /* Opcional: Estilo para o próprio checkbox para torná-lo mais sutil ou integrado */
+        /* div[data-testid="stDataFrameResizable"] td div[data-baseweb="checkbox"] label {{ padding: 0; }} */
     </style>
 """, unsafe_allow_html=True)
 st.markdown("<hr style='margin-top:5px;margin-bottom:15px;'>",True)
 
-df_fc_raw=None;df_att_raw=None;all_tsks_raw=None;load_err=False;err_ph=st.empty()
+# Carregamento de dados
+df_fc_raw=None;df_att=None;all_tsks=None;load_err=False;err_ph=st.empty()
 with st.spinner("Carregando dados..."):
     try:
-        df_fc_raw=load_fightcard_data()
-        df_att_raw=load_attendance_data()
-        all_tsks_raw=get_task_list()
-        if df_fc_raw.empty or not all_tsks_raw:load_err=True
-    except Exception as e:
-        err_ph.error(f"Erro crítico no carregamento inicial de dados: {e}")
-        load_err=True
-        st.stop()
+        df_fc_raw=load_fightcard_data();df_att=load_attendance_data();all_tsks=get_task_list()
+        if df_fc_raw.empty or not all_tsks:load_err=True
+    except Exception as e:err_ph.error(f"Erro crítico carregamento: {e}");load_err=True
 
-if load_err: # Este bloco agora é mais para o caso de df_fc_raw.empty ou all_tsks_raw ser vazio
+if load_err:
     if df_fc_raw is not None and df_fc_raw.empty:err_ph.warning("Fightcard vazio.")
-    if not all_tsks_raw:err_ph.error("Lista de Tarefas vazia.")
-    st.stop()
-# As verificações abaixo são redundantes se st.stop() foi chamado, mas mantidas por segurança
-elif df_fc_raw.empty:st.warning("Nenhum dado de Fightcard."); st.stop()
-elif not all_tsks_raw:st.error("TaskList não carregada."); st.stop()
+    if not all_tsks:err_ph.error("Lista de Tarefas vazia.")
+    if not(df_fc_raw is not None and df_fc_raw.empty)and not(not all_tsks):st.error("Falha carregar dados.")
+elif df_fc_raw.empty:st.warning("Nenhum dado de Fightcard.")
+elif not all_tsks:st.error("TaskList não carregada.")
 else:
     avail_evs=sorted(df_fc_raw[FC_EVENT_COL].dropna().unique().tolist(),reverse=True)
     if not avail_evs:st.warning("Nenhum evento no Fightcard.");st.stop()
@@ -216,15 +205,17 @@ else:
     
     num_lutas_evento_original = 0
     if not df_fc_filtered_by_event.empty:
-        num_lutas_evento_original = df_fc_filtered_by_event.groupby([FC_EVENT_COL, FC_ORDER_COL], sort=False).ngroups
+        num_lutas_evento_original = df_fc_filtered_by_event.groupby([FC_EVENT_COL, FC_ORDER_COL]).ngroups
 
     if df_fc_filtered_by_event.empty and sel_ev_opt != "Todos os Eventos":
         st.info(f"Nenhuma luta para '{sel_ev_opt}'.");st.stop()
     elif df_fc_filtered_by_event.empty and sel_ev_opt == "Todos os Eventos":
          st.info(f"Nenhuma luta encontrada.");st.stop()
 
+    # Construção do DataFrame para o dashboard (uma linha por lutador)
     dash_data_list=[]
     for (event, fight_order_original), group in df_fc_filtered_by_event.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL], sort=False):
+        # ... (lógica de processamento de blue_fighter_series e red_fighter_series como antes) ...
         fighters_in_fight = []
         blue_fighter_series = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0)
         red_fighter_series = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
@@ -250,11 +241,11 @@ else:
             fighter_row["Lutador"] = f"{corner_emoji} {name_display_text}".strip()
 
             if fighter_name_fc != "N/A" and athlete_id_fc:
-                for task in all_tsks_raw:
-                    emoji_status = get_task_status_representation(athlete_id_fc, task, df_att_raw)
+                for task in all_tsks:
+                    emoji_status = get_task_status_representation(athlete_id_fc, task, df_att)
                     fighter_row[task] = emoji_status
             else:
-                for task in all_tsks_raw:
+                for task in all_tsks:
                     fighter_row[task] = STATUS_TO_EMOJI.get("Pendente", DEFAULT_EMOJI)
             dash_data_list.append(fighter_row)
 
@@ -262,26 +253,33 @@ else:
         st.info(f"Nenhum lutador processado para '{sel_ev_opt}'.");st.stop()
     
     df_dashboard_processed = pd.DataFrame(dash_data_list)
+
+    # Aplicar filtro de busca textual
     df_to_display_filtered_by_search = df_dashboard_processed.copy()
     if search_term:
         df_to_display_filtered_by_search = df_to_display_filtered_by_search[
             df_to_display_filtered_by_search["Lutador"].astype(str).str.contains(search_term, case=False, na=False)
         ]
+
+    # Gerenciar o estado da coluna de highlight
+    # Se já temos um DF editado no session_state, usamos o estado de highlight dele.
+    # Caso contrário, inicializamos a coluna _HIGHLIGHT_ como False.
+    # É crucial que o 'edited_athlete_df' seja resetado ou reconciliado se os dados base mudarem (ex: refresh, mudança de evento)
     
+    # Chave única para o df editado baseado no evento e termo de busca para evitar conflitos de estado
     current_data_signature = f"{sel_ev_opt}_{search_term}"
     if 'data_signature_for_highlights' not in st.session_state or st.session_state.data_signature_for_highlights != current_data_signature:
         if 'edited_athlete_df' in st.session_state:
-            del st.session_state.edited_athlete_df
+            del st.session_state.edited_athlete_df # Reseta se a "fonte" dos dados mudou
         st.session_state.data_signature_for_highlights = current_data_signature
-
-    df_to_display_filtered_by_search = df_to_display_filtered_by_search.reset_index(drop=True)
 
     if 'edited_athlete_df' in st.session_state and \
        len(st.session_state.edited_athlete_df) == len(df_to_display_filtered_by_search) and \
-       list(st.session_state.edited_athlete_df.index) == list(df_to_display_filtered_by_search.index) and \
-       HIGHLIGHT_COL_NAME in st.session_state.edited_athlete_df.columns:
+       list(st.session_state.edited_athlete_df.index) == list(df_to_display_filtered_by_search.index): # Verifica se os DFs são compatíveis
+        # Usa os estados de highlight do df editado anteriormente se os índices e tamanho baterem
         df_to_display_filtered_by_search[HIGHLIGHT_COL_NAME] = st.session_state.edited_athlete_df[HIGHLIGHT_COL_NAME]
     else:
+        # Inicializa a coluna de highlight se não houver estado anterior ou se os dados mudaram
         df_to_display_filtered_by_search[HIGHLIGHT_COL_NAME] = False
 
 
@@ -289,24 +287,27 @@ else:
         if search_term:
             st.info(f"Nenhum lutador encontrado com o termo '{search_term}' no evento '{sel_ev_opt}'.")
         else:
-            st.info(f"Nenhum lutador para exibir no evento '{sel_ev_opt}'.")
+            st.info(f"Nenhum lutador para exibir no evento '{sel_ev_opt}'.") # Deve ser raro aqui
         st.stop()
 
+
+    # Configuração das colunas do editor
     col_conf_edit = {
-        HIGHLIGHT_COL_NAME: st.column_config.CheckboxColumn("HL", width="small", default=False),
+        HIGHLIGHT_COL_NAME: st.column_config.CheckboxColumn("HL", width="small", default=False), # HL para Highlight
         "Evento": st.column_config.TextColumn(width="small", disabled=True),
-        "Foto": st.column_config.ImageColumn("Foto", width="small"), # Removido disabled=True
+        "Foto": st.column_config.ImageColumn("Foto", width="small", disabled=True), # Desabilitar edição de foto
         "Lutador": st.column_config.TextColumn("Lutador (ID - Nome)", width="large", disabled=True),
     }
+    # Ordem das colunas: Colocar Highlight primeiro
     col_ord_list = [HIGHLIGHT_COL_NAME, "Evento", "Foto", "Lutador"]
-    for task_name_col in all_tsks_raw: col_ord_list.append(task_name_col)
+    for task_name_col in all_tsks: col_ord_list.append(task_name_col)
 
     leg_parts=[f"{emo}: {dsc}"for emo,dsc in EMOJI_LEGEND.items()if emo.strip()!=""]
     help_txt_leg_disp=", ".join(leg_parts)
 
-    for task_name_col in all_tsks_raw:
+    for task_name_col in all_tsks:
         col_conf_edit[task_name_col] = st.column_config.TextColumn(
-            label=task_name_col, width="small", help=f"Status: {help_txt_leg_disp}", disabled=True
+            label=task_name_col, width="small", help=f"Status: {help_txt_leg_disp}", disabled=True # Tarefas desabilitadas para edição
         )
 
     st.subheader(f"Detalhes dos Atletas: {sel_ev_opt}{f' (Busca: "{search_term}")' if search_term else ''}")
@@ -317,21 +318,27 @@ else:
     header_height = 45
     table_height = min(max(300, (num_rows_display * row_height_approx) + header_height), 800)
 
-    edited_df_output = st.data_editor(
+    # Usar uma chave para o data_editor para que possamos acessar seu estado se necessário (embora não diretamente para este CSS)
+    # O `disabled=False` geral é para permitir que o checkbox funcione. As colunas de dados são desabilitadas individualmente.
+    edited_df = st.data_editor(
         df_to_display_filtered_by_search,
         column_config=col_conf_edit, column_order=col_ord_list, hide_index=True,
         use_container_width=True, num_rows="fixed",
-        disabled=False,
+        disabled=False, # Editor geral habilitado para o checkbox funcionar
         height=int(table_height),
         key="athlete_editor_with_highlight"
     )
-    
-    st.session_state.edited_athlete_df = edited_df_output.copy()
+
+    # Armazenar o DF editado (com os estados dos checkboxes) no session_state
+    # para persistir os highlights entre reruns (ex: quando o autorefresh acontece)
+    st.session_state.edited_athlete_df = edited_df.copy()
+
 
     st.markdown("---")
+    # Estatísticas (baseadas no `edited_df` que reflete a busca e os highlights dos checkboxes)
     st.subheader(f"Estatísticas: {sel_ev_opt}{f' (Busca: "{search_term}")' if search_term else ''}")
     
-    df_stats_source = edited_df_output
+    df_stats_source = edited_df # Usar o DF que saiu do editor para estatísticas
     
     if not df_stats_source.empty:
         valid_athlete_ids_display = df_stats_source[df_stats_source["Lutador"] != "N/A"]["Lutador"].apply(
@@ -340,9 +347,10 @@ else:
         tot_ath_uniq_display = len(valid_athlete_ids_display)
 
         done_c, req_c, not_sol_c, pend_c, tot_tsk_slots = 0, 0, 0, 0, 0
+        # Considerar apenas lutadores não "N/A" para estatísticas de tarefas
         df_valid_fighters_tasks_display = df_stats_source[df_stats_source["Lutador"] != "N/A"]
 
-        for tsk in all_tsks_raw:
+        for tsk in all_tsks:
             if tsk in df_valid_fighters_tasks_display.columns:
                 task_emojis_series = df_valid_fighters_tasks_display[tsk]
                 tot_tsk_slots += len(task_emojis_series)

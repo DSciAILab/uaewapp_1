@@ -8,7 +8,7 @@ from datetime import datetime
 import html 
 import os 
 
-# --- Constantes (COPIE AS SUAS CONSTANTES AQUI) ---
+# --- Constantes ---
 MAIN_SHEET_NAME = "UAEW_App" 
 CONFIG_TAB_NAME = "Config"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -20,7 +20,7 @@ ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
-NAME_COLUMN_IN_ATTENDANCE = "Fighter" # Coluna com nome do lutador na aba Attendance 
+NAME_COLUMN_IN_ATTENDANCE = "Fighter"  
 
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
@@ -33,9 +33,9 @@ STATUS_TO_NUM = {
     "---": 1, "Não Solicitado": 1, "Requested": 2, "Done": 3,
     "Pendente": 0, "Não Registrado": 0
 }
-NUM_TO_STATUS_VERBOSE = {
+NUM_TO_STATUS_VERBOSE = { # Legendas curtas para os labels
     0: "Pendente", 1: "---", 2: "Requested", 3: "Done"
-} # Legenda mais curta para os labels
+}
 
 # --- Função para Carregar CSS Externo ---
 def local_css(file_name):
@@ -44,10 +44,12 @@ def local_css(file_name):
     try:
         with open(css_file_path, "r", encoding="utf-8") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    except FileNotFoundError: st.error(f"CSS '{file_name}' NÃO encontrado em: {css_file_path}.")
-    except Exception as e: st.error(f"Erro ao carregar CSS '{css_file_path}': {e}")
+    except FileNotFoundError:
+        st.error(f"CSS '{file_name}' NÃO encontrado em: {css_file_path}.")
+    except Exception as e:
+        st.error(f"Erro ao carregar CSS '{css_file_path}': {e}")
 
-# --- Funções de Conexão e Carregamento de Dados (MANTENHA SUAS FUNÇÕES FUNCIONAIS) ---
+# --- Funções de Conexão e Carregamento de Dados ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -86,7 +88,9 @@ def load_athletes_info_df(sheet_name=MAIN_SHEET_NAME, athletes_tab=ATHLETES_INFO
         else: df_ath[ATHLETE_SHEET_ID_COL] = None
         if ATHLETE_SHEET_NAME_COL in df_ath.columns: df_ath[ATHLETE_SHEET_NAME_COL] = df_ath[ATHLETE_SHEET_NAME_COL].astype(str).str.strip()
         else: df_ath[ATHLETE_SHEET_NAME_COL] = None
-        # A coluna INACTIVE não é usada neste dashboard específico, mas mantida se sua função a necessitar
+        # A coluna INACTIVE não é usada diretamente aqui, mas a lógica é mantida caso precise
+        if "INACTIVE" in df_ath.columns: df_ath["INACTIVE"] = df_ath["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+        else: df_ath["INACTIVE"] = False # Assume ativo se a coluna não existir
         return df_ath
     except Exception as e: st.error(f"Erro ao carregar infos dos atletas '{athletes_tab}': {e}"); return pd.DataFrame()
 
@@ -115,7 +119,7 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
         return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
     except Exception as e: st.error(f"Erro ao carregar TaskList da Config: {e}"); return []
 
-def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance): # Função como antes
+def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance):
     if df_attendance.empty or pd.isna(athlete_id_to_check) or str(athlete_id_to_check).strip() == "" or not task_name: return 0 
     if ATTENDANCE_ATHLETE_ID_COL not in df_attendance.columns or ATTENDANCE_TASK_COL not in df_attendance.columns or ATTENDANCE_STATUS_COL not in df_attendance.columns: return 0 
     athlete_id_str = str(athlete_id_to_check).strip()
@@ -136,22 +140,22 @@ def get_numeric_task_status(athlete_id_to_check, task_name, df_attendance): # Fu
         except Exception: pass 
     return STATUS_TO_NUM.get(str(latest_status_str).strip(), 0)
 
-# --- Nova Função para Renderizar Tabela HTML com Task Labels ---
 def render_fight_table_with_task_labels(df_fc, df_att, tasks_all, fighter_id_map_param):
     html_content = ""
     grouped_events = df_fc.groupby(FC_EVENT_COL, sort=False)
+    colspan_val = 5 # Foto, LutadorAzul+Tarefas, Detalhes, LutadorVermelho+Tarefas, Foto
 
     for ev_name, ev_group in grouped_events:
-        html_content += f"<table><tr><td colspan='5' class='event-header-cell'>{html.escape(str(ev_name))}</td></tr></table>" # 5 colunas agora
-        html_content += "<table class='dashboard-fight-table'>" # Reutiliza a classe se os estilos gerais forem os mesmos
+        html_content += f"<table><tr><td colspan='{colspan_val}' class='event-header-cell'>{html.escape(str(ev_name))}</td></tr></table>"
+        html_content += "<table class='dashboard-fight-table'>"
         html_content += """
         <thead>
             <tr>
-                <th style="width: 10%;">Foto</th>
-                <th style="width: 35%;">Lutador Azul & Tarefas</th>
+                <th style="width: 8%;">Foto</th>
+                <th style="width: 37%;">Lutador Azul & Tarefas</th> 
                 <th style="width: 10%;">Detalhes</th>
-                <th style="width: 35%;">Lutador Vermelho & Tarefas</th>
-                <th style="width: 10%;">Foto</th>
+                <th style="width: 37%;">Lutador Vermelho & Tarefas</th>
+                <th style="width: 8%;">Foto</th>
             </tr>
         </thead>
         <tbody>
@@ -162,67 +166,85 @@ def render_fight_table_with_task_labels(df_fc, df_att, tasks_all, fighter_id_map
             red_s = f_df[f_df[FC_CORNER_COL] == "red"].squeeze(axis=0)
             html_content += "<tr>"
 
-            for corner_data in [(blue_s, "blue-corner-text"), (red_s, "red-corner-text")]:
-                series_data, name_class_color = corner_data
-                fighter_name_val = str(series_data.get(FC_FIGHTER_COL, "")).strip() if isinstance(series_data, pd.Series) else ""
-                athlete_id_val = fighter_id_map_param.get(fighter_name_val, None) if fighter_name_val else None
-                
-                img_src_val = series_data.get(FC_PICTURE_COL, '') if isinstance(series_data, pd.Series) else ''
-                img_tag_html = f"<img src='{html.escape(str(img_src_val))}' class='fighter-img'>" if img_src_val and isinstance(img_src_val, str) and img_src_val.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
+            # Processa Canto Azul
+            fighter_name_blue = str(blue_s.get(FC_FIGHTER_COL, "")).strip() if isinstance(blue_s, pd.Series) else ""
+            athlete_id_blue = fighter_id_map_param.get(fighter_name_blue, None) if fighter_name_blue else None
+            img_src_blue = blue_s.get(FC_PICTURE_COL, '') if isinstance(blue_s, pd.Series) else ''
+            img_tag_blue = f"<img src='{html.escape(str(img_src_blue))}' class='fighter-img'>" if img_src_blue and isinstance(img_src_blue, str) and img_src_blue.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
+            info_geral_blue = html.escape(str(blue_s.get("Nationality", ""))) if isinstance(blue_s,pd.Series) else "" 
+            html_content += f"<td class='fighter-img-cell'>{img_tag_blue}</td>"
+            html_content += f"<td class='fighter-details-cell {'' if fighter_name_blue == 'N/A' else 'blue-corner-text'}'>" # Aplica classe de cor do nome
+            html_content += f"<span class='fighter-name-main'>{html.escape(fighter_name_blue) if fighter_name_blue != 'N/A' else '<i>Lutador a ser definido</i>'}</span>"
+            if info_geral_blue and fighter_name_blue != 'N/A': html_content += f"<span class='fighter-info-general'>{info_geral_blue}</span>"
+            if fighter_name_blue and fighter_name_blue != "N/A" and athlete_id_blue:
+                html_content += "<div class='task-grid'>"
+                for task_item in tasks_all:
+                    status_num = get_numeric_task_status(athlete_id_blue, task_item, df_att)
+                    status_text_short = NUM_TO_STATUS_VERBOSE.get(status_num, str(status_num)) 
+                    label_class = f"status-indicator-{status_num}"
+                    html_content += f"<div class='task-item'><span class='task-status-indicator {label_class}'></span><span class='task-name'>{html.escape(task_item)}</span></div>" # Removido status_text_short do span
+                html_content += "</div>"
+            html_content += "</td>"
 
-                task_labels_html = ""
-                if fighter_name_val and fighter_name_val != "N/A" and athlete_id_val:
-                    task_labels_html += "<div class='task-labels-container'>"
-                    for task_item in tasks_all:
-                        status_num = get_numeric_task_status(athlete_id_val, task_item, df_att)
-                        status_text_short = NUM_TO_STATUS_VERBOSE.get(status_num, str(status_num)) # Pega a legenda curta
-                        label_class = f"label-status-{status_num}"
-                        task_labels_html += f"<span class='task-label {label_class}'>{html.escape(task_item)}: {html.escape(status_text_short)}</span>"
-                    task_labels_html += "</div>"
-                
-                # Info Geral (exemplo: Nacionalidade) - pode ser adicionado abaixo do nome
-                info_geral_val = html.escape(str(series_data.get("Nationality", ""))) if isinstance(series_data, pd.Series) else ""
+            # Detalhes da Luta
+            division = html.escape(str(blue_s.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "") if isinstance(red_s, pd.Series) else "")))
+            fight_order_disp = int(f_order) if pd.notna(f_order) else ""
+            html_content += f"<td class='fight-details-cell'>FIGHT #{fight_order_disp}<br>{division}</td>"
 
-
-                if corner_data[0] is blue_s: # Lutador Azul
-                    html_content += f"<td class='fighter-cell'>{img_tag_html}</td>"
-                    html_content += f"<td class='fighter-details-cell {name_class_color}'>"
-                    html_content += f"<span class='fighter-name-main'>{html.escape(fighter_name_val)}</span>"
-                    if info_geral_val: html_content += f"<span class='fighter-info-general'>{info_geral_val}</span>"
-                    html_content += task_labels_html
-                    html_content += "</td>"
-                
-                if corner_data[0] is blue_s: # Detalhes da luta após o lutador azul
-                    division = html.escape(str(series_data.get(FC_DIVISION_COL, red_s.get(FC_DIVISION_COL, "") if isinstance(red_s, pd.Series) else "")))
-                    fight_order_disp = int(f_order) if pd.notna(f_order) else ""
-                    html_content += f"<td class='fight-details-cell'>FIGHT #{fight_order_disp}<br>{division}</td>"
-
-                if corner_data[0] is red_s: # Lutador Vermelho
-                    html_content += f"<td class='fighter-details-cell {name_class_color}'>"
-                    html_content += f"<span class='fighter-name-main'>{html.escape(fighter_name_val)}</span>"
-                    if info_geral_val: html_content += f"<span class='fighter-info-general'>{info_geral_val}</span>"
-                    html_content += task_labels_html
-                    html_content += "</td>"
-                    html_content += f"<td class='fighter-cell'>{img_tag_html}</td>"
+            # Processa Canto Vermelho
+            fighter_name_red = str(red_s.get(FC_FIGHTER_COL, "")).strip() if isinstance(red_s, pd.Series) else ""
+            athlete_id_red = fighter_id_map_param.get(fighter_name_red, None) if fighter_name_red else None
+            img_src_red = red_s.get(FC_PICTURE_COL, '') if isinstance(red_s, pd.Series) else ''
+            img_tag_red = f"<img src='{html.escape(str(img_src_red))}' class='fighter-img'>" if img_src_red and isinstance(img_src_red, str) and img_src_red.startswith("http") else "<div class='fighter-img' style='background-color:#333;'></div>"
+            info_geral_red = html.escape(str(red_s.get("Nationality", ""))) if isinstance(red_s,pd.Series) else "" 
+            html_content += f"<td class='fighter-details-cell {'' if fighter_name_red == 'N/A' else 'red-corner-text'}'>"
+            html_content += f"<span class='fighter-name-main'>{html.escape(fighter_name_red) if fighter_name_red != 'N/A' else '<i>Lutador a ser definido</i>'}</span>"
+            if info_geral_red and fighter_name_red != 'N/A': html_content += f"<span class='fighter-info-general'>{info_geral_red}</span>"
+            if fighter_name_red and fighter_name_red != "N/A" and athlete_id_red:
+                html_content += "<div class='task-grid'>"
+                for task_item in tasks_all:
+                    status_num = get_numeric_task_status(athlete_id_red, task_item, df_att)
+                    status_text_short = NUM_TO_STATUS_VERBOSE.get(status_num, str(status_num))
+                    label_class = f"status-indicator-{status_num}"
+                    html_content += f"<div class='task-item'><span class='task-status-indicator {label_class}'></span><span class='task-name'>{html.escape(task_item)}</span></div>"
+                html_content += "</div>"
+            html_content += "</td>"
+            html_content += f"<td class='fighter-img-cell'>{img_tag_red}</td>"
             html_content += "</tr>"
         html_content += "</tbody></table>"
     return html_content
 
-def calculate_table_height_html_labels(df_fightcard, base_event_h=60, fight_h_estimate=120, header_footer_h=100): # fight_h_estimate pode ser maior com labels
+def calculate_table_height_html_labels(df_fightcard, base_event_h=70, fight_h_estimate=220, header_footer_h=150): # Aumentado fight_h_estimate
     num_events = df_fightcard[FC_EVENT_COL].nunique() if not df_fightcard.empty else 0
     num_fights = len(df_fightcard.drop_duplicates(subset=[FC_EVENT_COL, FC_ORDER_COL])) if not df_fightcard.empty else 0
     total_h = (num_events * base_event_h) + (num_fights * fight_h_estimate) + header_footer_h
-    return max(total_h, 700) 
+    return max(total_h, 800) 
 
 # --- Início da Página Streamlit ---
 st.markdown("<h1 style='text-align: center; font-size: 2.8em; margin-bottom: 5px;'>DASHBOARD DE ATLETAS</h1>", unsafe_allow_html=True)
 local_css("style.css") 
 st.markdown("---")
 
-# ... (Carregamento de dados e seletor de evento como antes) ...
+if 'font_size_label_pref_html' not in st.session_state: st.session_state.font_size_label_pref_html = "Normal"
+font_size_options_map = {"Pequena": "14px", "Normal": "16px", "Média": "18px", "Grande": "20px"}
+
+top_cols = st.columns([0.25, 0.25, 0.5])
+with top_cols[0]:
+    if st.button("🔄 Atualizar Dados", key="refresh_dashboard_html_btn", use_container_width=True):
+        load_fightcard_data.clear(); load_attendance_data.clear(); get_task_list.clear(); load_athletes_info_df.clear()
+        st.toast("Dados atualizados!", icon="🎉"); st.rerun()
+with top_cols[1]:
+    st.session_state.font_size_label_pref_html = st.selectbox(
+        "Fonte da Tabela:", options=list(font_size_options_map.keys()),
+        index=list(font_size_options_map.keys()).index(st.session_state.font_size_label_pref_html),
+        key="font_size_table_selector_html"
+    )
+selected_font_size_css_val = font_size_options_map[st.session_state.font_size_label_pref_html]
+st.markdown(f"""<style> .dashboard-fight-table td, .dashboard-fight-table th {{ font-size: {selected_font_size_css_val} !important; }} </style>""", unsafe_allow_html=True)
+st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+
 df_fc_data = None; df_att_data = None; all_tasks_list = []; df_athletes_lookup = None
 loading_error_flag = False; error_placeholder = st.empty()
-
 with st.spinner("Carregando todos os dados... Aguarde!"):
     try:
         df_fc_data = load_fightcard_data(); df_att_data = load_attendance_data() 
@@ -231,43 +253,7 @@ with st.spinner("Carregando todos os dados... Aguarde!"):
         if not all_tasks_list: loading_error_flag = True
     except Exception as e: error_placeholder.error(f"Erro crítico durante carregamento: {e}"); loading_error_flag = True
 
-col_btn_refresh_main, col_font_selector, _ = st.columns([0.25, 0.25, 0.5]) 
-with col_btn_refresh_main:
-    if st.button("🔄 Atualizar Dados", key="refresh_dashboard_btn_novo", use_container_width=True):
-        load_fightcard_data.clear(); load_attendance_data.clear(); get_task_list.clear(); load_athletes_info_df.clear()
-        st.toast("Dados atualizados!", icon="🎉"); st.rerun()
-
-# --- Controle de Tamanho da Fonte (Adicionado) ---
-font_size_options_map = {"Normal": "16px", "Médio": "18px", "Grande": "20px"} # Mapeia label para valor CSS
-if 'font_size_label_pref' not in st.session_state:
-    st.session_state.font_size_label_pref = "Normal"
-
-with col_font_selector:
-    st.session_state.font_size_label_pref = st.selectbox(
-        "Fonte da Tabela:",
-        options=list(font_size_options_map.keys()),
-        index=list(font_size_options_map.keys()).index(st.session_state.font_size_label_pref),
-        key="font_size_table_selector"
-    )
-selected_font_size_css = font_size_options_map[st.session_state.font_size_label_pref]
-
-# Injeta CSS para o tamanho da fonte da tabela dinamicamente
-st.markdown(f"""
-<style>
-    .dashboard-fight-table td, .dashboard-fight-table th {{
-        font-size: {selected_font_size_css} !important;
-    }}
-    .fighter-name-main {{ font-size: calc({selected_font_size_css} * 1.2) !important; }}
-    .task-label {{ font-size: calc({selected_font_size_css} * 0.8) !important; }}
-    .event-header-cell {{ font-size: calc({selected_font_size_css} * 1.3) !important; }}
-</style>
-""", unsafe_allow_html=True)
-st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
-
-
-# --- Lógica de Exibição Principal ---
 if loading_error_flag:
-    # ... (lógica de erro como antes) ...
     if df_fc_data is not None and df_fc_data.empty : error_placeholder.warning("Fightcard vazio.")
     if not all_tasks_list : error_placeholder.error("Lista de Tarefas vazia.")
     if not (df_fc_data is not None and df_fc_data.empty) and not (not all_tasks_list) : st.error("Falha ao carregar dados.")
@@ -290,50 +276,47 @@ else:
     else: st.warning("Mapeamento de ID de atleta não pôde ser criado.")
 
     st.subheader(f"Detalhes das Lutas e Tarefas: {selected_event_val}")
-    # Legenda não é mais necessária se os labels mostrarem o status diretamente
-    # status_legend_parts_disp = [] 
-    # for key_n, value_d in NUM_TO_STATUS_VERBOSE.items(): status_legends_parts_disp.append(f"`{key_n}`: {value_d.split(' (')[0]}") 
-    # help_text_general_legend_disp = ", ".join(status_legends_parts_disp)
-    # st.markdown(f"**Legenda Status Tarefas:** {help_text_general_legend_disp}")
-
     if df_att_data is None: df_att_data = pd.DataFrame() 
-    elif df_att_data.empty and not st.session_state.get('att_empty_info_shown_dn_labels', False): # Nova chave de session_state
-        st.info("Dados de presença vazios. Status como 'Pendente'."); st.session_state.att_empty_info_shown_dn_labels = True
+    elif df_att_data.empty and not st.session_state.get('att_empty_info_shown_html_labels', False):
+        st.info("Dados de presença vazios. Status como 'Pendente'."); st.session_state.att_empty_info_shown_html_labels = True
     
     html_table_output = render_fight_table_with_task_labels(df_fc_display, df_att_data, all_tasks_list, fighter_id_mapping)
     table_render_height = calculate_table_height_html_labels(df_fc_display)
     st.components.v1.html(html_table_output, height=table_render_height, scrolling=True)
     st.markdown("---")
 
-    # --- Estatísticas (mantidas como antes) ---
     st.subheader(f"Estatísticas do Evento: {selected_event_val}")
-    # ... (seu código de estatísticas) ...
     if not df_fc_display.empty:
         total_lutas_evento = df_fc_display[FC_ORDER_COL].nunique()
         atletas_azuis_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='blue'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
         atletas_vermelhos_ev = [ath for ath in df_fc_display[df_fc_display[FC_CORNER_COL]=='red'][FC_FIGHTER_COL].dropna().unique() if ath != "N/A"]
         total_atletas_unicos_ev = len(set(atletas_azuis_ev + atletas_vermelhos_ev))
-        done_count_glob = 0; req_count_glob = 0; not_sol_count_glob = 0
-        if not df_att_data.empty and all_tasks_list:
-             all_athlete_ids_in_event = []
-             if fighter_id_mapping:
-                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_azuis_ev if fighter_id_mapping.get(name) is not None])
-                 all_athlete_ids_in_event.extend([fighter_id_mapping.get(name) for name in atletas_vermelhos_ev if fighter_id_mapping.get(name) is not None])
-                 all_athlete_ids_in_event = list(set(all_athlete_ids_in_event))
-             if all_athlete_ids_in_event:
-                 df_att_evento = df_att_data[df_att_data[ATTENDANCE_ATHLETE_ID_COL].isin(all_athlete_ids_in_event)]
-                 if not df_att_evento.empty:
-                    for task in all_tasks_list:
-                        # Recalcula o status numérico para cada tarefa/atleta no evento
-                        for ath_id_ev in all_athlete_ids_in_event:
-                            status_num_ev = get_numeric_task_status(ath_id_ev, task, df_att_evento)
-                            if status_num_ev == 3: done_count_glob +=1
-                            elif status_num_ev == 2: req_count_glob +=1
-                            elif status_num_ev == 1: not_sol_count_glob +=1
-        stat_cols = st.columns(4) 
+        done_count_glob = 0; req_count_glob = 0; not_sol_count_glob = 0; pend_count_glob = 0
+        
+        # Calcula estatísticas de tarefas para os atletas *deste evento*
+        athlete_ids_in_event = []
+        if fighter_id_mapping:
+            for name in set(atletas_azuis_ev + atletas_vermelhos_ev):
+                ath_id = fighter_id_mapping.get(name)
+                if ath_id: athlete_ids_in_event.append(ath_id)
+        
+        if athlete_ids_in_event and not df_att_data.empty and all_tasks_list:
+            df_att_evento_filtrado = df_att_data[df_att_data[ATTENDANCE_ATHLETE_ID_COL].isin(athlete_ids_in_event)]
+            if not df_att_evento_filtrado.empty:
+                for task in all_tasks_list:
+                    for ath_id_ev in athlete_ids_in_event:
+                        status_num_ev = get_numeric_task_status(ath_id_ev, task, df_att_evento_filtrado) # Usa df_att_evento_filtrado
+                        if status_num_ev == 3: done_count_glob +=1
+                        elif status_num_ev == 2: req_count_glob +=1
+                        elif status_num_ev == 1: not_sol_count_glob +=1
+                        elif status_num_ev == 0: pend_count_glob +=1
+        
+        stat_cols = st.columns(5) 
         stat_cols[0].metric("Lutas no Evento", total_lutas_evento)
-        stat_cols[1].metric("Atletas Únicos no Evento", total_atletas_unicos_ev)
-        stat_cols[2].metric("Tarefas 'Done'", done_count_glob)
-        stat_cols[3].metric("Tarefas 'Requested'", req_count_glob)
+        stat_cols[1].metric("Atletas Únicos", total_atletas_unicos_ev)
+        stat_cols[2].metric("Tarefas 'Done' (3)", done_count_glob)
+        stat_cols[3].metric("Tarefas 'Requested' (2)", req_count_glob)
+        stat_cols[4].metric("Tarefas '---' (1)", not_sol_count_glob)
+        # st.metric("Tarefas Pendentes (0)", pend_count_glob) # Se quiser exibir
     else: st.info("Nenhum dado para estatísticas do evento.")
 st.markdown(f"--- \n *Dashboard atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*")

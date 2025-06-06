@@ -26,12 +26,12 @@ FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
 STATUS_TO_EMOJI = {
-    "Done": "🟩", "Requested": "🟧", "---": "➖", "Não Solicitado": "➖",
-    "Pendente": "🟥", "Não Registrado": "🟥"
+    "Done": "🟩", "Requested": "🟨", "---": "➖", "Não Solicitado": "➖",
+    "Pendente": "🔴", "Não Registrado": "🔴"
 }
-DEFAULT_EMOJI = "🟥"
+DEFAULT_EMOJI = "🔴"
 EMOJI_LEGEND = {
-    "🟩": "Done", "🟧": "Requested", "➖": "---", "🟥": "Pendente"
+    "🟩": "Done", "🟨": "Requested", "➖": "---", "🔴": "Pendente"
 }
 CORNER_EMOJI_MAP = {"blue": "🔵", "red": "🔴", "n/a": ""}
 

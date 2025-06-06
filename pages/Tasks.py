@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import html
 
 # --- 1. Page Configuration ---
-st.set_page_config(page_title="Consulta e Registro de Atletas", layout="wide")
+st.set_page_config(page_title="UAEW | Task Control", layout="wide")
 
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App" 

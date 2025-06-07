@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh 
 
-# --- Constants ---
+# --- Constants (unchanged) ---
 MAIN_SHEET_NAME = "UAEW_App" 
 CONFIG_TAB_NAME = "Config"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -36,7 +36,7 @@ STATUS_INFO = {
 }
 DEFAULT_STATUS_CLASS = "status-pending"
 
-# --- Data Loading and Connection Functions (logic unchanged) ---
+# --- Data Loading and Connection Functions (unchanged) ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -126,7 +126,6 @@ def calculate_task_summary(df_processed, task_list):
     return summary
 
 def generate_mirrored_html_dashboard(df_processed, task_list):
-    # CORREÇÃO: Removido o parâmetro de fonte, pois agora será controlado pelo CSS principal
     header_html = "<thead><tr>"
     header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
     header_html += "<th class='center-col-header' rowspan=2>FIGHT #</th>"
@@ -141,7 +140,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html += "</tr></thead>"
     body_html = "<tbody>"
     for _, row in df_processed.iterrows():
-        body_html += "<tr>" # A fonte será aplicada a esta linha via CSS
+        body_html += "<tr>"
         for task in reversed(task_list):
             status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
@@ -162,12 +161,14 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 # --- Streamlit Page Configuration ---
 st.set_page_config(layout="wide", page_title="Fight Dashboard")
 
-# --- ATUALIZAÇÃO: Inicializa o estado do slider da fonte ---
 if 'table_font_size' not in st.session_state:
-    st.session_state.table_font_size = 14 # Default font size
+    st.session_state.table_font_size = 16 # Aumentado o padrão
 
-# --- ATUALIZAÇÃO: Bloco CSS agora é dinâmico para incluir a fonte ---
 def get_dashboard_style(font_size_px):
+    # ATUALIZAÇÃO: O tamanho da imagem e padding agora são calculados com base na fonte
+    img_size = font_size_px * 4
+    cell_padding = font_size_px * 0.8
+    
     return f"""
     <style>
         .dashboard-container {{ font-family: 'Segoe UI', sans-serif; }}
@@ -179,25 +180,26 @@ def get_dashboard_style(font_size_px):
         }}
         .dashboard-table th, .dashboard-table td {{
             border-right: 1px solid #4a4a50; border-bottom: 1px solid #4a4a50;
-            padding: 12px 8px; text-align: center; vertical-align: middle; min-width: 40px;
+            padding: {cell_padding}px 8px; /* Padding vertical dinâmico */
+            text-align: center; vertical-align: middle;
         }}
         .dashboard-table th {{
             background-color: #1c1c1f; font-size: 0.8rem; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.5px;
             white-space: normal; word-break: break-word;
         }}
-        .blue-corner-header {{ background-color: #0d2e4e !important; border-color: #1a4a75 !important; }}
-        .red-corner-header {{ background-color: #5a1d1d !important; border-color: #8b3d3d !important; }}
+        .blue-corner-header {{ background-color: #0d2e4e !important; }}
+        .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
-        
-        /* CORREÇÃO: A fonte é definida aqui para todas as células de dados */
-        .dashboard-table td {{
-            font-size: {font_size_px}px !important;
-        }}
-
+        .dashboard-table td {{ font-size: {font_size_px}px !important; }}
         .dashboard-table tr:hover td {{ background-color: #38383c; }}
-        .fighter-img {{ width: 55px; height: 55px; border-radius: 50%; object-fit: cover; border: 2px solid #666; }}
-        .fighter-name {{ font-weight: 600; min-width: 180px; }}
+        
+        .fighter-img {{
+            width: {img_size}px; height: {img_size}px; /* Tamanho da imagem dinâmico */
+            border-radius: 50%; object-fit: cover; border: 2px solid #666;
+        }}
+        
+        .fighter-name {{ font-weight: 600; min-width: 220px; }}
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
         .fight-number-cell {{ font-weight: bold; font-size: 1.2em; background-color: #333; }}
@@ -213,16 +215,17 @@ def get_dashboard_style(font_size_px):
 
 # --- Main Page Content ---
 st.markdown("<h1 style='text-align: center;'>FIGHTER & TASK DASHBOARD</h1>", unsafe_allow_html=True)
-st_autorefresh(interval=60000, key="dash_auto_refresh_v12")
+st_autorefresh(interval=60000, key="dash_auto_refresh_v13")
 
 # --- Sidebar Controls ---
 st.sidebar.title("Dashboard Controls")
 if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
     st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
 
+# ATUALIZAÇÃO: Slider com range aumentado
 st.session_state.table_font_size = st.sidebar.slider(
     "Table Font Size (px)",
-    min_value=10, max_value=22, value=st.session_state.table_font_size, step=1
+    min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
 
@@ -281,7 +284,7 @@ if dash_data_list:
         if col_index < len(cols):
             with cols[col_index]:
                 with st.container(border=True):
-                    st.markdown(f"<h3 style='text-align: center; margin-bottom: 10px; font-size: 1em;'>{task}</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='text-align: center; margin-bottom: 10px; font-size: 1.1em;'>{task}</h3>", unsafe_allow_html=True)
                     m_cols = st.columns(3)
                     m_cols[0].metric("✅ Done", data.get("Done", 0))
                     m_cols[1].metric("🟨 Requested", data.get("Requested", 0))

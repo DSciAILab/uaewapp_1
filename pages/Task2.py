@@ -16,6 +16,8 @@ USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance" 
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 CONFIG_TAB_NAME = "Config"
+# ATUALIZAÇÃO: Garantindo que a constante de timestamp seja usada
+ATTENDANCE_TIMESTAMP_COL = "Timestamp" 
 NO_TASK_SELECTED = "-- Select a Task --"
 STATUS_PENDING = ["Pending", "---", "Not Registered"] 
 
@@ -36,37 +38,30 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except Exception as e:
         st.error(f"Error connecting to tab '{tab_name}': {e}", icon="🚨"); st.stop()
 
-# --- ATUALIZAÇÃO: Refatorado para usar get_all_values() e ser mais robusto ---
 @st.cache_data(ttl=300)
 def load_data():
     try:
         client = get_gspread_client()
-        
-        # --- Atletas ---
+        # Atletas
         athletes_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, ATHLETES_TAB_NAME)
         athletes_values = athletes_ws.get_all_values()
         if len(athletes_values) < 2: return pd.DataFrame(), pd.DataFrame(), []
         df_athletes = pd.DataFrame(athletes_values[1:], columns=athletes_values[0])
-        
-        # Processamento do DataFrame de atletas
-        df_athletes = df_athletes.loc[:, ~df_athletes.columns.duplicated()] # Remove colunas duplicadas se houver
+        df_athletes = df_athletes.loc[:, ~df_athletes.columns.duplicated()]
         df_athletes = df_athletes[(df_athletes['ROLE'] == '1 - Fighter') & (df_athletes['INACTIVE'].astype(str).str.upper() != 'TRUE')]
         df_athletes = df_athletes[['ID', 'NAME', 'EVENT']].copy()
         df_athletes.columns = df_athletes.columns.str.strip()
 
-        # --- Registros de Presença ---
+        # Registros de Presença
         attendance_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, ATTENDANCE_TAB_NAME)
         attendance_values = attendance_ws.get_all_values()
-        if len(attendance_values) < 2: 
-            df_attendance = pd.DataFrame()
-        else:
-            df_attendance = pd.DataFrame(attendance_values[1:], columns=attendance_values[0])
+        if len(attendance_values) < 2: df_attendance = pd.DataFrame()
+        else: df_attendance = pd.DataFrame(attendance_values[1:], columns=attendance_values[0])
 
-        # --- Configurações (Tarefas) ---
+        # Configurações
         config_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, CONFIG_TAB_NAME)
         config_values = config_ws.get_all_values()
-        if len(config_values) < 2:
-            tasks = []
+        if len(config_values) < 2: tasks = []
         else:
             df_config = pd.DataFrame(config_values[1:], columns=config_values[0])
             tasks = df_config['TaskList'].dropna().tolist() if 'TaskList' in df_config.columns else []
@@ -76,19 +71,37 @@ def load_data():
         st.error(f"Failed to load initial data: {e}", icon="🚨")
         return pd.DataFrame(), pd.DataFrame(), []
 
+# --- CORREÇÃO: Função get_latest_statuses tornada mais robusta ---
 def get_latest_statuses(df_athletes, df_attendance, task):
     """Cria um DataFrame com o status mais recente de uma tarefa para cada atleta."""
     if task == NO_TASK_SELECTED or df_attendance.empty:
         df_athletes['Status'] = 'N/A'
         return df_athletes[['ID', 'NAME', 'EVENT', 'Status']]
 
-    # Filtra registros apenas para a tarefa selecionada
+    # Garante que a coluna 'Task' exista
+    if 'Task' not in df_attendance.columns:
+        st.error(f"Error: 'Task' column not found in '{ATTENDANCE_TAB_NAME}' sheet.")
+        df_athletes['Status'] = 'Error'
+        return df_athletes[['ID', 'NAME', 'EVENT', 'Status']]
+
     task_records = df_attendance[df_attendance['Task'] == task].copy()
+    
     if not task_records.empty:
-        task_records['Timestamp'] = pd.to_datetime(task_records['Timestamp'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        # Pega o último registro para cada atleta
-        latest_status_df = task_records.sort_values('Timestamp').groupby(ID_COLUMN_IN_ATTENDANCE).last().reset_index()
-        # Junta com a lista de atletas
+        # Verifica se a coluna de timestamp existe ANTES de tentar usá-la
+        if ATTENDANCE_TIMESTAMP_COL in task_records.columns:
+            task_records[ATTENDANCE_TIMESTAMP_COL] = pd.to_datetime(
+                task_records[ATTENDANCE_TIMESTAMP_COL], 
+                format='%d/%m/%Y %H:%M:%S', 
+                errors='coerce'
+            )
+            # Ordena por timestamp para garantir que pegamos o mais recente
+            latest_status_df = task_records.sort_values(ATTENDANCE_TIMESTAMP_COL).groupby(ID_COLUMN_IN_ATTENDANCE).last().reset_index()
+        else:
+            # Fallback: se não houver timestamp, assume que a última entrada na planilha é a mais recente
+            st.warning(f"Warning: Timestamp column '{ATTENDANCE_TIMESTAMP_COL}' not found. Using last entry as the latest.", icon="⚠️")
+            latest_status_df = task_records.groupby(ID_COLUMN_IN_ATTENDANCE).last().reset_index()
+
+        # Junta os status com a lista de atletas
         merged_df = pd.merge(df_athletes, latest_status_df[[ID_COLUMN_IN_ATTENDANCE, 'Status']], left_on='ID', right_on=ID_COLUMN_IN_ATTENDANCE, how='left')
         merged_df['Status'] = merged_df['Status'].fillna('Pending')
         return merged_df[['ID', 'NAME', 'EVENT', 'Status']]

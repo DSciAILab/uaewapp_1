@@ -152,8 +152,6 @@ def is_blood_test_expired(date_str: str) -> bool:
 
 # --- 6. Main Application Logic ---
 st.title("UAEW | Task Control")
-### ALTERAÇÃO/ADIÇÃO ### 
-# Adicionado 'selected_event' e 'fighter_search_query' para os novos filtros
 default_ss = {
     "warning_message": None, 
     "user_confirmed": False, 
@@ -227,13 +225,9 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
     with cc2:st.session_state.selected_statuses=st.multiselect("Filtrar Status:",statuses_list_cfg,default=st.session_state.selected_statuses or [],key="smul_w",disabled=(st.session_state.selected_task==NO_TASK_SELECTED_LABEL))
     with cc3:st.markdown("<br>",True);st.button("🔄 Atualizar",key="ref_b_w",help="Recarrega dados.",on_click=lambda:(load_athlete_data.clear(), load_users_data.clear(), load_config_data.clear(), load_attendance_data.clear(), st.toast("Dados atualizados!",icon="🔄"),st.rerun()),use_container_width=True)
     
-    ### ALTERAÇÃO/ADIÇÃO ### 
-    # Adicionando os novos campos de filtro
     col_filter1, col_filter2 = st.columns([0.4, 0.6])
     with col_filter1:
-        # Gera a lista de eventos a partir do dataframe de atletas
         if not df_athletes.empty and "EVENT" in df_athletes.columns:
-            # Pega eventos únicos, remove 'Z' (se usado como placeholder), ordena e adiciona a opção "Todos"
             event_list = sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"])
         else:
             event_list = []
@@ -263,22 +257,16 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
     else:
         df_filtered = df_athletes.copy() 
         
-        ### ALTERAÇÃO/ADIÇÃO ### 
-        # Lógica para aplicar os novos filtros
-        # 1. Filtro por Evento
         if st.session_state.selected_event != "Todos os Eventos":
             df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
 
-        # 2. Filtro por Pesquisa de Lutador (Nome ou ID)
         search_term = st.session_state.fighter_search_query.strip().lower()
         if search_term:
-            # Garante que a coluna ID seja string para a busca
             df_filtered = df_filtered[
                 df_filtered["NAME"].str.lower().str.contains(search_term, na=False) |
                 df_filtered["ID"].astype(str).str.lower().str.contains(search_term, na=False)
             ]
         
-        # Lógica de filtro por status (existente)
         if sel_task_actual and st.session_state.selected_statuses:
             show_ids=set()
             df_att_filt=df_attendance.copy()
@@ -325,8 +313,14 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             if mob_r:
                 mob_p=("+"+mob_r[2:])if mob_r.startswith("00")else("+971"+mob_r.lstrip("0"))if len(mob_r)>=9 and not mob_r.startswith("971")and not mob_r.startswith("+")else("+"+mob_r)if not mob_r.startswith("+")else mob_r
                 if mob_p.startswith("+"):wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(mob_p.replace('+',''),True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
+            
             bt_d_h,bt_ex_h=str(row.get("BLOOD TEST","")),is_blood_test_expired(str(row.get("BLOOD TEST","")))
-            bt_html=f"<tr style='color:{\"red\"if bt_ex_h else(\"#A0F0A0\"if bt_d_h else\"orange\")};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_d_h)if bt_d_h else'Não Registrado'}{f'<span style=\"font-weight:bold;\">(Expirado)</span>'if bt_ex_h and bt_d_h else''}</td></tr>"
+            
+            ### LINHA CORRIGIDA ###
+            # A linha abaixo foi alterada para usar f'''...''' (aspas triplas) para evitar o SyntaxError
+            # de aspas conflitantes, que era a causa do erro.
+            bt_html = f'''<tr style='color:{"red" if bt_ex_h else ("#A0F0A0" if bt_d_h else "orange")};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_d_h) if bt_d_h else 'Não Registrado'}{f' <span style="font-weight:bold;">(Expirado)</span>' if bt_ex_h and bt_d_h else ''}</td></tr>'''
+
             pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}{bt_html}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
             
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'><i>{task_stat_disp}</i></p></div></div>{pd_tbl_h}</div></div>""",True)

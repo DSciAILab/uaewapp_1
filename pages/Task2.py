@@ -9,7 +9,7 @@ import time
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Desktop Task Manager", layout="wide")
 
-# --- Constants (alguns traduzidos para clareza no código) ---
+# --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App" 
 ATHLETES_TAB_NAME = "df" 
 USERS_TAB_NAME = "Users"
@@ -19,7 +19,7 @@ CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED = "-- Select a Task --"
 STATUS_PENDING = ["Pending", "---", "Not Registered"] 
 
-# --- 2. Google Sheets Connection & Data Loading (sem grandes alterações na lógica) ---
+# --- 2. Google Sheets Connection & Data Loading ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -36,24 +36,40 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except Exception as e:
         st.error(f"Error connecting to tab '{tab_name}': {e}", icon="🚨"); st.stop()
 
+# --- ATUALIZAÇÃO: Refatorado para usar get_all_values() e ser mais robusto ---
 @st.cache_data(ttl=300)
 def load_data():
     try:
         client = get_gspread_client()
-        # Atletas
+        
+        # --- Atletas ---
         athletes_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, ATHLETES_TAB_NAME)
-        df_athletes = pd.DataFrame(athletes_ws.get_all_records())
+        athletes_values = athletes_ws.get_all_values()
+        if len(athletes_values) < 2: return pd.DataFrame(), pd.DataFrame(), []
+        df_athletes = pd.DataFrame(athletes_values[1:], columns=athletes_values[0])
+        
+        # Processamento do DataFrame de atletas
+        df_athletes = df_athletes.loc[:, ~df_athletes.columns.duplicated()] # Remove colunas duplicadas se houver
         df_athletes = df_athletes[(df_athletes['ROLE'] == '1 - Fighter') & (df_athletes['INACTIVE'].astype(str).str.upper() != 'TRUE')]
         df_athletes = df_athletes[['ID', 'NAME', 'EVENT']].copy()
         df_athletes.columns = df_athletes.columns.str.strip()
 
-        # Registros de Presença
+        # --- Registros de Presença ---
         attendance_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, ATTENDANCE_TAB_NAME)
-        df_attendance = pd.DataFrame(attendance_ws.get_all_records())
+        attendance_values = attendance_ws.get_all_values()
+        if len(attendance_values) < 2: 
+            df_attendance = pd.DataFrame()
+        else:
+            df_attendance = pd.DataFrame(attendance_values[1:], columns=attendance_values[0])
 
-        # Configurações (Tarefas)
+        # --- Configurações (Tarefas) ---
         config_ws = connect_gsheet_tab(client, MAIN_SHEET_NAME, CONFIG_TAB_NAME)
-        tasks = [row['TaskList'] for row in config_ws.get_all_records() if 'TaskList' in row and row['TaskList']]
+        config_values = config_ws.get_all_values()
+        if len(config_values) < 2:
+            tasks = []
+        else:
+            df_config = pd.DataFrame(config_values[1:], columns=config_values[0])
+            tasks = df_config['TaskList'].dropna().tolist() if 'TaskList' in df_config.columns else []
         
         return df_athletes, df_attendance, tasks
     except Exception as e:
@@ -97,43 +113,31 @@ def batch_register_log(athletes_to_update, task, new_status, user_name):
         for _, athlete in athletes_to_update.iterrows():
             next_num += 1
             new_row = [
-                str(next_num),
-                athlete['EVENT'],
-                athlete['ID'],
-                athlete['NAME'],
-                task,
-                new_status,
-                user_name,
-                ts,
-                "Batch Update"
+                str(next_num), athlete['EVENT'], athlete['ID'],
+                athlete['NAME'], task, new_status, user_name, ts, "Batch Update"
             ]
             rows_to_append.append(new_row)
         
         if rows_to_append:
             log_ws.append_rows(rows_to_append, value_input_option="USER_ENTERED")
             st.success(f"{len(rows_to_append)} athletes updated for task '{task}' to status '{new_status}'.")
-            load_data.clear() # Limpa o cache principal
+            load_data.clear()
     except Exception as e:
         st.error(f"Failed to batch update: {e}", icon="🚨")
 
-# --- Lógica de Autenticação (simplificada para focar na UI) ---
-# Em um app real, use a sua lógica de autenticação completa.
+# --- Lógica de Autenticação ---
 st.session_state.user_confirmed = True
 st.session_state.current_user_name = "Desktop User"
-# --- Fim da Autenticação ---
 
 if 'selected_athletes' not in st.session_state:
     st.session_state.selected_athletes = []
 
 if st.session_state.user_confirmed:
     st.title("🚀 Desktop Task Manager")
-
-    # Carrega todos os dados
     df_athletes, df_attendance, tasks = load_data()
 
     if df_athletes.empty:
-        st.warning("No active athletes found.")
-        st.stop()
+        st.warning("No active athletes found. Check your 'df' sheet and filters."); st.stop()
 
     # --- Controles e Filtros ---
     st.header("Controls & Filters")
@@ -145,13 +149,10 @@ if st.session_state.user_confirmed:
     with controls_cols[2]:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Refresh Data", use_container_width=True):
-            load_data.clear()
-            st.rerun()
+            load_data.clear(); st.rerun()
 
-    # Obtém a tabela de status com base na tarefa selecionada
     df_status = get_latest_statuses(df_athletes, df_attendance, selected_task)
     
-    # Aplica o filtro de busca
     if search_query:
         query = search_query.lower()
         df_status = df_status[
@@ -159,7 +160,6 @@ if st.session_state.user_confirmed:
             df_status['ID'].astype(str).str.contains(query)
         ]
     
-    # Adiciona a coluna de seleção
     df_status['Select'] = False
     
     st.markdown("---")
@@ -174,20 +174,17 @@ if st.session_state.user_confirmed:
             if st.button(f"➡️ Mark Selected as 'Requested'", use_container_width=True, type="primary"):
                 selected_rows = df_status.loc[st.session_state.selected_athletes]
                 batch_register_log(selected_rows, selected_task, "Requested", st.session_state.current_user_name)
-                time.sleep(1) # Dá tempo para a API processar antes de recarregar
-                st.rerun()
+                time.sleep(1); st.rerun()
         with action_cols[1]:
             if st.button(f"✅ Mark Selected as 'Done'", use_container_width=True):
                 selected_rows = df_status.loc[st.session_state.selected_athletes]
                 batch_register_log(selected_rows, selected_task, "Done", st.session_state.current_user_name)
-                time.sleep(1)
-                st.rerun()
+                time.sleep(1); st.rerun()
         with action_cols[2]:
             if st.button(f"❌ Mark Selected as '---'", use_container_width=True):
                 selected_rows = df_status.loc[st.session_state.selected_athletes]
                 batch_register_log(selected_rows, selected_task, "---", st.session_state.current_user_name)
-                time.sleep(1)
-                st.rerun()
+                time.sleep(1); st.rerun()
 
     st.markdown("---")
 
@@ -203,13 +200,9 @@ if st.session_state.user_confirmed:
             "EVENT": st.column_config.TextColumn("Event", disabled=True),
             "Status": st.column_config.TextColumn(disabled=True),
         },
-        use_container_width=True,
-        hide_index=True,
-        height=500, # Altura fixa para melhor visualização em desktop
-        key="athlete_editor"
+        use_container_width=True, hide_index=True, height=500, key="athlete_editor"
     )
 
-    # Lógica para armazenar os atletas selecionados
     st.session_state.selected_athletes = edited_df[edited_df['Select']].index.tolist()
 
     if st.session_state.selected_athletes:

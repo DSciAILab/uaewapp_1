@@ -133,10 +133,11 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html += "<th class='center-col-header' rowspan=2>DIVISION</th>"
     header_html += f"<th class='red-corner-header' colspan='{len(task_list) + 2}'>RED CORNER</th>"
     header_html += "</tr><tr>"
-    for task in reversed(task_list): header_html += f"<th>{task}</th>"
+    # Adicionando a classe .task-header para os cabeçalhos das tarefas
+    for task in reversed(task_list): header_html += f"<th class='task-header'>{task}</th>"
     header_html += "<th>Fighter</th><th>Photo</th>"
     header_html += "<th>Photo</th><th>Fighter</th>"
-    for task in task_list: header_html += f"<th>{task}</th>"
+    for task in task_list: header_html += f"<th class='task-header'>{task}</th>"
     header_html += "</tr></thead>"
     body_html = "<tbody>"
     for _, row in df_processed.iterrows():
@@ -162,10 +163,9 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 st.set_page_config(layout="wide", page_title="Fight Dashboard")
 
 if 'table_font_size' not in st.session_state:
-    st.session_state.table_font_size = 16 # Aumentado o padrão
+    st.session_state.table_font_size = 16
 
 def get_dashboard_style(font_size_px):
-    # ATUALIZAÇÃO: O tamanho da imagem e padding agora são calculados com base na fonte
     img_size = font_size_px * 4
     cell_padding = font_size_px * 0.8
     
@@ -173,38 +173,57 @@ def get_dashboard_style(font_size_px):
     <style>
         .dashboard-container {{ font-family: 'Segoe UI', sans-serif; }}
         .dashboard-table {{
-            width: 100%; border-collapse: separate; border-spacing: 0;
-            background-color: #2a2a2e; color: #e1e1e1;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background-color: #2a2a2e;
+            color: #e1e1e1;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            border-radius: 12px; overflow: hidden;
+            border-radius: 12px;
+            overflow: hidden;
+            table-layout: fixed; /* ATUALIZAÇÃO: Força larguras iguais */
         }}
         .dashboard-table th, .dashboard-table td {{
-            border-right: 1px solid #4a4a50; border-bottom: 1px solid #4a4a50;
-            padding: {cell_padding}px 8px; /* Padding vertical dinâmico */
-            text-align: center; vertical-align: middle;
+            border-right: 1px solid #4a4a50;
+            border-bottom: 1px solid #4a4a50;
+            padding: {cell_padding}px 8px;
+            text-align: center;
+            vertical-align: middle;
         }}
         .dashboard-table th {{
-            background-color: #1c1c1f; font-size: 0.8rem; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 0.5px;
-            white-space: normal; word-break: break-word;
+            background-color: #1c1c1f;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: normal;
+            word-break: break-word;
         }}
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
         .dashboard-table td {{ font-size: {font_size_px}px !important; }}
         .dashboard-table tr:hover td {{ background-color: #38383c; }}
-        
         .fighter-img {{
-            width: {img_size}px; height: {img_size}px; /* Tamanho da imagem dinâmico */
-            border-radius: 50%; object-fit: cover; border: 2px solid #666;
+            width: {img_size}px;
+            height: {img_size}px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #666;
         }}
-        
-        .fighter-name {{ font-weight: 600; min-width: 220px; }}
+        .fighter-name {{ font-weight: 600; width: 250px; }} /* Largura fixa para lutador */
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
-        .fight-number-cell {{ font-weight: bold; font-size: 1.2em; background-color: #333; }}
-        .event-cell {{ font-style: italic; background-color: #333; font-size: 0.85em; color: #ccc; }}
-        .division-cell {{ font-style: italic; background-color: #333; }}
+        
+        /* ATUALIZAÇÃO: Define larguras fixas para colunas não relacionadas a tarefas */
+        .fight-number-cell, .event-cell, .division-cell {{ background-color: #333; }}
+        .fight-number-cell {{ width: 70px; font-weight: bold; font-size: 1.2em; }}
+        .event-cell {{ width: 120px; font-style: italic; font-size: 0.85em; color: #ccc; }}
+        .division-cell {{ width: 150px; font-style: italic; }}
+        
+        .status-cell, .task-header {{
+            width: 8%; /* Distribui o espaço restante igualmente entre as tarefas */
+        }}
         .status-cell {{ cursor: help; }}
         .status-done {{ background-color: #28a745; }}
         .status-requested {{ background-color: #ffc107; }}
@@ -215,21 +234,19 @@ def get_dashboard_style(font_size_px):
 
 # --- Main Page Content ---
 st.markdown("<h1 style='text-align: center;'>FIGHTER & TASK DASHBOARD</h1>", unsafe_allow_html=True)
-st_autorefresh(interval=60000, key="dash_auto_refresh_v13")
+st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
 # --- Sidebar Controls ---
 st.sidebar.title("Dashboard Controls")
 if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
     st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
 
-# ATUALIZAÇÃO: Slider com range aumentado
 st.session_state.table_font_size = st.sidebar.slider(
     "Table Font Size (px)",
     min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
 
-# Injeta o CSS com a fonte selecionada
 st.markdown(get_dashboard_style(st.session_state.table_font_size), unsafe_allow_html=True)
 
 with st.spinner("Loading data..."):

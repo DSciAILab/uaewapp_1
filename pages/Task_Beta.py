@@ -152,13 +152,11 @@ def is_blood_test_expired(date_str: str) -> bool:
 
 # --- 6. Main Application Logic ---
 st.title("UAEW | Task Control")
-# --- INÍCIO DA ALTERAÇÃO 2: DADOS PESSOAIS OCULTOS POR PADRÃO ---
 default_ss = {
     "warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User",
     "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, 
     "selected_statuses": [], "selected_event": "Todos os Eventos", "fighter_search_query": ""
 }
-# --- FIM DA ALTERAÇÃO 2 ---
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
@@ -296,36 +294,29 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
             
             badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: -5px; margin-bottom: 20px;'>"
-            # --- INÍCIO DA ALTERAÇÃO 1: AJUSTE DAS CORES DOS BADGES ---
+            
+            # --- INÍCIO DA ALTERAÇÃO DAS CORES DOS BADGES ---
+            # Cores ajustadas para corresponder à nova imagem
             status_color_map = {
-                "Requested": "#F39C12",  # Amarelo/Laranja
-                "Done": "#1E8449",       # Verde
-                "---": "#34495E",        # Cinza Escuro / Preto
+                "Done": "#D35400",       # Laranja (para 'Done')
+                "Requested": "#D35400",  # Laranja (para 'Requested')
+                "---": "#34495E",        # Cinza Escuro / Azulado
             }
-            default_color = "#C0392B" # Vermelho para Pendente
-            # --- FIM DA ALTERAÇÃO 1 ---
+            default_color = "#34495E" # Cinza Escuro / Azulado (para 'Pending' e outros)
+            # --- FIM DA ALTERAÇÃO DAS CORES DOS BADGES ---
 
             for task_name in tasks_raw:
                 status_for_badge = "Pending"
                 if not df_att_chk.empty:
                     task_records = df_att_chk[(df_att_chk.get(ID_COLUMN_IN_ATTENDANCE) == ath_id_d) & (df_att_chk.get("Task") == task_name)]
                     if not task_records.empty:
-                        # Ordena por Timestamp para pegar o mais recente
                         if "Timestamp" in task_records.columns:
                             task_records['TS_dt'] = pd.to_datetime(task_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
                             status_for_badge = task_records.sort_values(by="TS_dt", ascending=False).iloc[0].get("Status", "Pending")
                         else:
                             status_for_badge = task_records.iloc[-1].get("Status", "Pending")
                 
-                # Define a cor com base no status
-                color = default_color # Cor padrão é Vermelho (Pendente)
-                if status_for_badge in status_color_map:
-                    color = status_color_map[status_for_badge]
-                elif status_for_badge in STATUS_PENDING_EQUIVALENTS:
-                    if status_for_badge == "---":
-                        color = status_color_map["---"]
-                    else: # "Pending", "Not Registred"
-                        color = default_color
+                color = status_color_map.get(status_for_badge, default_color)
 
                 badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
                 badges_html += f"<span style='{badge_style}'>{html.escape(task_name)}</span>"

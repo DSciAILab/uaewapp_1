@@ -125,12 +125,12 @@ def calculate_task_summary(df_processed, task_list):
                     elif status in ["Pending", "Not Registered"]: summary[task]["Pending"] += count
     return summary
 
+# ATUALIZAÇÃO: Função de geração de HTML modificada para combinar as colunas centrais
 def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html = "<thead><tr>"
     header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
-    header_html += "<th class='center-col-header' rowspan=2>FIGHT #</th>"
-    header_html += "<th class='center-col-header' rowspan=2>EVENT</th>"
-    header_html += "<th class='center-col-header' rowspan=2>DIVISION</th>"
+    # Cabeçalho da nova coluna única
+    header_html += "<th class='center-col-header' rowspan=2>FIGHT<br>INFO</th>"
     header_html += f"<th class='red-corner-header' colspan='{len(task_list) + 2}'>RED CORNER</th>"
     header_html += "</tr><tr>"
     for task in reversed(task_list): header_html += f"<th class='task-header'>{task}</th>"
@@ -141,16 +141,28 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     body_html = "<tbody>"
     for _, row in df_processed.iterrows():
         body_html += "<tr>"
+        # Células de status do Blue Corner
         for task in reversed(task_list):
             status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
+        
+        # Células de info do lutador Blue
         body_html += f"<td class='fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</td>"
         body_html += f"<td><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
-        body_html += f"<td class='fight-number-cell'>{row.get('Fight #', '')}</td>"
-        body_html += f"<td class='event-cell'>{row.get('Event', '')}</td>"
-        body_html += f"<td class='division-cell'>{row.get('Division', '')}</td>"
+        
+        # Nova célula central combinada
+        fight_info_html = f"""
+            <div class='fight-info-number'>{row.get('Fight #', '')}</div>
+            <div class='fight-info-event'>{row.get('Event', '')}</div>
+            <div class='fight-info-division'>{row.get('Division', '')}</div>
+        """
+        body_html += f"<td class='center-info-cell'>{fight_info_html}</td>"
+
+        # Células de info do lutador Red
         body_html += f"<td><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
         body_html += f"<td class='fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</td>"
+        
+        # Células de status do Red Corner
         for task in task_list:
             status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
@@ -194,7 +206,7 @@ def get_dashboard_style(font_size_px):
             padding: {cell_padding}px 8px;
             text-align: center;
             vertical-align: middle;
-            word-break: break-word; /* ATUALIZAÇÃO: Garante que texto longo quebre a linha */
+            word-break: break-word;
         }}
         .dashboard-table th {{
             background-color: #1c1c1f;
@@ -220,24 +232,29 @@ def get_dashboard_style(font_size_px):
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
         
-        .fight-number-cell, .event-cell, .division-cell {{ background-color: #333; }}
-        
-        /* ATUALIZAÇÃO: Otimização das colunas centrais para serem mais compactas */
-        .fight-number-cell {{ 
-            width: 60px; /* Reduzido de 70px */
-            font-weight: bold; 
-            font-size: 1.1em; /* Reduzido de 1.2em */
+        /* ATUALIZAÇÃO: CSS para a nova coluna central combinada */
+        .center-info-cell {{
+            width: 90px; /* Largura bem reduzida para a coluna única */
+            background-color: #333;
+            padding: 5px !important;
         }}
-        .event-cell {{ 
-            width: 100px; /* Reduzido de 120px */
-            font-style: italic; 
-            font-size: 0.8em; /* Reduzido de 0.85em */
-            color: #ccc; 
+        .fight-info-number {{
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #fff;
+            line-height: 1.2;
         }}
-        .division-cell {{ 
-            width: 110px; /* Reduzido de 150px */
-            font-style: italic; 
-            font-size: 0.9em;
+        .fight-info-event {{
+            font-style: italic;
+            font-size: 0.8em;
+            color: #ccc;
+            line-height: 1;
+        }}
+        .fight-info-division {{
+            font-style: normal;
+            font-size: 0.85em;
+            color: #ddd;
+            line-height: 1.2;
         }}
         
         .status-cell, .task-header {{

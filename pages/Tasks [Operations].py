@@ -280,13 +280,25 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             elif curr_stat_color=="Requested":card_bg_col="#B08D00"
             
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
-            mob_r=str(row.get("MOBILE","")).strip().replace(" ","").replace("-","").replace("(","").replace(")","");wa_h=""
+            
+            # --- INÍCIO DA REVISÃO DO WHATSAPP ---
+            mob_r = str(row.get("MOBILE", "")).strip()
+            wa_h = ""
             if mob_r:
-                mob_p=("+"+mob_r[2:])if mob_r.startswith("00")else("+971"+mob_r.lstrip("0"))if len(mob_r)>=9 and not mob_r.startswith("971")and not mob_r.startswith("+")else("+"+mob_r)if not mob_r.startswith("+")else mob_r
-                if mob_p.startswith("+"):wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(mob_p.replace('+',''),True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
-            bt_d_h,bt_ex_h=str(row.get("BLOOD TEST","")),is_blood_test_expired(str(row.get("BLOOD TEST","")))
-            bt_html = f'''<tr style='color:{"red" if bt_ex_h else ("#A0F0A0" if bt_d_h else "orange")};'><td style='padding-right:10px;white-space:nowrap;'><b>Blood Test:</b></td><td>{html.escape(bt_d_h) if bt_d_h else 'Não Registrado'}{f' <span style="font-weight:bold;">(Expirado)</span>' if bt_ex_h and bt_d_h else ''}</td></tr>'''
-            pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}{bt_html}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
+                # Limpa o número para conter apenas os dígitos, pois já inclui o código do país.
+                phone_digits = "".join(filter(str.isdigit, mob_r))
+                # Remove o prefixo '00' de chamada internacional, se houver, pois não é usado em links wa.me.
+                if phone_digits.startswith('00'):
+                    phone_digits = phone_digits[2:]
+                # Cria o link do WhatsApp se o número for válido.
+                if phone_digits:
+                    wa_h = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
+            # --- FIM DA REVISÃO DO WHATSAPP ---
+
+            # --- INÍCIO DA REMOÇÃO DO BLOOD TEST ---
+            # As linhas que criavam o HTML para o Blood Test foram removidas.
+            pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
+            # --- FIM DA REMOÇÃO DO BLOOD TEST ---
             
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
             

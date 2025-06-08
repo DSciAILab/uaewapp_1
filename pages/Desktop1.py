@@ -159,7 +159,6 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     return f"<div class='dashboard-container'><table class='dashboard-table'>{header_html}{body_html}</table></div>"
 
 # --- Streamlit Page Configuration ---
-# ATUALIZAÇÃO: Otimização da configuração da página para um layout mais limpo
 st.set_page_config(layout="wide", page_title="Fight Dashboard")
 
 if 'table_font_size' not in st.session_state:
@@ -171,36 +170,12 @@ def get_dashboard_style(font_size_px):
     
     return f"""
     <style>
-        /* ATUALIZAÇÃO: Esconde o cabeçalho do Streamlit e reduz o padding do bloco principal */
-        div[data-testid="stToolbar"] {{
-            visibility: hidden;
-            height: 0%;
-            position: fixed;
-        }}
-        div[data-testid="stDecoration"] {{
-            visibility: hidden;
-            height: 0%;
-            position: fixed;
-        }}
-        div[data-testid="stStatusWidget"] {{
-            visibility: hidden;
-            height: 0%;
-            position: fixed;
-        }}
-        #MainMenu {{
-            visibility: hidden;
-            height: 0%;
-        }}
-        header {{
-            visibility: hidden;
-            height: 0%;
-        }}
-        .block-container {{
-            padding-top: 1rem !important; /* Reduz espaço no topo */
-            padding-bottom: 0rem !important;
-        }}
-        /* Fim da otimização de layout */
-
+        div[data-testid="stToolbar"] {{ visibility: hidden; height: 0%; position: fixed; }}
+        div[data-testid="stDecoration"] {{ visibility: hidden; height: 0%; position: fixed; }}
+        div[data-testid="stStatusWidget"] {{ visibility: hidden; height: 0%; position: fixed; }}
+        #MainMenu {{ visibility: hidden; height: 0%; }}
+        header {{ visibility: hidden; height: 0%; }}
+        .block-container {{ padding-top: 1rem !important; padding-bottom: 0rem !important; }}
         .dashboard-container {{ font-family: 'Segoe UI', sans-serif; }}
         .dashboard-table {{
             width: 100%;
@@ -219,6 +194,7 @@ def get_dashboard_style(font_size_px):
             padding: {cell_padding}px 8px;
             text-align: center;
             vertical-align: middle;
+            word-break: break-word; /* ATUALIZAÇÃO: Garante que texto longo quebre a linha */
         }}
         .dashboard-table th {{
             background-color: #1c1c1f;
@@ -227,7 +203,6 @@ def get_dashboard_style(font_size_px):
             text-transform: uppercase;
             letter-spacing: 0.5px;
             white-space: normal;
-            word-break: break-word;
         }}
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
@@ -246,9 +221,24 @@ def get_dashboard_style(font_size_px):
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
         
         .fight-number-cell, .event-cell, .division-cell {{ background-color: #333; }}
-        .fight-number-cell {{ width: 70px; font-weight: bold; font-size: 1.2em; }}
-        .event-cell {{ width: 120px; font-style: italic; font-size: 0.85em; color: #ccc; }}
-        .division-cell {{ width: 150px; font-style: italic; }}
+        
+        /* ATUALIZAÇÃO: Otimização das colunas centrais para serem mais compactas */
+        .fight-number-cell {{ 
+            width: 60px; /* Reduzido de 70px */
+            font-weight: bold; 
+            font-size: 1.1em; /* Reduzido de 1.2em */
+        }}
+        .event-cell {{ 
+            width: 100px; /* Reduzido de 120px */
+            font-style: italic; 
+            font-size: 0.8em; /* Reduzido de 0.85em */
+            color: #ccc; 
+        }}
+        .division-cell {{ 
+            width: 110px; /* Reduzido de 150px */
+            font-style: italic; 
+            font-size: 0.9em;
+        }}
         
         .status-cell, .task-header {{
             width: 8%;
@@ -259,16 +249,11 @@ def get_dashboard_style(font_size_px):
         .status-pending {{ background-color: #dc3545; }}
         .status-neutral {{ background-color: transparent; }}
         
-        /* ATUALIZAÇÃO: Classes para controlar o espaçamento dos cabeçalhos */
-        .compact-header {{
-            margin-block-start: 0em;
-            margin-block-end: 0.5em;
-        }}
+        .compact-header {{ margin-block-start: 0em; margin-block-end: 0.5em; }}
     </style>
     """
 
 # --- Main Page Content ---
-# ATUALIZAÇÃO: Título principal com margens reduzidas via inline style
 st.markdown("<h1 style='text-align: center; margin-block-start: 0em; margin-block-end: 0.5em;'>FIGHTER & TASK DASHBOARD</h1>", unsafe_allow_html=True)
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
@@ -326,7 +311,6 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
     
-    # ATUALIZAÇÃO: st.subheader trocado por st.markdown com classe para compactar espaço
     st.markdown("<h3 class='compact-header'>Overall Task Status</h3>", unsafe_allow_html=True)
     task_summary = calculate_task_summary(df_dash_processed, all_tsks)
     
@@ -345,7 +329,6 @@ if dash_data_list:
                     m_cols[2].metric("🟥 Pending", data.get("Pending", 0))
             col_index += 1
     
-    # ATUALIZAÇÃO: st.subheader trocado por st.markdown com classe para compactar espaço
     st.markdown(f"<h3 class='compact-header'>Fight Status: {sel_ev_opt}</h3>", unsafe_allow_html=True)
     html_table = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
     st.markdown(html_table, unsafe_allow_html=True)
@@ -353,5 +336,4 @@ if dash_data_list:
 else:
     st.info(f"No fights processed for '{sel_ev_opt}'.")
     
-# ATUALIZAÇÃO: Linha horizontal e espaçamento final removidos para um layout mais enxuto
 st.markdown(f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>", unsafe_allow_html=True, help="This page auto-refreshes every 60 seconds.")

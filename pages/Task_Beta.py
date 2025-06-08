@@ -152,11 +152,13 @@ def is_blood_test_expired(date_str: str) -> bool:
 
 # --- 6. Main Application Logic ---
 st.title("UAEW | Task Control")
+# --- INÍCIO DA ALTERAÇÃO 2: DADOS PESSOAIS OCULTOS POR PADRÃO ---
 default_ss = {
     "warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User",
-    "current_user_image_url": "", "show_personal_data": True, "selected_task": NO_TASK_SELECTED_LABEL, 
+    "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, 
     "selected_statuses": [], "selected_event": "Todos os Eventos", "fighter_search_query": ""
 }
+# --- FIM DA ALTERAÇÃO 2 ---
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
@@ -272,7 +274,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                         timestamp_str = str(latest_rec_task.get('Timestamp', ''))
                         date_part = timestamp_str.split(' ')[0] if ' ' in timestamp_str else ''
                         user_val = str(latest_rec_task.get('User', ''))
-                        ### ALTERAÇÃO 1: Formato do status display modificado para incluir a data.
                         task_stat_disp = f"**{html.escape(status_val)}** | {html.escape(date_part)} | *{html.escape(user_val)}*"
             
             card_bg_col="#1e1e1e";curr_stat_color=latest_rec_task.get('Status') if latest_rec_task is not None else None
@@ -281,35 +282,28 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
             
-            # --- INÍCIO DA REVISÃO DO WHATSAPP ---
             mob_r = str(row.get("MOBILE", "")).strip()
             wa_h = ""
             if mob_r:
-                # Limpa o número para conter apenas os dígitos, pois já inclui o código do país.
                 phone_digits = "".join(filter(str.isdigit, mob_r))
-                # Remove o prefixo '00' de chamada internacional, se houver, pois não é usado em links wa.me.
                 if phone_digits.startswith('00'):
                     phone_digits = phone_digits[2:]
-                # Cria o link do WhatsApp se o número for válido.
                 if phone_digits:
                     wa_h = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
-            # --- FIM DA REVISÃO DO WHATSAPP ---
 
-            # --- INÍCIO DA REMOÇÃO DO BLOOD TEST ---
-            # As linhas que criavam o HTML para o Blood Test foram removidas.
             pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
-            # --- FIM DA REMOÇÃO DO BLOOD TEST ---
             
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
             
-            ### ALTERAÇÃO 2: Geração e exibição dos badges de status para todas as tarefas.
             badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: -5px; margin-bottom: 20px;'>"
+            # --- INÍCIO DA ALTERAÇÃO 1: AJUSTE DAS CORES DOS BADGES ---
             status_color_map = {
-                "Requested": "#D35400",  # Laranja
+                "Requested": "#F39C12",  # Amarelo/Laranja
                 "Done": "#1E8449",       # Verde
-                "---": "#34495E",        # Cinza Escuro
+                "---": "#34495E",        # Cinza Escuro / Preto
             }
             default_color = "#C0392B" # Vermelho para Pendente
+            # --- FIM DA ALTERAÇÃO 1 ---
 
             for task_name in tasks_raw:
                 status_for_badge = "Pending"
@@ -328,7 +322,10 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                 if status_for_badge in status_color_map:
                     color = status_color_map[status_for_badge]
                 elif status_for_badge in STATUS_PENDING_EQUIVALENTS:
-                    color = default_color # Garante que "Pending", etc., fiquem vermelhos
+                    if status_for_badge == "---":
+                        color = status_color_map["---"]
+                    else: # "Pending", "Not Registred"
+                        color = default_color
 
                 badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
                 badges_html += f"<span style='{badge_style}'>{html.escape(task_name)}</span>"

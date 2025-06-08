@@ -295,32 +295,33 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             
             badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: -5px; margin-bottom: 20px;'>"
             
-            # --- INÍCIO DA ALTERAÇÃO DAS CORES DOS BADGES ---
-            # Cores reajustadas para verde, amarelo, vermelho e preto, conforme solicitado.
             status_color_map = {
                 "Done": "#1E8449",       # Verde
                 "Requested": "#F39C12",  # Amarelo/Laranja
                 "---": "#34495E",        # Preto/Cinza Escuro
             }
             default_color = "#C0392B" # Vermelho (para 'Pending' e outros status não mapeados)
-            # --- FIM DA ALTERAÇÃO DAS CORES DOS BADGES ---
-
+            
             for task_name in tasks_raw:
                 status_for_badge = "Pending"
                 if not df_att_chk.empty:
-                    task_records = df_att_chk[(df_att_chk.get(ID_COLUMN_IN_ATTENDANCE) == ath_id_d) & (df_att_chk.get("Task") == task_name)]
-                    if not task_records.empty:
-                        if "Timestamp" in task_records.columns:
-                            task_records['TS_dt'] = pd.to_datetime(task_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-                            task_records.dropna(subset=['TS_dt'], inplace=True)
-                            if not task_records.empty:
-                                status_for_badge = task_records.sort_values(by="TS_dt", ascending=False).iloc[0].get("Status", "Pending")
-                            else: # Caso de timestamps inválidos
-                                status_for_badge = task_records.iloc[-1].get("Status", "Pending")
+                    # --- INÍCIO DA CORREÇÃO DO INDEXERROR ---
+                    task_records_orig = df_att_chk[(df_att_chk.get(ID_COLUMN_IN_ATTENDANCE) == ath_id_d) & (df_att_chk.get("Task") == task_name)]
+
+                    if not task_records_orig.empty:
+                        if "Timestamp" in task_records_orig.columns:
+                            df_temp = task_records_orig.copy()
+                            df_temp['TS_dt'] = pd.to_datetime(df_temp['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+                            df_temp_valid = df_temp.dropna(subset=['TS_dt']).sort_values(by="TS_dt", ascending=False)
+                            
+                            if not df_temp_valid.empty:
+                                status_for_badge = df_temp_valid.iloc[0].get("Status", "Pending")
+                            else:
+                                status_for_badge = task_records_orig.iloc[-1].get("Status", "Pending")
                         else:
-                            status_for_badge = task_records.iloc[-1].get("Status", "Pending")
-                
-                # Atribui a cor com base no status, usando o mapa e a cor padrão.
+                            status_for_badge = task_records_orig.iloc[-1].get("Status", "Pending")
+                    # --- FIM DA CORREÇÃO DO INDEXERROR ---
+
                 color = status_color_map.get(status_for_badge, default_color)
 
                 badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"

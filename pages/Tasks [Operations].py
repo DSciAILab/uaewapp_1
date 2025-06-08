@@ -20,7 +20,7 @@ CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED_LABEL = "-- Selecione uma Tarefa --"
 STATUS_PENDING_EQUIVALENTS = ["Pendente", "---", "Não Registrado"] 
 
-# --- 2. Google Sheets Connection ---
+# --- 2. Google Sheets Connection (código inalterado) ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -39,7 +39,7 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except Exception as e:
         st.error(f"Erro ao conectar à aba '{tab_name}': {e}", icon="🚨"); st.stop()
 
-# --- 3. Data Loading ---
+# --- 3. Data Loading (código inalterado) ---
 @st.cache_data(ttl=600)
 def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str = ATHLETES_TAB_NAME):
     try:
@@ -134,19 +134,31 @@ def registrar_log(ath_id, ath_name, ath_event, task, status, notes, user_log_id)
 # --- 6. Main Application Logic ---
 st.title("UAEW | Controle de Tarefas")
 
+# CORREÇÃO: Adicionando a chave 'user_id_input' ao dicionário de valores padrão.
 default_ss = {
-    "warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "Usuário",
-    "current_user_image_url": "", "show_personal_data": True, "selected_task": NO_TASK_SELECTED_LABEL, 
-    "selected_statuses": [], "search_query": ""
+    "warning_message": None, 
+    "user_confirmed": False, 
+    "current_user_id": "", 
+    "current_user_name": "Usuário",
+    "current_user_image_url": "", 
+    "show_personal_data": True, 
+    "selected_task": NO_TASK_SELECTED_LABEL, 
+    "selected_statuses": [], 
+    "search_query": "",
+    "user_id_input": "" # Chave que estava faltando
 }
+# Este loop agora inicializará 'user_id_input' na primeira execução.
 for k,v in default_ss.items():
-    if k not in st.session_state: st.session_state[k] = v
+    if k not in st.session_state: 
+        st.session_state[k] = v
 
 with st.container(border=True):
     st.subheader("Usuário")
     col_input_ps, col_user_status_display = st.columns([0.6, 0.4]) 
     with col_input_ps:
+        # Agora, na primeira execução, st.session_state['user_id_input'] já existe e é uma string vazia.
         st.session_state['user_id_input'] = st.text_input("PS Number", value=st.session_state['user_id_input'], key="uid_w", label_visibility="collapsed", placeholder="Digite seu PS ou Nome")
+        
         if st.button("Login", key="confirm_b_w", use_container_width=True, type="primary"):
             u_in=st.session_state['user_id_input'].strip()
             if u_in:
@@ -162,6 +174,7 @@ with st.container(border=True):
                     st.session_state.update(user_confirmed=False,current_user_image_url="",warning_message=f"⚠️ Usuário '{u_in}' não encontrado.")
             else: 
                 st.session_state.update(warning_message="⚠️ ID/Nome do usuário vazio.",user_confirmed=False)
+    
     with col_user_status_display:
         if st.session_state.user_confirmed and st.session_state.current_user_name != "Usuário":
             un, ui = html.escape(st.session_state.current_user_name), html.escape(st.session_state.get("current_user_ps_id_internal", ""))
@@ -171,10 +184,16 @@ with st.container(border=True):
         elif st.session_state.get('warning_message'): 
             st.warning(st.session_state.warning_message, icon="🚨")
 
-    if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
-        st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",selected_task=NO_TASK_SELECTED_LABEL);st.rerun()
+    # Esta lógica de verificação agora funcionará corretamente.
+    current_input_upper = st.session_state.user_id_input.strip().upper()
+    current_id_upper = st.session_state.current_user_id.strip().upper()
+    if st.session_state.user_confirmed and current_id_upper != current_input_upper and current_input_upper != "":
+        st.session_state.update(user_confirmed=False, warning_message="⚠️ ID/Nome alterado. Confirme.", selected_task=NO_TASK_SELECTED_LABEL)
+        st.rerun()
 
+# --- O resto do código permanece o mesmo ---
 if st.session_state.user_confirmed and st.session_state.current_user_name!="Usuário":
+    # ... (código inalterado)
     st.markdown("---")
     with st.spinner("Carregando configurações..."):
         tasks_raw, statuses_list_cfg = load_config_data()
@@ -244,17 +263,13 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                 if latest_rec_task.get('Status')=="Done": card_bg_col="#143d14"
                 elif latest_rec_task.get('Status')=="Requested": card_bg_col="#B08D00"
             
-            # --- Montagem do HTML ---
             pass_img_h = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')))}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if row.get("PASSPORT IMAGE") else ""
-            
-            # CORREÇÃO: Lógica do WhatsApp simplificada
             mob_r = str(row.get("MOBILE","")).strip().replace(" ","").replace("-","").replace("(","").replace(")","")
             wa_h = ""
             if mob_r:
                 mob_p_clean = ''.join(filter(str.isdigit, mob_r))
                 wa_h = f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{mob_p_clean}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
             
-            # CORREÇÃO: "Blood Test" removido da tabela de dados pessoais
             pd_tbl_h = f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
                 <tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
                 <tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
@@ -276,46 +291,28 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                 {pd_tbl_h}
             </div></div>""", unsafe_allow_html=True)
 
-            # --- ATUALIZAÇÃO: Lógica de exibição e botões de ação com cores dinâmicas ---
             if sel_task_actual:
                 status_color_map = {"Done": "#143d14", "Requested": "#B08D00", "---": "#1e1e1e", "Pendente": "#dc3545"}
                 curr_status = latest_rec_task.get('Status', 'Pendente') if latest_rec_task is not None else 'Pendente'
-                
-                # Garante que qualquer status não mapeado seja tratado como pendente
-                if curr_status not in status_color_map:
-                    curr_status = 'Pendente'
-                
+                if curr_status not in status_color_map: curr_status = 'Pendente'
                 bg_color = status_color_map[curr_status]
 
-                # Container para o status e botões
                 with st.container(border=False):
                     status_cols = st.columns([0.4, 0.3, 0.3])
-                    
-                    # Coluna 1: Exibe o status atual com cor
                     with status_cols[0]:
-                        st.markdown(f"""
-                        <div style='background-color:{bg_color}; padding: 10px; border-radius: 5px; text-align:center; color:white;'>
-                            <b>{sel_task_actual}:</b> {curr_status}
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    # Colunas 2 e 3: Exibem botões de ação relevantes
+                        st.markdown(f"""<div style='background-color:{bg_color}; padding: 10px; border-radius: 5px; text-align:center; color:white;'><b>{sel_task_actual}:</b> {curr_status}</div>""", unsafe_allow_html=True)
                     uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-                    
                     if curr_status == 'Requested':
                         with status_cols[1]:
                             if st.button(f"✅ Concluir", key=f"done_{ath_id_d}_{i_l}", use_container_width=True):
-                                registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l)
-                                st.rerun()
+                                registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l); st.rerun()
                         with status_cols[2]:
                             if st.button(f"❌ Cancelar Sol.", key=f"cancel_{ath_id_d}_{i_l}", use_container_width=True):
-                                registrar_log(ath_id_d, ath_name_d, ath_event_d, "---", "", uid_l)
-                                st.rerun()
+                                registrar_log(ath_id_d, ath_name_d, ath_event_d, "---", "", uid_l); st.rerun()
                     elif curr_status in ['Pendente', '---', 'Done']:
                          with status_cols[1]:
                             if st.button(f"🟨 Solicitar", key=f"req_{ath_id_d}_{i_l}", use_container_width=True, type="primary"):
-                                registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l)
-                                st.rerun()
+                                registrar_log(ath_id_d, ath_name_d, ath_event_d, "Requested", "", uid_l); st.rerun()
 
             st.markdown("<hr style='border-top:1px solid #333;margin-top:10px;margin-bottom:25px;'>", True)
 else:

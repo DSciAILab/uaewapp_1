@@ -144,7 +144,8 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
         
         body_html += f"<td class='fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</td>"
-        body_html += f"<td><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
+        # ATUALIZAÇÃO: Adicionada a classe 'photo-cell'
+        body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
         
         fight_info_html = f"""
             <div class='fight-info-number'>{row.get('Fight #', '')}</div>
@@ -153,7 +154,8 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         """
         body_html += f"<td class='center-info-cell'>{fight_info_html}</td>"
 
-        body_html += f"<td><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
+        # ATUALIZAÇÃO: Adicionada a classe 'photo-cell'
+        body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
         body_html += f"<td class='fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</td>"
         
         for task in task_list:
@@ -172,10 +174,7 @@ if 'table_font_size' not in st.session_state:
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 4
     cell_padding = font_size_px * 0.8
-    
-    # ATUALIZAÇÃO: Cálculos para a nova coluna do lutador
     fighter_font_size = font_size_px * 2
-    fighter_width = 250 * 2
     
     return f"""
     <style>
@@ -226,20 +225,29 @@ def get_dashboard_style(font_size_px):
             border: 2px solid #666;
         }}
         
-        /* ATUALIZAÇÃO: Coluna do lutador com o dobro do tamanho e da fonte */
+        /* ATUALIZAÇÃO: Larguras relativas para Fighter e Tasks */
         .fighter-name {{ 
             font-weight: 600; 
-            width: {fighter_width}px;
+            width: 12%; /* Dobro da largura da coluna de tarefa */
             font-size: {fighter_font_size}px !important;
         }}
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
         
+        .task-header, .status-cell {{
+            width: 6%; /* Largura base para as colunas de tarefa */
+        }}
+        
+        /* Larguras fixas para colunas de imagem e info central */
+        .photo-cell {{
+            width: {img_size + 16}px; /* Largura baseada no tamanho da imagem */
+        }}
         .center-info-cell {{
             width: 90px;
             background-color: #333;
             padding: 5px !important;
         }}
+
         .fight-info-number {{
             font-weight: bold;
             font-size: 1.2em;
@@ -259,9 +267,6 @@ def get_dashboard_style(font_size_px):
             line-height: 1.2;
         }}
         
-        .status-cell, .task-header {{
-            width: 8%;
-        }}
         .status-cell {{ cursor: help; }}
         .status-done {{ background-color: #28a745; }}
         .status-requested {{ background-color: #ffc107; }}

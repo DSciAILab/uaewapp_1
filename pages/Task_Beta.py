@@ -1,5 +1,4 @@
 # pages/1_Controle_de_Tarefas.py
-
 import streamlit as st
 import pandas as pd
 import gspread
@@ -240,8 +239,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                     if st.session_state.show_personal_data:
                         # --- INÍCIO DA CORREÇÃO ---
                         mob_r = str(row.get("MOBILE","")).strip()
-                        # A linha abaixo agora lida com qualquer formato de número (+, (), -, espaço),
-                        # pois 'filter(str.isdigit, ...)' extrai apenas os dígitos.
                         wa_link = f"[Msg](https://wa.me/{''.join(filter(str.isdigit, mob_r))})" if mob_r else "N/A"
                         # --- FIM DA CORREÇÃO ---
                         pass_img_link = f"[Ver Imagem]({row.get('PASSPORT IMAGE')})" if row.get('PASSPORT IMAGE') else "N/A"

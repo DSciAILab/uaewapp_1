@@ -296,13 +296,13 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
             badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: -5px; margin-bottom: 20px;'>"
             
             # --- INÍCIO DA ALTERAÇÃO DAS CORES DOS BADGES ---
-            # Cores ajustadas para corresponder à nova imagem
+            # Cores reajustadas para verde, amarelo, vermelho e preto, conforme solicitado.
             status_color_map = {
-                "Done": "#D35400",       # Laranja (para 'Done')
-                "Requested": "#D35400",  # Laranja (para 'Requested')
-                "---": "#34495E",        # Cinza Escuro / Azulado
+                "Done": "#1E8449",       # Verde
+                "Requested": "#F39C12",  # Amarelo/Laranja
+                "---": "#34495E",        # Preto/Cinza Escuro
             }
-            default_color = "#34495E" # Cinza Escuro / Azulado (para 'Pending' e outros)
+            default_color = "#C0392B" # Vermelho (para 'Pending' e outros status não mapeados)
             # --- FIM DA ALTERAÇÃO DAS CORES DOS BADGES ---
 
             for task_name in tasks_raw:
@@ -312,10 +312,15 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="Usu�
                     if not task_records.empty:
                         if "Timestamp" in task_records.columns:
                             task_records['TS_dt'] = pd.to_datetime(task_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-                            status_for_badge = task_records.sort_values(by="TS_dt", ascending=False).iloc[0].get("Status", "Pending")
+                            task_records.dropna(subset=['TS_dt'], inplace=True)
+                            if not task_records.empty:
+                                status_for_badge = task_records.sort_values(by="TS_dt", ascending=False).iloc[0].get("Status", "Pending")
+                            else: # Caso de timestamps inválidos
+                                status_for_badge = task_records.iloc[-1].get("Status", "Pending")
                         else:
                             status_for_badge = task_records.iloc[-1].get("Status", "Pending")
                 
+                # Atribui a cor com base no status, usando o mapa e a cor padrão.
                 color = status_color_map.get(status_for_badge, default_color)
 
                 badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"

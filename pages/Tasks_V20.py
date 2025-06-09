@@ -6,6 +6,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
 import altair as alt
+import time # Importado para a melhoria de feedback
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Task Control", layout="wide")
@@ -18,8 +19,6 @@ ATTENDANCE_TAB_NAME = "Attendance"
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED_LABEL = "-- Choose Task --"
-# Esta constante agora é usada principalmente para a lógica de botões.
-# O status "Pending" real (sem registro) será tratado de forma distinta do "---".
 STATUS_PENDING_LIKE = ["Pending", "Not Registred"]
 
 
@@ -123,7 +122,7 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         if df_att.empty: return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"])
         expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
         for col in expected_cols_order:
-            if col not in df_att.columns: df_att[col] = None
+            if col not in df_att.columns: df_att[col] = pd.NA
         return df_att
     except Exception as e: st.error(f"Erro ao carregar presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
 
@@ -148,13 +147,12 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
 # --- Helper Function ---
 def get_latest_status(athlete_id, task, attendance_df):
     if attendance_df.empty or task is None: return "Pending"
-    # A função agora retorna 'Pending' se não houver NENHUM registro, que é a definição correta
     athlete_records = attendance_df[(attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & (attendance_df["Task"] == task)]
     if athlete_records.empty: return "Pending"
     
     if "Timestamp" in athlete_records.columns:
         athlete_records = athlete_records.copy()
-        athlete_records.loc[:, 'TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+        athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
         valid_records = athlete_records.dropna(subset=['TS_dt'])
         if not valid_records.empty:
             latest_record = valid_records.sort_values(by="TS_dt", ascending=False).iloc[0]
@@ -162,7 +160,6 @@ def get_latest_status(athlete_id, task, attendance_df):
             latest_record = athlete_records.iloc[-1]
     else:
         latest_record = athlete_records.iloc[-1]
-    # Retorna o status do último registro encontrado (pode ser "---", "Requested", "Done", etc.)
     return latest_record.get("Status", "Pending")
 
 # --- 6. Main Application Logic ---
@@ -216,7 +213,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         df_athletes['current_task_status'] = df_athletes['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
         status_counts = df_athletes['current_task_status'].value_counts().to_dict()
         
-        # [ALTERAÇÃO] Contagem de "Pending" agora é estrita, conforme a nova definição
         pending_count = status_counts.get('Pending', 0)
         requested_count = status_counts.get('Requested', 0)
         done_count = status_counts.get('Done', 0)
@@ -243,7 +239,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     if search_term: df_filtered = df_filtered[df_filtered["NAME"].str.lower().str.contains(search_term, na=False) | df_filtered["ID"].astype(str).str.contains(search_term, na=False)]
 
     if sel_task_actual and st.session_state.selected_status != "Todos":
-        # [ALTERAÇÃO] Filtro "Pending" agora é estrito, buscando apenas por quem não tem registro.
         if st.session_state.selected_status == "Pending":
             df_filtered = df_filtered[df_filtered['current_task_status'] == 'Pending']
         else:
@@ -312,37 +307,42 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
 
-        # --- [INÍCIO DA ALTERAÇÃO] Lógica de botões mais granular ---
         with col_buttons:
             if sel_task_actual:
                 uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-                st.write(" "); st.write(" ") # Espaçamento vertical
+                st.write(" "); st.write(" ") 
 
-                # Caso 1: A tarefa já foi solicitada
                 if curr_ath_task_stat == "Requested":
                     if st.button("CONCLUIR", key=f"done_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l): st.rerun()
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
                     if st.button("PENDENTE", key=f"pend_b_{ath_id_d}_{i_l}", type="secondary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Pending", "", uid_l): st.rerun()
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Pending", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
 
-                # Caso 2: A tarefa não tem NENHUM registro (status "Pending" ou "Not Registred")
                 elif curr_ath_task_stat in STATUS_PENDING_LIKE:
                     if st.button("REQUISITAR TAREFA", key=f"req_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l): st.rerun()
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
                     if st.button("NÃO SE APLICA", key=f"not_req_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "---", "", uid_l): st.rerun()
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "---", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
 
-                # Caso 3: A tarefa já foi marcada como "Não se Aplica" (status "---")
                 elif curr_ath_task_stat == "---":
-                    # Mostra apenas o botão para requisitar, caso a decisão mude. Não mostra "Não se aplica" novamente.
                     if st.button("REQUISITAR TAREFA", key=f"req_from_na_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l): st.rerun()
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
 
-                # Caso 4: A tarefa já foi concluída
                 elif curr_ath_task_stat == "Done":
                     if st.button("SOLICITAR NOVAMENTE", key=f"req_again_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l): st.rerun()
-        # --- [FIM DA ALTERAÇÃO] ---
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
         st.divider()
 
 else:

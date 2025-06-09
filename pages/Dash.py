@@ -10,22 +10,25 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
+# --- CONFIGURAÇÃO DA PÁGINA ---
+# Este comando DEVE ser o primeiro comando do Streamlit no script.
+# Ele lê o modo de layout do st.session_state para permitir a troca dinâmica.
+if 'layout_mode' not in st.session_state:
+    st.session_state.layout_mode = "wide" # O padrão é o modo 'wide'
+
+st.set_page_config(layout=st.session_state.layout_mode, page_title="Fight Dashboard")
+
+
 # --- Constantes Globais ---
 # Centraliza os nomes das planilhas, abas e colunas para fácil manutenção.
-
-# Nomes da Planilha Principal e Abas
 MAIN_SHEET_NAME = "UAEW_App"
 CONFIG_TAB_NAME = "Config"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
-
-# Nomes da Aba de Presença e suas Colunas
 ATTENDANCE_TAB_NAME = "Attendance"
 ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
-
-# Nomes das Colunas do Fightcard
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
@@ -35,7 +38,6 @@ FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
 # Mapeamento de Status para Classes CSS e Texto
-# Define a aparência e o texto de ajuda para cada status possível.
 STATUS_INFO = {
     "Done": {"class": "status-done", "text": "Done"},
     "Requested": {"class": "status-requested", "text": "Requested"},
@@ -45,25 +47,18 @@ STATUS_INFO = {
     "Não Registrado": {"class": "status-pending", "text": "Not Registered"},
     "Não Solicitado": {"class": "status-neutral", "text": "Not Requested"},
 }
-DEFAULT_STATUS_CLASS = "status-pending" # Classe padrão se um status não for encontrado
+DEFAULT_STATUS_CLASS = "status-pending"
 
 # Mapeamento de Tarefas para Emojis
-# Associa um emoji a cada tarefa para uma visualização mais intuitiva no cabeçalho.
 TASK_EMOJI_MAP = {
-    "Walkout Music": "🎵",
-    "Stats": "📊",
-    "Black Screen Video": "⬛",
-    "Video Shooting": "🎥",
-    "Photoshoot": "📸",
-    "Blood Test": "🩸",
+    "Walkout Music": "🎵", "Stats": "📊", "Black Screen Video": "⬛",
+    "Video Shooting": "🎥", "Photoshoot": "📸", "Blood Test": "🩸",
 }
-
 
 # --- Funções de Carregamento de Dados e Conexão ---
 
-@st.cache_resource(ttl=3600) # Cache do cliente gspread por 1 hora para evitar reconexões constantes.
+@st.cache_resource(ttl=3600)
 def get_gspread_client():
-    """Conecta-se à API do Google Sheets usando as credenciais do Streamlit Secrets."""
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         if "gcp_service_account" not in st.secrets: st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨"); st.stop()
@@ -72,18 +67,15 @@ def get_gspread_client():
     except Exception as e: st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    """Abre uma aba específica de uma planilha do Google Sheets."""
     if not gspread_client: st.error("CRITICAL: Gspread client not initialized.", icon="🚨"); st.stop()
     try: return gspread_client.open(sheet_name).worksheet(tab_name)
     except Exception as e: st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
 
-@st.cache_data # Cache dos dados do fightcard para performance.
+@st.cache_data
 def load_fightcard_data():
-    """Carrega os dados do fightcard a partir da URL pública, limpando e formatando as colunas."""
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
-        df.columns = df.columns.str.strip() # Remove espaços extras dos nomes das colunas
-        # Converte e limpa colunas importantes
+        df.columns = df.columns.str.strip()
         df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce")
         df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
         df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
@@ -93,19 +85,16 @@ def load_fightcard_data():
         else:
             st.error(f"CRITICAL: Column '{FC_ATHLETE_ID_COL}' not found in Fightcard.")
             df[FC_ATHLETE_ID_COL] = ""
-        # Remove linhas que não tenham dados essenciais
         return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL, FC_ATHLETE_ID_COL])
     except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
 
-@st.cache_data(ttl=120) # Cache dos dados de presença por 2 minutos.
+@st.cache_data(ttl=120)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
-    """Carrega os dados da aba de presença, que contém o status de cada tarefa por atleta."""
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
     try:
         df_att = pd.DataFrame(worksheet.get_all_records())
         if df_att.empty: return pd.DataFrame()
-        # Garante que as colunas usadas para busca sejam strings e sem espaços extras.
         cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
@@ -113,35 +102,26 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         return df_att
     except Exception as e: st.error(f"Error loading Attendance: {e}"); return pd.DataFrame()
 
-@st.cache_data(ttl=600) # Cache da lista de tarefas por 10 minutos.
+@st.cache_data(ttl=600)
 def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
-    """Busca a lista de tarefas da aba de configuração para montar o dashboard dinamicamente."""
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
     try:
         data = worksheet.get_all_values()
         if not data or len(data) < 1: return []
         df_conf = pd.DataFrame(data[1:], columns=data[0])
-        # Retorna uma lista de tarefas únicas
         return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
     except Exception as e: st.error(f"Error loading TaskList from Config: {e}"); return []
 
 # --- Funções de Lógica e Processamento ---
 
 def get_task_status(athlete_id, task_name, df_attendance):
-    """Busca o status mais recente de uma tarefa para um atleta específico."""
-    # Retorna 'Pending' como padrão se não houver dados
     if df_attendance.empty or pd.isna(athlete_id) or str(athlete_id).strip()=="" or not task_name:
         return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
-    
-    # Filtra os registros relevantes para o atleta e a tarefa
     relevant_records = df_attendance[
         (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) &
         (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == str(task_name).strip())]
-    
     if relevant_records.empty: return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
-    
-    # Pega o status do registro mais recente baseado no timestamp, se disponível
     latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
         try:
@@ -149,13 +129,10 @@ def get_task_status(athlete_id, task_name, df_attendance):
             rel_sorted["Timestamp_dt"]=pd.to_datetime(rel_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
             if rel_sorted["Timestamp_dt"].notna().any():
                 latest_status_str = rel_sorted.sort_values(by="Timestamp_dt", ascending=False, na_position='last').iloc[0][ATTENDANCE_STATUS_COL]
-        except: pass # Ignora erros de formatação de data
-        
-    # Retorna a informação de classe CSS e texto correspondente ao status
+        except: pass
     return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
 
 def calculate_task_summary(df_processed, task_list):
-    """Calcula a contagem de status 'Done' e 'Requested' para cada tarefa para os painéis de métricas."""
     summary = {}
     for task in task_list:
         summary[task] = {"Done": 0, "Requested": 0}
@@ -172,20 +149,11 @@ def calculate_task_summary(df_processed, task_list):
 # --- Geração da Interface (HTML & CSS) ---
 
 def generate_mirrored_html_dashboard(df_processed, task_list):
-    """
-    Constrói o HTML do dashboard usando divs e CSS Grid em vez de uma tabela.
-    Isso oferece controle total e explícito sobre o layout.
-    """
     num_tasks = len(task_list)
     html = "<div class='dashboard-grid'>"
-
-    # --- LINHA DE CABEÇALHO 1 (Títulos dos Corners) ---
     html += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
     html += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
     html += f"<div class='grid-item grid-header red-corner-header' style='grid-column: {num_tasks + 4} / span {num_tasks + 2};'>RED CORNER</div>"
-    
-    # --- LINHA DE CABEÇALHO 2 (Ícones e Nomes das Colunas) ---
-    # A grade posiciona os itens sequencialmente, preenchendo a segunda linha.
     for task in reversed(task_list):
         emoji = TASK_EMOJI_MAP.get(task, task[0])
         html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
@@ -196,75 +164,47 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     for task in task_list:
         emoji = TASK_EMOJI_MAP.get(task, task[0])
         html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
-
-    # --- LINHAS DE DADOS (Itera sobre cada luta) ---
     for _, row in df_processed.iterrows():
-        # Adiciona as células na ordem: tasks azul -> nome azul -> foto azul -> info -> foto vermelha -> nome vermelho -> tasks vermelhas
         for task in reversed(task_list):
             status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
-        
         html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
-
         fight_info_html = f"<div class='fight-info-number'>{row.get('Fight #', '')}</div><div class='fight-info-event'>{row.get('Event', '')}</div><div class='fight-info-division'>{row.get('Division', '')}</div>"
         html += f"<div class='grid-item center-info-cell'>{fight_info_html}</div>"
-
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
         html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
-        
         for task in task_list:
             status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
-
     html += "</div>"
     return html
 
-# --- FUNÇÃO DE ESTILO MODIFICADA E DINÂMICA ---
 def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_width_pc, division_font_size_px):
-    """
-    Gera o CSS para o dashboard, recebendo as larguras das colunas e a fonte da divisão
-    a partir dos sliders e ajustando as colunas de tarefas para preencher o espaço restante.
-    """
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
-    fighter_font_size = font_size_px * 1.8 
-
-    # --- LÓGICA DE CÁLCULO DINÂMICO DE LARGURA ---
-    # 1. Define a largura fixa (em %) para as colunas de foto.
+    fighter_font_size = font_size_px * 1.8
     photo_pc = 6.0
-
-    # 2. Calcula o espaço total usado pelas colunas controladas pelo usuário e pelas fotos.
     used_space = (fighter_width_pc * 2) + division_width_pc + (photo_pc * 2)
-
-    # 3. O espaço restante é distribuído igualmente entre todas as colunas de tarefas.
     remaining_space_for_tasks = 100 - used_space
     num_total_task_cols = num_tasks * 2
-    
-    # Garante que a largura da tarefa não seja negativa se os sliders forem muito altos.
     task_pc = (remaining_space_for_tasks / num_total_task_cols) if num_total_task_cols > 0 else 0
     if task_pc < 0: task_pc = 0
-
-    # 4. Cria a string final para o 'grid-template-columns' com os valores calculados.
     grid_template_columns = " ".join(
-        [f"{task_pc}%"] * num_tasks + 
-        [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"] + 
+        [f"{task_pc}%"] * num_tasks +
+        [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"] +
         [f"{task_pc}%"] * num_tasks
     )
-
     return f"""
     <style>
-        /* --- Reset de Estilos do Streamlit --- */
         div[data-testid="stToolbar"], div[data-testid="stDecoration"],
         div[data-testid="stStatusWidget"], #MainMenu, header {{
             visibility: hidden; height: 0%; position: fixed;
         }}
         .block-container {{ padding-top: 1rem !important; padding-bottom: 0rem !important; }}
-        
-        /* --- Estilo do Contêiner da Grade (Grid) --- */
         .dashboard-grid {{
             display: grid;
-            grid-template-columns: {grid_template_columns}; /* Aplica a definição de colunas calculada */
+            grid-template-columns: {grid_template_columns};
             gap: 1px;
             background-color: #4a4a50;
             border-radius: 12px;
@@ -272,103 +212,80 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             margin-top: 1rem;
         }}
-        
-        /* --- Estilo de cada Célula da Grade --- */
         .grid-item {{
-            background-color: #2a2a2e;
-            color: #e1e1e1;
-            padding: {cell_padding}px 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: {img_size + (cell_padding * 2)}px;
-            word-break: break-word;
+            background-color: #2a2a2e; color: #e1e1e1;
+            padding: {cell_padding}px 8px; display: flex; align-items: center; justify-content: center;
+            min-height: {img_size + (cell_padding * 2)}px; word-break: break-word;
         }}
         .grid-item:hover {{ background-color: #38383c; }}
-        
-        /* --- Estilos Específicos para Células de Cabeçalho --- */
         .grid-header {{
-            background-color: #1c1c1f;
-            font-weight: 600;
-            font-size: 1rem;
-            min-height: auto;
+            background-color: #1c1c1f; font-weight: 600; font-size: 1rem; min-height: auto;
         }}
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
-
-        /* --- Estilos para Células Específicas --- */
         .fighter-name {{
-            font-weight: 700;
-            font-size: {fighter_font_size}px !important;
+            font-weight: 700; font-size: {fighter_font_size}px !important;
         }}
         .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
         .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
-
         .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
-        
-        /* --- NOVAS CORES E FONTES --- */
         .status-done {{ background-color: #4A6D2F; }}
         .status-requested {{ background-color: #FF8C00; }}
         .status-pending {{ background-color: #dc3545; }}
         .status-neutral, .status-neutral:hover {{ background-color: transparent !important; }}
         .status-cell {{ cursor: help; }}
-
         .fighter-img {{
             width: {img_size}px; height: {img_size}px;
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
-        
-        /* **FONTE DA COLUNA DE INFO AGORA É CONTROLADA PELO SEU PRÓPRIO SLIDER** */
         .fight-info-number, .fight-info-event, .fight-info-division {{
-            font-size: {division_font_size_px}px !important; 
+            font-size: {division_font_size_px}px !important;
         }}
         .fight-info-number {{ font-weight: bold; color: #fff; }}
         .fight-info-event {{ font-style: italic; color: #ccc; }}
         .fight-info-division {{ font-style: normal; color: #ddd; }}
-        
         .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
     """
 
 # --- Aplicação Principal do Streamlit ---
 
-# Roda a função de auto-refresh a cada 60 segundos
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
 # --- Controles da Barra Lateral (Sidebar) ---
 st.sidebar.title("Dashboard Controls")
 if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
-    st.cache_data.clear() # Limpa o cache de dados
+    st.cache_data.clear()
     st.toast("Data refreshed!", icon="🎉")
-    st.rerun() # Força o rerodamento do script
+    st.rerun()
 
-# Slider para controlar o tamanho geral da fonte
-if 'table_font_size' not in st.session_state:
-    st.session_state.table_font_size = 18
+# --- NOVO CONTROLE DE LAYOUT ---
+st.sidebar.subheader("Configurações de Exibição")
+is_wide_mode = st.sidebar.toggle(
+    "Modo Tela Cheia (Wide)",
+    value=(st.session_state.layout_mode == "wide"), # O valor inicial do toggle reflete o estado atual
+    key="layout_toggle"
+)
+new_layout = "wide" if is_wide_mode else "centered"
+# Se o layout mudou, atualiza o session_state e força o rerun para aplicar a mudança
+if new_layout != st.session_state.layout_mode:
+    st.session_state.layout_mode = new_layout
+    st.rerun()
+
+if 'table_font_size' not in st.session_state: st.session_state.table_font_size = 18
 st.session_state.table_font_size = st.sidebar.slider(
     "Tamanho Geral da Fonte (px)", min_value=10, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
 
-# --- CONTROLES DE LARGURA E FONTE ESPECÍFICA ---
 st.sidebar.subheader("Ajustes Finos de Layout")
+if 'fighter_width' not in st.session_state: st.session_state.fighter_width = 25
+if 'division_width' not in st.session_state: st.session_state.division_width = 10
+if 'division_font_size' not in st.session_state: st.session_state.division_font_size = 16
 
-# Inicializa os valores dos sliders no st.session_state se não existirem
-if 'fighter_width' not in st.session_state:
-    st.session_state.fighter_width = 25
-if 'division_width' not in st.session_state:
-    st.session_state.division_width = 10
-if 'division_font_size' not in st.session_state:
-    st.session_state.division_font_size = 16
-
-# Sliders que salvam seu estado
 st.session_state.fighter_width = st.sidebar.slider(
-    "Largura Nome do Lutador (%)", 
-    min_value=10, # <-- MUDANÇA APLICADA AQUI
-    max_value=40, 
-    value=st.session_state.fighter_width, 
-    step=1
+    "Largura Nome do Lutador (%)", min_value=10, max_value=40, value=st.session_state.fighter_width, step=1
 )
 st.session_state.division_width = st.sidebar.slider(
     "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1
@@ -378,19 +295,16 @@ st.session_state.division_font_size = st.sidebar.slider(
 )
 st.sidebar.markdown("---")
 
-
 # --- Carregamento Inicial dos Dados ---
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
     df_att = load_attendance_data()
     all_tsks = get_task_list()
 
-# Se dados essenciais não forem carregados, para a execução.
 if df_fc is None or df_fc.empty or not all_tsks:
     st.warning("Could not load Fightcard data or Task List. Please check the spreadsheets.")
     st.stop()
 
-# Injeta o CSS na página, passando TODOS os valores dos sliders para o cálculo do layout.
 st.markdown(get_dashboard_style(
     st.session_state.table_font_size,
     len(all_tsks),
@@ -399,16 +313,12 @@ st.markdown(get_dashboard_style(
     st.session_state.division_font_size,
 ), unsafe_allow_html=True)
 
-# Filtro de evento na barra lateral
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
 if not avail_evs:
     st.warning("No events found in Fightcard data.")
     st.stop()
 sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
 
-# --- Processamento e Exibição dos Dados ---
-
-# Filtra o DataFrame do fightcard baseado no evento selecionado
 df_fc_disp = df_fc.copy()
 if sel_ev_opt != "All Events":
     df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
@@ -417,36 +327,26 @@ if df_fc_disp.empty:
     st.info(f"No fights found for event '{sel_ev_opt}'.")
     st.stop()
 
-# Transforma os dados do fightcard para o formato necessário para o dashboard
 dash_data_list = []
-# Agrupa por evento e ordem da luta para processar cada luta individualmente
 for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
     ev, f_ord = order
     bl_s = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0)
     rd_s = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
-    
-    # Cria um dicionário para cada linha do dashboard
     row_d = {"Event": ev, "Fight #": int(f_ord) if pd.notna(f_ord) else ""}
     for prefix, series in [("Azul", bl_s), ("Vermelho", rd_s)]:
         if isinstance(series, pd.Series) and not series.empty:
             name, id, pic = series.get(FC_FIGHTER_COL, "N/A"), series.get(FC_ATHLETE_ID_COL, ""), series.get(FC_PICTURE_COL, "")
             row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
             row_d[f"Lutador {prefix}"] = f"{name}"
-            # Para cada tarefa, busca o status do atleta
             for task in all_tsks: row_d[f"{task} ({prefix})"] = get_task_status(id, task, df_att)
         else:
-            # Preenche com dados vazios se não houver lutador no corner
             row_d[f"Foto {prefix}"], row_d[f"Lutador {prefix}"] = "", "N/A"
             for task in all_tsks: row_d[f"{task} ({prefix})"] = get_task_status(None, task, df_att)
-            
     row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A")) if isinstance(bl_s, pd.Series) else (rd_s.get(FC_DIVISION_COL, "N/A") if isinstance(rd_s, pd.Series) else "N/A")
     dash_data_list.append(row_d)
 
-# --- Renderização Final da Página ---
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
-    
-    # Renderiza o sumário de tarefas (métricas)
     task_summary = calculate_task_summary(df_dash_processed, all_tsks)
     st.write("<div class='summary-container'>", unsafe_allow_html=True)
     cols = st.columns(len(all_tsks))
@@ -460,12 +360,9 @@ if dash_data_list:
                 delta_color="off"
             )
     st.write("</div>", unsafe_allow_html=True)
-
-    # Renderiza o dashboard principal (a grade)
     html_grid = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
     st.markdown(html_grid, unsafe_allow_html=True)
 else:
     st.info(f"No fights processed for '{sel_ev_opt}'.")
-    
-# Adiciona um timestamp de atualização no rodapé
+
 st.markdown(f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>", unsafe_allow_html=True, help="This page auto-refreshes every 60 seconds.")

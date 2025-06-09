@@ -5,10 +5,10 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-# --- Page Setup ---
+# --- Página Streamlit ---
 st.set_page_config(page_title="Fight Dashboard", layout="wide")
 
-# --- Custom Styles ---
+# --- Estilo customizado da tabela ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -127,11 +127,24 @@ def get_dashboard_style(font_size_px):
     </style>
     """
 
-# --- Apply Styles ---
+# --- Controle de fonte ---
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 
+# --- Sidebar para ajuste dinâmico ---
+st.sidebar.title("Dashboard Controls")
+st.session_state.table_font_size = st.sidebar.slider(
+    "Tamanho da Fonte da Tabela (px)", 12, 30, st.session_state.table_font_size, step=1
+)
+if st.sidebar.button("🔄 Recarregar dados", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+
+# --- Aplicação do estilo visual ---
 st.markdown(get_dashboard_style(st.session_state.table_font_size), unsafe_allow_html=True)
 
-# --- Placeholder: continue your full script here ---
-st.write("\n🚧 O restante do script (carregamento de dados, visualização, geração de tabelas) deve ser inserido abaixo desta linha.")
+# --- Refresh automático ---
+st_autorefresh(interval=60000, key="dashboard_auto_refresh")
+
+# --- Continuação do código (coloque aqui as funções e carregamentos) ---
+st.info("⚠️ O restante do código deve ser inserido a partir deste ponto: funções de carregamento de dados, exibição da tabela e lógica principal do dashboard.")

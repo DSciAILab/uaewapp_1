@@ -364,7 +364,11 @@ if 'division_font_size' not in st.session_state:
 
 # Sliders que salvam seu estado
 st.session_state.fighter_width = st.sidebar.slider(
-    "Largura Nome do Lutador (%)", min_value=15, max_value=40, value=st.session_state.fighter_width, step=1
+    "Largura Nome do Lutador (%)", 
+    min_value=10, # <-- MUDANÇA APLICADA AQUI
+    max_value=40, 
+    value=st.session_state.fighter_width, 
+    step=1
 )
 st.session_state.division_width = st.sidebar.slider(
     "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1

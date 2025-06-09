@@ -168,7 +168,7 @@ def registrar_log(ath_id, ath_name, ath_event, task, status, notes, user_log_id)
 
 def get_latest_status(athlete_id, task, attendance_df):
     """
-    Encontra o status mais recente para um atleta e tarefa.
+    Encontra o status mais recente para um atleta e tarefa, retornando 'Pending' por padrão.
     """
     if attendance_df.empty or task is None: return "Pending"
     athlete_records = attendance_df[(attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & (attendance_df["Task"] == task)]
@@ -275,10 +275,10 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         
         curr_ath_task_stat = row.get('current_task_status') if sel_task_actual else None
         
-        status_bar_color = "#2E2E2E"
+        status_bar_color = "#2E2E2E" # Cor neutra se nenhuma tarefa for selecionada
         status_text_html = ""
         if curr_ath_task_stat:
-            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{curr_ath_task_stat}</strong></p>"
+            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(curr_ath_task_stat)}</strong></p>"
             if curr_ath_task_stat == "Done": status_bar_color = "#28a745"
             elif curr_ath_task_stat == "Requested": status_bar_color = "#ffc107"
             elif curr_ath_task_stat == "---": status_bar_color = "#6c757d"
@@ -286,30 +286,15 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
 
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
-            # --- CONSTRUÇÃO ROBUSTA DO HTML DO CARD ---
-            # 1. Cabeçalho (Imagem e Nomes)
-            image_url = row.get("IMAGE", "")
-            image_html_tag = f"""<img src='{html.escape(image_url, True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>""" if image_url and image_url.startswith("http") else f"""<img src='https://via.placeholder.com/120?text=No+Image' style='width:120px; height:120px; border-radius:50%;'>"""
-            
-            mob_r = str(row.get("MOBILE", "")).strip()
+            # --- CONSTRUÇÃO DO CARD REFEITA PARA MÁXIMA ROBUSTEZ ---
+            # 1. Constrói o HTML para cada parte condicional.
             wa_link_html = ""
+            mob_r = str(row.get("MOBILE", "")).strip()
             if mob_r:
                 phone_digits = "".join(filter(str.isdigit, mob_r))
                 if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
-                if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
-            
-            card_header_html = f"""
-                <div style='display:flex; align-items:center; gap:20px;'>
-                    {image_html_tag}
-                    <div style='flex-grow: 1;'>
-                        <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
-                        {status_text_html}
-                        {wa_link_html}
-                    </div>
-                </div>
-            """
+                if phone_digits: wa_link_html = f"<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"
 
-            # 2. Dados Pessoais (se ativado)
             personal_data_html = ""
             if st.session_state.show_personal_data:
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
@@ -320,14 +305,27 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
             
-            # 3. Monta o Card Final e Renderiza
-            st.markdown(f"""
-            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
-                {card_header_html}
-                {personal_data_html}
-            </div>""", unsafe_allow_html=True)
+            image_url = row.get("IMAGE", "")
+            image_html_tag = f"""<img src='{html.escape(image_url, True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>""" if image_url and image_url.startswith("http") else f"""<img src='https://via.placeholder.com/120?text=No+Image' style='width:120px; height:120px; border-radius:50%;'>"""
 
-            # 4. Renderiza os Badges
+            # 2. Monta o HTML final do card em uma única string.
+            card_html = f"""
+            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
+                <div style='display:flex; align-items:center; gap:20px;'>
+                    {image_html_tag}
+                    <div style='flex-grow: 1;'>
+                        <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
+                        {status_text_html}
+                        {wa_link_html}
+                    </div>
+                </div>
+                {personal_data_html}
+            </div>"""
+            
+            # 3. Renderiza o card.
+            st.markdown(card_html, unsafe_allow_html=True)
+            
+            # 4. Renderiza os badges de status.
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
                 status_color_map = {"Done": "#28a745", "Requested": "#ffc107", "---": "#6c757d", "Pending": "#dc3545", "Not Registred": "#dc3545"}

@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
 import altair as alt
-import time # Importado para a melhoria de feedback
+import time
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Task Control", layout="wide")
@@ -20,7 +20,6 @@ ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 CONFIG_TAB_NAME = "Config"
 NO_TASK_SELECTED_LABEL = "-- Choose Task --"
 STATUS_PENDING_LIKE = ["Pending", "Not Registred"]
-
 
 # --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
@@ -271,31 +270,40 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
                 if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
-            pd_content = ""
+            # --- [INÍCIO DA CORREÇÃO] ---
+            # Define o conteúdo dos dados pessoais de forma condicional
+            pd_content_html = ""
             if st.session_state.show_personal_data:
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
-                pd_content = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
-
-            st.markdown(f"""
-            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px; min-height: 162px; display: flex; flex-direction: column; justify-content: space-between;'>
-                <div>
-                    <div style='display:flex; align-items:center; gap:20px;'>
-                        <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/120?text=No+Image",True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>
-                        <div style='flex-grow: 1;'>
-                            <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
-                            {status_text_html}
-                            {wa_link_html}
-                        </div>
-                    </div>
-                    {pd_content}
+                pd_content_html = f"""
+                <div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'>
+                    <table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>
+                       {pass_img_h}
+                    </table>
                 </div>
-            </div>""", unsafe_allow_html=True)
+                """
             
+            # Monta o HTML do card de forma limpa e segura
+            st.markdown(f"""
+            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
+                <div style='display:flex; align-items:center; gap:20px;'>
+                    <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/120?text=No+Image",True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>
+                    <div style='flex-grow: 1;'>
+                        <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
+                        {status_text_html}
+                        {wa_link_html}
+                    </div>
+                </div>
+                {pd_content_html}
+            </div>
+            """, unsafe_allow_html=True)
+            # --- [FIM DA CORREÇÃO] ---
+
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
                 status_color_map = {"Done": "#28a745", "Requested": "#ffc107", "---": "#6c757d", "Pending": "#dc3545", "Not Registred": "#dc3545"}

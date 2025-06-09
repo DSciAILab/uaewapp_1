@@ -135,53 +135,52 @@ def calculate_task_summary(df_processed, task_list):
                     elif status == "Requested": summary[task]["Requested"] += count
     return summary
 
+# --- NOVA FUNÇÃO DE GERAÇÃO DE HTML USANDO CSS GRID ---
 def generate_mirrored_html_dashboard(df_processed, task_list):
-    header_html = "<thead><tr>"
-    header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
-    header_html += "<th class='center-col-header' rowspan=2>FIGHT<br>INFO</th>"
-    header_html += f"<th class='red-corner-header' colspan='{len(task_list) + 2}'>RED CORNER</th>"
-    header_html += "</tr><tr>"
+    num_tasks = len(task_list)
     
-    # Cabeçalhos do Blue Corner
+    html = "<div class='dashboard-grid'>"
+
+    # --- HEADER ROW 1 (CABEÇALHOS PRINCIPAIS) ---
+    html += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
+    html += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
+    html += f"<div class='grid-item grid-header red-corner-header' style='grid-column: {num_tasks + 4} / span {num_tasks + 2};'>RED CORNER</div>"
+    
+    # --- HEADER ROW 2 (ÍCONES E TÍTULOS) ---
     for task in reversed(task_list):
         emoji = TASK_EMOJI_MAP.get(task, task[0])
-        header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
-    header_html += "<th class='fighter-header'>Fighter</th><th class='photo-header'>Photo</th>"
-
-    # Cabeçalhos do Red Corner
-    header_html += "<th class='photo-header'>Photo</th><th class='fighter-header'>Fighter</th>"
+        html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
+    html += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
+    html += "<div class='grid-item grid-header photo-header'>Photo</div>"
+    # A coluna central já foi posicionada com 'grid-row: span 2', então não adicionamos um placeholder aqui.
+    html += "<div class='grid-item grid-header photo-header'>Photo</div>"
+    html += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
     for task in task_list:
         emoji = TASK_EMOJI_MAP.get(task, task[0])
-        header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
-    header_html += "</tr></thead>"
+        html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
 
-    body_html = "<tbody>"
+    # --- DATA ROWS (LINHAS DE DADOS) ---
     for _, row in df_processed.iterrows():
-        body_html += "<tr>"
-        # Células Blue Corner
+        # A grade cuidará do layout, apenas cuspimos as células em ordem.
         for task in reversed(task_list):
             status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
-            body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
-        body_html += f"<td class='fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</td>"
-        body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
+            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
+        
+        html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
+        html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
 
-        # Célula Central
-        fight_info_html = f"""
-            <div class='fight-info-number'>{row.get('Fight #', '')}</div>
-            <div class='fight-info-event'>{row.get('Event', '')}</div>
-            <div class='fight-info-division'>{row.get('Division', '')}</div>
-        """
-        body_html += f"<td class='center-info-cell'>{fight_info_html}</td>"
+        fight_info_html = f"<div class='fight-info-number'>{row.get('Fight #', '')}</div><div class='fight-info-event'>{row.get('Event', '')}</div><div class='fight-info-division'>{row.get('Division', '')}</div>"
+        html += f"<div class='grid-item center-info-cell'>{fight_info_html}</div>"
 
-        # Células Red Corner
-        body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
-        body_html += f"<td class='fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</td>"
+        html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
+        html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
+        
         for task in task_list:
             status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
-            body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
-        body_html += "</tr>"
-    body_html += "</tbody>"
-    return f"<div class='dashboard-container'><table class='dashboard-table'>{header_html}{body_html}</table></div>"
+            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
+
+    html += "</div>"
+    return html
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(layout="wide", page_title="Fight Dashboard")
@@ -189,11 +188,24 @@ st.set_page_config(layout="wide", page_title="Fight Dashboard")
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 
-# --- FUNÇÃO CSS COM A LÓGICA DE LARGURA CORRIGIDA ---
-def get_dashboard_style(font_size_px):
+# --- NOVA FUNÇÃO DE ESTILO USANDO CSS GRID ---
+def get_dashboard_style(font_size_px, num_tasks=6):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
-    fighter_font_size = font_size_px * 2.0 
+    fighter_font_size = font_size_px * 1.8 
+
+    # Definição explícita e robusta das colunas da grade
+    task_col_width = "30px"
+    photo_col_width = "90px"
+    center_col_width = "100px"
+    fighter_col_width = "1fr"  # '1fr' significa 1 fração do espaço livre. Isso faz com que as colunas do nome se expandam.
+
+    # Cria a string do template de colunas
+    grid_template_columns = " ".join(
+        [task_col_width] * num_tasks + 
+        [fighter_col_width, photo_col_width, center_col_width, photo_col_width, fighter_col_width] + 
+        [task_col_width] * num_tasks
+    )
 
     return f"""
     <style>
@@ -204,122 +216,94 @@ def get_dashboard_style(font_size_px):
         header {{ visibility: hidden; height: 0%; }}
         .block-container {{ padding-top: 1rem !important; padding-bottom: 0rem !important; }}
         
-        .dashboard-container {{ font-family: 'Segoe UI', sans-serif; }}
-        .dashboard-table {{
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            background-color: #2a2a2e;
-            color: #e1e1e1;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        .dashboard-grid {{
+            display: grid;
+            grid-template-columns: {grid_template_columns};
+            gap: 1px;
+            background-color: #4a4a50; /* A cor do 'gap' se torna a borda */
             border-radius: 12px;
             overflow: hidden;
-            table-layout: fixed; /* ESSENCIAL PARA O CONTROLE DA LARGURA */
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            margin-top: 1rem;
         }}
-        .dashboard-table th, .dashboard-table td {{
-            border-right: 1px solid #4a4a50;
-            border-bottom: 1px solid #4a4a50;
-            padding: {cell_padding}px 4px; /* Padding horizontal reduzido */
-            text-align: center;
-            vertical-align: middle;
+        
+        .grid-item {{
+            background-color: #2a2a2e;
+            color: #e1e1e1;
+            padding: {cell_padding}px 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: {img_size + (cell_padding * 2)}px;
             word-break: break-word;
-            overflow: hidden;
         }}
-        .dashboard-table td {{ font-size: {font_size_px}px !important; }}
-        .dashboard-table tr:hover td {{ background-color: #38383c; }}
-
-        .dashboard-table th {{
+        
+        .grid-item:hover {{
+             background-color: #38383c;
+        }}
+        
+        .grid-header {{
             background-color: #1c1c1f;
-            font-size: 1.5rem;
             font-weight: 600;
-            white-space: normal;
+            font-size: 1rem;
+            min-height: auto;
         }}
-        .blue-corner-header, .red-corner-header {{
-            font-size: 0.8rem !important;
-            text-transform: uppercase;
-        }}
+
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
-        
-        /* === AJUSTE DE LARGURA COM PORCENTAGENS (TOTAL 100%) === */
+        .center-col-header {{ background-color: #111 !important; }}
 
-        /* Coluna do NOME (larga): 32% x 2 = 64% */
-        .fighter-header, .fighter-name {{
-            width: 32%;
-        }}
         .fighter-name {{
             font-weight: 700;
             font-size: {fighter_font_size}px !important;
         }}
-        .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
-        .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
+        .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
+        .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
 
-        /* Coluna da FOTO (pequena): 6% x 2 = 12% */
-        .photo-header, .photo-cell {{
-            width: 6%;
+        .photo-cell {{
+             padding: 4px;
         }}
 
-        /* Colunas de STATUS (mínimas): 1.5% x 12 = 18% */
-        .task-header, .status-cell {{
-            width: 1.5%; 
+        .center-info-cell {{
+            flex-direction: column;
+            line-height: 1.2;
+            background-color: #333;
         }}
         
-        /* Coluna Central de INFO (pequena): 6% x 1 = 6% */
-        .center-col-header, .center-info-cell {{
-            width: 6%;
-        }}
-        /* Total: 64 + 12 + 18 + 6 = 100% */
+        .status-done {{ background-color: #556B2F; }}
+        .status-requested {{ background-color: #F0E68C; }}
+        .status-pending {{ background-color: #dc3545; }}
+        .status-neutral, .status-neutral:hover {{ background-color: transparent !important; }}
+        .status-cell {{ cursor: help; }}
 
-        .center-info-cell {{ background-color: #333; }}
-        .center-col-header {{ background-color: #111 !important; }}
-
-        /* CORES PERSONALIZADAS */
-        .status-done {{ background-color: #556B2F; }} /* Verde Musgo */
-        .status-requested {{ background-color: #F0E68C; }} /* Amarelo Pastel */
-        
-        /* === FIM DAS MUDANÇAS === */
-        
         .fighter-img {{
             width: {img_size}px;
             height: {img_size}px;
             border-radius: 50%;
             object-fit: cover;
             border: 2px solid #666;
-            display: inline-block;
         }}
-        .fight-info-number {{ font-weight: bold; font-size: 1.2em; color: #fff; line-height: 1.2; }}
-        .fight-info-event {{ font-style: italic; font-size: 0.8em; color: #ccc; line-height: 1; }}
-        .fight-info-division {{ font-style: normal; font-size: 0.85em; color: #ddd; line-height: 1.2; }}
+        .fight-info-number {{ font-weight: bold; font-size: 1.2em; color: #fff; }}
+        .fight-info-event {{ font-style: italic; font-size: 0.8em; color: #ccc; }}
+        .fight-info-division {{ font-style: normal; font-size: 0.85em; color: #ddd; }}
 
-        .status-cell {{ cursor: help; }}
-        .status-pending {{ background-color: #dc3545; }}
-        .status-neutral {{ background-color: transparent; }}
-
-        .summary-container {{
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 20px;
-        }}
+        .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
     """
 
 # --- Main Page Content ---
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
-# --- Sidebar Controls ---
 st.sidebar.title("Dashboard Controls")
 if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
-    st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
+    st.cache_data.clear()
+    st.toast("Data refreshed!", icon="🎉")
+    st.rerun()
 
 st.session_state.table_font_size = st.sidebar.slider(
-    "Table Font Size (px)",
-    min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
+    "Table Font Size (px)", min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
-
-st.markdown(get_dashboard_style(st.session_state.table_font_size), unsafe_allow_html=True)
 
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
@@ -327,19 +311,26 @@ with st.spinner("Loading data..."):
     all_tsks = get_task_list()
 
 if df_fc is None or df_fc.empty or not all_tsks:
-    st.warning("Could not load Fightcard data or Task List. Please check the spreadsheets."); st.stop()
+    st.warning("Could not load Fightcard data or Task List. Please check the spreadsheets.")
+    st.stop()
+
+# Injeta o CSS na página
+st.markdown(get_dashboard_style(st.session_state.table_font_size, len(all_tsks)), unsafe_allow_html=True)
 
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
-if not avail_evs: st.warning("No events found in Fightcard data."); st.stop()
+if not avail_evs:
+    st.warning("No events found in Fightcard data.")
+    st.stop()
 
 sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
 
-# --- Data Processing and Display Logic ---
 df_fc_disp = df_fc.copy()
 if sel_ev_opt != "All Events":
     df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
 
-if df_fc_disp.empty: st.info(f"No fights found for event '{sel_ev_opt}'."); st.stop()
+if df_fc_disp.empty:
+    st.info(f"No fights found for event '{sel_ev_opt}'.")
+    st.stop()
 
 dash_data_list = []
 for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
@@ -379,8 +370,9 @@ if dash_data_list:
         col_index += 1
     st.write("</div>", unsafe_allow_html=True)
 
-    html_table = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
-    st.markdown(html_table, unsafe_allow_html=True)
+    # Usa a nova função para gerar o HTML
+    html_grid = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
+    st.markdown(html_grid, unsafe_allow_html=True)
 
 else:
     st.info(f"No fights processed for '{sel_ev_opt}'.")

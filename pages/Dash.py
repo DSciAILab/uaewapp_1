@@ -215,7 +215,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         
         for task in task_list:
             status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
-            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
+            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></td>"
 
     html += "</div>"
     return html
@@ -223,8 +223,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 # --- FUNÇÃO DE ESTILO MODIFICADA ---
 def get_dashboard_style(font_size_px, num_tasks=6):
     """
-    Gera o CSS para o dashboard. As larguras das colunas são calculadas dinamicamente
-    para garantir que o layout se ajuste às solicitações do usuário.
+    Gera o CSS para o dashboard, com larguras e fontes ajustadas conforme as últimas solicitações.
     """
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -234,25 +233,22 @@ def get_dashboard_style(font_size_px, num_tasks=6):
     # 1. Define as larguras base para colunas pequenas em porcentagem.
     base_task_pc = 2.5
     base_photo_pc = 6.0
-    base_center_pc = 8.0
+    original_center_pc = 8.0 # Guarda o valor original da coluna central
 
-    # 2. Calcula o espaço que seria originalmente das colunas de nome.
-    total_task_width = num_tasks * base_task_pc * 2
-    initial_remaining_space = 100 - total_task_width - (base_photo_pc * 2) - base_center_pc
-    original_fighter_pc = initial_remaining_space / 2
-
-    # 3. **APLICA A REDUÇÃO DE 25% NA COLUNA DO NOME**
-    reduction_amount = original_fighter_pc * 0.25
-    new_fighter_pc = original_fighter_pc - reduction_amount
-
-    # 4. **REALOCA O ESPAÇO GANHO PARA A COLUNA CENTRAL**
-    space_reallocated = reduction_amount * 2 # O espaço vem de AMBAS as colunas de nome.
-    new_center_pc = base_center_pc + space_reallocated
+    # 2. **APLICA A REDUÇÃO DE 25% NA COLUNA DE DIVISÃO (CENTRAL)**
+    new_center_pc = original_center_pc * 0.75 # Reduzido em 25%
+    
+    # 3. Calcula o espaço total fixo e o espaço que sobra para as colunas de nome.
+    total_fixed_space = (num_tasks * base_task_pc * 2) + (base_photo_pc * 2) + new_center_pc
+    remaining_space_for_fighters = 100 - total_fixed_space
+    
+    # 4. A largura de cada coluna de nome é metade do espaço que sobrou.
+    fighter_pc = remaining_space_for_fighters / 2
 
     # 5. Cria a string final para o 'grid-template-columns' com os novos valores.
     grid_template_columns = " ".join(
         [f"{base_task_pc}%"] * num_tasks + 
-        [f"{new_fighter_pc}%", f"{base_photo_pc}%", f"{new_center_pc}%", f"{base_photo_pc}%", f"{new_fighter_pc}%"] + 
+        [f"{fighter_pc}%", f"{base_photo_pc}%", f"{new_center_pc}%", f"{base_photo_pc}%", f"{fighter_pc}%"] + 
         [f"{base_task_pc}%"] * num_tasks
     )
 
@@ -309,7 +305,7 @@ def get_dashboard_style(font_size_px, num_tasks=6):
         .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
         .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
 
-        .center-info-cell {{ flex-direction: column; line-height: 1.2; background-color: #333; }}
+        .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
         
         /* --- Estilos de Status (Cores) --- */
         .status-done {{ background-color: #556B2F; }}
@@ -323,11 +319,12 @@ def get_dashboard_style(font_size_px, num_tasks=6):
             width: {img_size}px; height: {img_size}px;
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
-        /* **FONTES AUMENTADAS CONFORME SOLICITADO** */
-        .fight-info-number {{ font-weight: bold; font-size: 1.4em; color: #fff; }}
-        .fight-info-event {{ font-style: italic; font-size: 1.0em; color: #ccc; }}
-        .fight-info-division {{ font-style: normal; font-size: 1.1em; color: #ddd; }}
         
+        /* **AJUSTE DE FONTE PARA A COLUNA DE DIVISÃO** */
+        .center-info-cell > div {{
+            font-size: 19px !important; /* Força a fonte para 19px nesta coluna */
+        }}
+
         .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
     """

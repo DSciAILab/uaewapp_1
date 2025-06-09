@@ -135,17 +135,22 @@ def calculate_task_summary(df_processed, task_list):
                     elif status == "Requested": summary[task]["Requested"] += count
     return summary
 
+# --- FUNÇÃO CORRIGIDA ---
 def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html = "<thead><tr>"
     header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
     header_html += "<th class='center-col-header' rowspan=2>FIGHT<br>INFO</th>"
     header_html += f"<th class='red-corner-header' colspan='{len(task_list) + 2}'>RED CORNER</th>"
     header_html += "</tr><tr>"
+    
+    # Cabeçalhos do Blue Corner
     for task in reversed(task_list):
         emoji = TASK_EMOJI_MAP.get(task, task[0])
         header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
-    header_html += "<th>Fighter</th><th>Photo</th>"
-    header_html += "<th>Photo</th><th>Fighter</th>"
+    header_html += "<th class='fighter-header'>Fighter</th><th class='photo-header'>Photo</th>"
+
+    # Cabeçalhos do Red Corner
+    header_html += "<th class='photo-header'>Photo</th><th class='fighter-header'>Fighter</th>"
     for task in task_list:
         emoji = TASK_EMOJI_MAP.get(task, task[0])
         header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
@@ -154,13 +159,14 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     body_html = "<tbody>"
     for _, row in df_processed.iterrows():
         body_html += "<tr>"
+        # Células Blue Corner
         for task in reversed(task_list):
             status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
-
         body_html += f"<td class='fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</td>"
         body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
 
+        # Célula Central
         fight_info_html = f"""
             <div class='fight-info-number'>{row.get('Fight #', '')}</div>
             <div class='fight-info-event'>{row.get('Event', '')}</div>
@@ -168,9 +174,9 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         """
         body_html += f"<td class='center-info-cell'>{fight_info_html}</td>"
 
+        # Células Red Corner
         body_html += f"<td class='photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></td>"
         body_html += f"<td class='fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</td>"
-
         for task in task_list:
             status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
             body_html += f"<td class='status-cell {status['class']}' title='{status['text']}'></td>"
@@ -184,7 +190,7 @@ st.set_page_config(layout="wide", page_title="Fight Dashboard")
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 
-# --- NEW AND FINAL CSS FUNCTION ---
+# --- FUNÇÃO CSS CORRIGIDA ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -228,39 +234,45 @@ def get_dashboard_style(font_size_px):
             font-weight: 600;
             white-space: normal;
         }}
-        .blue-corner-header, .red-corner-header, .center-col-header {{
+        .blue-corner-header, .red-corner-header {{
             font-size: 0.8rem !important;
             text-transform: uppercase;
         }}
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
-        .center-col-header {{ background-color: #111 !important; }}
+        
+        /* === AJUSTE DE LARGURA DEFINITIVO === */
 
-        /* === AJUSTE DE LARGURA CORRIGIDO === */
-
-        /* 1. Definir larguras FIXAS e PEQUENAS para colunas de status e utilitárias */
-        .task-header, .status-cell {{
-            width: 25px; /* Largura bem pequena e fixa */
+        /* Coluna do NOME (larga) - Aplicado ao Header e à Célula */
+        .fighter-header, .fighter-name {{
+            width: 30%; /* Força uma largura grande */
         }}
-        .photo-cell {{
-            width: {img_size + 16}px; /* Largura fixa baseada no tamanho da imagem */
-        }}
-        .center-info-cell {{
-            width: 95px; /* Largura fixa */
-            background-color: #333;
-            padding: 5px !important;
-        }}
-
-        /* 2. NÃO definir largura para a coluna do nome. Ela se expandirá para preencher o espaço. */
         .fighter-name {{
             font-weight: 700;
-            font-size: {fighter_font_size}px !important; /* Apenas estilo, sem largura */
-            /* A largura será calculada automaticamente pelo table-layout: fixed */
+            font-size: {fighter_font_size}px !important;
         }}
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
 
-        /* 3. CORES PERSONALIZADAS */
+        /* Coluna da FOTO (pequena) - Aplicado ao Header e à Célula */
+        .photo-header, .photo-cell {{
+            width: {img_size + 16}px;
+        }}
+
+        /* Colunas de STATUS (mínimas) - Aplicado ao Header e à Célula */
+        .task-header, .status-cell {{
+            width: 28px; 
+        }}
+        
+        /* Coluna Central de INFO (pequena) - Aplicado ao Header e à Célula */
+        .center-col-header, .center-info-cell {{
+            width: 95px;
+        }}
+        .center-info-cell {{ background-color: #333; padding: 5px !important; }}
+        .center-col-header {{ background-color: #111 !important; }}
+
+
+        /* CORES PERSONALIZADAS */
         .status-done {{ background-color: #556B2F; }} /* Verde Musgo */
         .status-requested {{ background-color: #F0E68C; }} /* Amarelo Pastel */
         

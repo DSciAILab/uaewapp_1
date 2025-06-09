@@ -135,7 +135,6 @@ def calculate_task_summary(df_processed, task_list):
                     elif status == "Requested": summary[task]["Requested"] += count
     return summary
 
-# --- FUNÇÃO CORRIGIDA ---
 def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html = "<thead><tr>"
     header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
@@ -190,7 +189,7 @@ st.set_page_config(layout="wide", page_title="Fight Dashboard")
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 
-# --- FUNÇÃO CSS CORRIGIDA ---
+# --- FUNÇÃO CSS COM A LÓGICA DE LARGURA CORRIGIDA ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -220,10 +219,11 @@ def get_dashboard_style(font_size_px):
         .dashboard-table th, .dashboard-table td {{
             border-right: 1px solid #4a4a50;
             border-bottom: 1px solid #4a4a50;
-            padding: {cell_padding}px 8px;
+            padding: {cell_padding}px 4px; /* Padding horizontal reduzido */
             text-align: center;
             vertical-align: middle;
             word-break: break-word;
+            overflow: hidden;
         }}
         .dashboard-table td {{ font-size: {font_size_px}px !important; }}
         .dashboard-table tr:hover td {{ background-color: #38383c; }}
@@ -241,11 +241,11 @@ def get_dashboard_style(font_size_px):
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         
-        /* === AJUSTE DE LARGURA DEFINITIVO === */
+        /* === AJUSTE DE LARGURA COM PORCENTAGENS (TOTAL 100%) === */
 
-        /* Coluna do NOME (larga) - Aplicado ao Header e à Célula */
+        /* Coluna do NOME (larga): 32% x 2 = 64% */
         .fighter-header, .fighter-name {{
-            width: 30%; /* Força uma largura grande */
+            width: 32%;
         }}
         .fighter-name {{
             font-weight: 700;
@@ -254,23 +254,24 @@ def get_dashboard_style(font_size_px):
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
 
-        /* Coluna da FOTO (pequena) - Aplicado ao Header e à Célula */
+        /* Coluna da FOTO (pequena): 6% x 2 = 12% */
         .photo-header, .photo-cell {{
-            width: {img_size + 16}px;
+            width: 6%;
         }}
 
-        /* Colunas de STATUS (mínimas) - Aplicado ao Header e à Célula */
+        /* Colunas de STATUS (mínimas): 1.5% x 12 = 18% */
         .task-header, .status-cell {{
-            width: 28px; 
+            width: 1.5%; 
         }}
         
-        /* Coluna Central de INFO (pequena) - Aplicado ao Header e à Célula */
+        /* Coluna Central de INFO (pequena): 6% x 1 = 6% */
         .center-col-header, .center-info-cell {{
-            width: 95px;
+            width: 6%;
         }}
-        .center-info-cell {{ background-color: #333; padding: 5px !important; }}
-        .center-col-header {{ background-color: #111 !important; }}
+        /* Total: 64 + 12 + 18 + 6 = 100% */
 
+        .center-info-cell {{ background-color: #333; }}
+        .center-col-header {{ background-color: #111 !important; }}
 
         /* CORES PERSONALIZADAS */
         .status-done {{ background-color: #556B2F; }} /* Verde Musgo */
@@ -284,6 +285,7 @@ def get_dashboard_style(font_size_px):
             border-radius: 50%;
             object-fit: cover;
             border: 2px solid #666;
+            display: inline-block;
         }}
         .fight-info-number {{ font-weight: bold; font-size: 1.2em; color: #fff; line-height: 1.2; }}
         .fight-info-event {{ font-style: italic; font-size: 0.8em; color: #ccc; line-height: 1; }}

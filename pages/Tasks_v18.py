@@ -275,7 +275,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         
         curr_ath_task_stat = row.get('current_task_status') if sel_task_actual else None
         
-        status_bar_color = "#2E2E2E"
+        status_bar_color = "#2E2E2E" # Cor neutra se nenhuma tarefa for selecionada
         status_text_html = ""
         if curr_ath_task_stat:
             status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(curr_ath_task_stat)}</strong></p>"
@@ -284,11 +284,11 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
 
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
-            # --- CONSTRUÇÃO DO CARD REFEITA PARA MÁXIMA ROBUSTEZ ---
-            # 1. Constrói cada parte do HTML separadamente
+            # --- SOLUÇÃO DEFINITIVA PARA RENDERIZAÇÃO DE HTML ---
+            # 1. Monta cada parte do HTML como uma variável separada.
             image_url = row.get("IMAGE", "")
-            image_html_tag = f"""<img src='{html.escape(image_url, True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>""" if image_url and image_url.startswith("http") else f"""<img src='https://via.placeholder.com/120?text=No+Image' style='width:120px; height:120px; border-radius:50%;'>"""
-            
+            image_html = f"""<img src='{html.escape(image_url, True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>""" if image_url and image_url.startswith("http") else f"""<img src='https://via.placeholder.com/120?text=No+Image' style='width:120px; height:120px; border-radius:50%;'>"""
+
             mob_r = str(row.get("MOBILE", "")).strip()
             wa_link_html = ""
             if mob_r:
@@ -296,10 +296,10 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
                 if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
-            # 2. Monta o corpo principal do card
-            card_body_html = f"""
+            # 2. Constrói o corpo principal do card.
+            card_body = f"""
                 <div style='display:flex; align-items:center; gap:20px;'>
-                    {image_html_tag}
+                    {image_html}
                     <div style='flex-grow: 1;'>
                         <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
                         {status_text_html}
@@ -307,28 +307,28 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                     </div>
                 </div>
             """
-
-            # 3. Monta os dados pessoais SE o toggle estiver ativo
-            personal_data_html = ""
+            
+            # 3. Adiciona os dados pessoais (se ativado) ou a mensagem de "oculto".
             if st.session_state.show_personal_data:
-                # Construa a tabela de dados pessoais aqui
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
-                personal_data_html = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
-                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
-                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
-                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
-                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
-                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
-            
-            # 4. Junta tudo em um único container e renderiza
-            final_html = f"""
+                card_body += f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
+                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
+                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
+                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
+                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
+            else:
+                 # Esta parte é adicionada ao corpo se os dados estiverem ocultos
+                 card_body += "<div style='text-align: center; font-style: italic; color: #ccc; margin-top: 20px;'>Dados pessoais ocultos.</div>"
+
+            # 4. Monta o container final do card e renderiza.
+            final_card_html = f"""
             <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
-                {card_body_html}
-                {personal_data_html}
+                {card_body}
             </div>"""
-            st.markdown(final_html, unsafe_allow_html=True)
+            st.markdown(final_card_html, unsafe_allow_html=True)
             
-            # 5. Renderiza os badges de status, se aplicável
+            # 5. Renderiza os badges de status, se aplicável.
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
                 status_color_map = {"Done": "#28a745", "Requested": "#ffc107", "---": "#6c757d", "Pending": "#dc3545", "Not Registred": "#dc3545"}
@@ -340,11 +340,11 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
         
-        # Coluna de botões de ação
+        # Coluna de botões de ação.
         with col_buttons:
             if sel_task_actual and curr_ath_task_stat is not None:
                 uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-                st.write(" "); st.write(" ") # Espaçamento vertical
+                st.write(" "); st.write(" ")
                 if curr_ath_task_stat == "Requested":
                     if st.button("CONCLUIR", key=f"done_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
                         if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l): st.rerun()

@@ -235,14 +235,16 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     if search_term: df_filtered = df_filtered[df_filtered["NAME"].str.lower().str.contains(search_term, na=False) | df_filtered["ID"].astype(str).str.contains(search_term, na=False)]
     
     if sel_task_actual and st.session_state.selected_status != "Todos":
+        if 'current_task_status' not in df_filtered.columns:
+             df_filtered['current_task_status'] = df_filtered['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
         if st.session_state.selected_status == "Pending":
             df_filtered = df_filtered[df_filtered['current_task_status'].isin(STATUS_PENDING_EQUIVALENTS + ["Pending"])]
         else:
             df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
     
     st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
-    if not sel_task_actual and df_filtered.empty: st.info("Selecione uma tarefa para começar.")
-
+    if df_filtered.empty and sel_task_actual: st.info(f"Nenhum atleta com o status '{st.session_state.selected_status}'.")
+    
     for i_l, row in df_filtered.iterrows():
         ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
         
@@ -267,18 +269,16 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
             
             # --- CORREÇÃO DO HTML DA TABELA ---
-            pd_content = ""
+            pd_html = ""
             if st.session_state.show_personal_data:
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
-                pd_content = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                pd_html = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
                                    <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
                                    <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
                                    <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
                                    <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
                                    <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
-            else:
-                pd_content = "<div style='flex-grow: 1; text-align: center; font-style: italic; color: #ccc; align-self: center;'>Dados pessoais ocultos.</div>"
-
+            
             st.markdown(f"""
             <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
                 <div style='display:flex; align-items:center; gap:20px;'>
@@ -288,9 +288,8 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                         {status_text_html}
                         {wa_link_html}
                     </div>
-                    {pd_content if not st.session_state.show_personal_data else ''}
                 </div>
-                {pd_content if st.session_state.show_personal_data else ''}
+                {pd_html}
             </div>""", unsafe_allow_html=True)
             
             if sel_task_actual:

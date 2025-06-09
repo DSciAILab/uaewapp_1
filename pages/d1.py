@@ -2,13 +2,13 @@
 
 import streamlit as st
 import pandas as pd
-import gspread 
-from google.oauth2.service_account import Credentials 
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh 
+from streamlit_autorefresh import st_autorefresh
 
 # --- Constants ---
-MAIN_SHEET_NAME = "UAEW_App" 
+MAIN_SHEET_NAME = "UAEW_App"
 CONFIG_TAB_NAME = "Config"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 ATTENDANCE_TAB_NAME = "Attendance"
@@ -63,16 +63,18 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
 def get_task_headers(task_list):
     return [TASK_EMOJIS.get(t, t) for t in task_list]
 
-# No restante do script, onde antes havia o uso direto de all_tsks, usar:
+# ⚠️ Exemplo de uso onde for necessário:
 # task_headers_display = get_task_headers(all_tsks)
-# E iterar com zip(all_tsks, task_headers_display) para construir headers com emojis e manter associação com os dados.
+# for task, display in zip(task_list, task_headers_display):
+#     use display como label na interface ou header
 
-# Exemplo de aplicação na geração de tabela HTML:
-# for task, display_name in zip(reversed(task_list), reversed(task_headers_display)):
-#     header_html += f"<th class='task-header'>{display_name}</th>"
-#     ...
-#     # idem para as colunas vermelhas
+# 🧑‍🎨 CSS:
+# .fighter-name {
+#     width: 20%;
+#     font-size: maior (eg. 24px se font_size_px = 12)
+# }
+# .task-header, .status-cell {
+#     width: 4%;
+# }
 
-# E no CSS:
-# .fighter-name { width: 20%; font-size: maior }
-# .task-header, .status-cell { width: 4%; }
+# A partir daqui, substitua headers e use task_headers_display nos locais apropriados do HTML e Streamlit.

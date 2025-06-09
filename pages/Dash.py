@@ -221,10 +221,10 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     return html
 
 # --- FUNÇÃO DE ESTILO MODIFICADA E DINÂMICA ---
-def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_width_pc):
+def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_width_pc, division_font_size_px):
     """
-    Gera o CSS para o dashboard, recebendo as larguras das colunas a partir dos sliders
-    e ajustando as colunas de tarefas para preencher o espaço restante.
+    Gera o CSS para o dashboard, recebendo as larguras das colunas e a fonte da divisão
+    a partir dos sliders e ajustando as colunas de tarefas para preencher o espaço restante.
     """
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -308,8 +308,8 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
         .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
         
         /* --- NOVAS CORES E FONTES --- */
-        .status-done {{ background-color: #4A6D2F; }} /* Verde musgo/oliva mais escuro */
-        .status-requested {{ background-color: #FF8C00; }} /* Laranja quente */
+        .status-done {{ background-color: #4A6D2F; }}
+        .status-requested {{ background-color: #FF8C00; }}
         .status-pending {{ background-color: #dc3545; }}
         .status-neutral, .status-neutral:hover {{ background-color: transparent !important; }}
         .status-cell {{ cursor: help; }}
@@ -319,8 +319,9 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
         
+        /* **FONTE DA COLUNA DE INFO AGORA É CONTROLADA PELO SEU PRÓPRIO SLIDER** */
         .fight-info-number, .fight-info-event, .fight-info-division {{
-            font-size: 1.2em !important; /* Fonte maior para toda a coluna de info */
+            font-size: {division_font_size_px}px !important; 
         }}
         .fight-info-number {{ font-weight: bold; color: #fff; }}
         .fight-info-event {{ font-style: italic; color: #ccc; }}
@@ -346,18 +347,20 @@ if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 st.session_state.table_font_size = st.sidebar.slider(
-    "Tamanho Geral da Fonte (px)", min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
+    "Tamanho Geral da Fonte (px)", min_value=10, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
 
-# --- NOVOS SLIDERS PARA CONTROLE DE LARGURA ---
-st.sidebar.subheader("Controle de Largura das Colunas")
+# --- CONTROLES DE LARGURA E FONTE ESPECÍFICA ---
+st.sidebar.subheader("Ajustes Finos de Layout")
 
 # Inicializa os valores dos sliders no st.session_state se não existirem
 if 'fighter_width' not in st.session_state:
     st.session_state.fighter_width = 25
 if 'division_width' not in st.session_state:
     st.session_state.division_width = 10
+if 'division_font_size' not in st.session_state:
+    st.session_state.division_font_size = 16
 
 # Sliders que salvam seu estado
 st.session_state.fighter_width = st.sidebar.slider(
@@ -365,6 +368,9 @@ st.session_state.fighter_width = st.sidebar.slider(
 )
 st.session_state.division_width = st.sidebar.slider(
     "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1
+)
+st.session_state.division_font_size = st.sidebar.slider(
+    "Fonte Info da Luta (px)", min_value=10, max_value=30, value=st.session_state.division_font_size, step=1
 )
 st.sidebar.markdown("---")
 
@@ -380,12 +386,13 @@ if df_fc is None or df_fc.empty or not all_tsks:
     st.warning("Could not load Fightcard data or Task List. Please check the spreadsheets.")
     st.stop()
 
-# Injeta o CSS na página, passando os valores dos sliders para o cálculo do layout.
+# Injeta o CSS na página, passando TODOS os valores dos sliders para o cálculo do layout.
 st.markdown(get_dashboard_style(
     st.session_state.table_font_size,
     len(all_tsks),
     st.session_state.fighter_width,
-    st.session_state.division_width
+    st.session_state.division_width,
+    st.session_state.division_font_size,
 ), unsafe_allow_html=True)
 
 # Filtro de evento na barra lateral

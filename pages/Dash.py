@@ -188,7 +188,6 @@ if 'table_font_size' not in st.session_state:
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
-    # Aumentando o multiplicador para a fonte do nome do atleta
     fighter_font_size = font_size_px * 2.0 
 
     return f"""
@@ -210,7 +209,7 @@ def get_dashboard_style(font_size_px):
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             border-radius: 12px;
             overflow: hidden;
-            table-layout: fixed;
+            table-layout: fixed; /* ESSENCIAL PARA O CONTROLE DA LARGURA */
         }}
         .dashboard-table th, .dashboard-table td {{
             border-right: 1px solid #4a4a50;
@@ -237,35 +236,34 @@ def get_dashboard_style(font_size_px):
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
 
-        /* === MUDANÇAS APLICADAS === */
-        
-        /* 1. LARGURA E FONTE DO NOME AUMENTADAS */
+        /* === AJUSTE DE LARGURA CORRIGIDO === */
+
+        /* 1. Definir larguras FIXAS e PEQUENAS para colunas de status e utilitárias */
+        .task-header, .status-cell {{
+            width: 25px; /* Largura bem pequena e fixa */
+        }}
+        .photo-cell {{
+            width: {img_size + 16}px; /* Largura fixa baseada no tamanho da imagem */
+        }}
+        .center-info-cell {{
+            width: 95px; /* Largura fixa */
+            background-color: #333;
+            padding: 5px !important;
+        }}
+
+        /* 2. NÃO definir largura para a coluna do nome. Ela se expandirá para preencher o espaço. */
         .fighter-name {{
-            width: 45%;  /* Aumentado para dar mais espaço */
             font-weight: 700;
-            font-size: {fighter_font_size}px !important; /* Fonte maior */
+            font-size: {fighter_font_size}px !important; /* Apenas estilo, sem largura */
+            /* A largura será calculada automaticamente pelo table-layout: fixed */
         }}
         .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
 
-        /* 2. COLUNAS DE TAREFAS "SUPRIMIDAS" (MUITO MAIS ESTREITAS) */
-        .task-header, .status-cell {{
-            width: 28px; /* Largura fixa e pequena para compactar as colunas */
-        }}
-
-        .photo-cell {{
-            width: {img_size + 18}px;
-        }}
-        .center-info-cell {{
-            width: 95px;
-            background-color: #333;
-            padding: 5px !important;
-        }}
-        
-        /* 3. NOVAS CORES (VERDE MUSGO E AMARELO PASTEL) */
+        /* 3. CORES PERSONALIZADAS */
         .status-done {{ background-color: #556B2F; }} /* Verde Musgo */
         .status-requested {{ background-color: #F0E68C; }} /* Amarelo Pastel */
-
+        
         /* === FIM DAS MUDANÇAS === */
         
         .fighter-img {{

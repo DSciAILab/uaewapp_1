@@ -115,7 +115,7 @@ def get_dashboard_style(font_size_px):
         .status-done {{ background-color: #28a745; }}
         .status-requested {{ background-color: #ffc107; }}
         .status-pending {{ background-color: #dc3545; }}
-        .status-neutral {{ background-color: transparent; }}
+        .status-neutral {{ background-color: transparent; }} 
 
         .summary-container {{
             display: flex;

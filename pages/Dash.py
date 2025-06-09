@@ -5,6 +5,10 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
+# --- Page Setup ---
+st.set_page_config(page_title="Fight Dashboard", layout="wide")
+
+# --- Custom Styles ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
@@ -122,3 +126,12 @@ def get_dashboard_style(font_size_px):
         }}
     </style>
     """
+
+# --- Apply Styles ---
+if 'table_font_size' not in st.session_state:
+    st.session_state.table_font_size = 18
+
+st.markdown(get_dashboard_style(st.session_state.table_font_size), unsafe_allow_html=True)
+
+# --- Placeholder: continue your full script here ---
+st.write("\n🚧 O restante do script (carregamento de dados, visualização, geração de tabelas) deve ser inserido abaixo desta linha.")

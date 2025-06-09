@@ -212,8 +212,8 @@ with st.container(border=True):
         if st.session_state.user_confirmed and st.session_state.current_user_name != "User":
             un, ui = html.escape(st.session_state.current_user_name), html.escape(st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id))
             uim = st.session_state.get('current_user_image_url', "")
-            image_html = f"""<img src="{html.escape(uim, True)}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;border:1px solid #555;vertical-align:middle;margin-right:10px;">""" if uim and uim.startswith("http") else "<div style='width:50px;height:50px;border-radius:50%;background-color:#333;margin-right:10px;display:inline-block;vertical-align:middle;'></div>"
-            st.markdown(f"""<div style="display:flex;align-items:center;height:50px;margin-top:0px;">{image_html}<div style="line-height:1.2;vertical-align:middle;"><span style="font-weight:bold;">{un}</span><br><span style="font-size:0.9em;color:#ccc;">PS: {ui}</span></div></div>""", unsafe_allow_html=True)
+            image_html_tag = f"""<img src="{html.escape(uim, True)}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;border:1px solid #555;vertical-align:middle;margin-right:10px;">""" if uim and uim.startswith("http") else "<div style='width:50px;height:50px;border-radius:50%;background-color:#333;margin-right:10px;display:inline-block;vertical-align:middle;'></div>"
+            st.markdown(f"""<div style="display:flex;align-items:center;height:50px;margin-top:0px;">{image_html_tag}<div style="line-height:1.2;vertical-align:middle;"><span style="font-weight:bold;">{un}</span><br><span style="font-size:0.9em;color:#ccc;">PS: {ui}</span></div></div>""", unsafe_allow_html=True)
         elif st.session_state.get('warning_message'): st.warning(st.session_state.warning_message, icon="🚨")
 
 if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
@@ -230,7 +230,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task), key="tsel_w")
     sel_task_actual = st.session_state.selected_task if st.session_state.selected_task != NO_TASK_SELECTED_LABEL else None
     
-    # Exibe o gráfico de estatísticas se uma tarefa for selecionada.
     if sel_task_actual:
         df_athletes['current_task_status'] = df_athletes['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
         status_counts = df_athletes['current_task_status'].value_counts().to_dict()
@@ -246,7 +245,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         st.altair_chart(chart, use_container_width=True)
         st.divider()
 
-    # Filtros de Status (Radio Buttons) e de busca.
     status_options = ["Todos", "Requested", "Done", "Pending", "Not Requested"]
     st.session_state.selected_status = st.radio("Filtrar por Status:", options=status_options, index=status_options.index(st.session_state.selected_status), horizontal=True, key="srad_w", disabled=(not sel_task_actual))
     
@@ -256,7 +254,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
     st.divider()
 
-    # Lógica de filtragem do DataFrame.
     df_filtered = df_athletes.copy()
     if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
     search_term = st.session_state.fighter_search_query.strip().lower()
@@ -273,29 +270,25 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
     if df_filtered.empty and sel_task_actual: st.info(f"Nenhum atleta com o status '{st.session_state.selected_status}'.")
     
-    # Loop de Exibição dos Cards de Atletas.
     for i_l, row in df_filtered.iterrows():
         ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
         
         curr_ath_task_stat = row.get('current_task_status') if sel_task_actual else None
         
-        # Define a cor da barra de status. Fica neutra se nenhuma tarefa for selecionada.
         status_bar_color = "#2E2E2E"
         status_text_html = ""
         if curr_ath_task_stat:
             status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(curr_ath_task_stat)}</strong></p>"
-            if curr_ath_task_stat == "Done": status_bar_color = "#28a745"
-            elif curr_ath_task_stat == "Requested": status_bar_color = "#ffc107"
-            elif curr_ath_task_stat == "---": status_bar_color = "#6c757d"
-            else: status_bar_color = "#dc3545"
+            status_color_map = {"Done": "#28a745", "Requested": "#ffc107", "---": "#6c757d", "Pending": "#dc3545", "Not Registred": "#dc3545"}
+            status_bar_color = status_color_map.get(curr_ath_task_stat, status_color_map['Pending'])
 
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
-            # --- CONSTRUÇÃO DO CARD ROBUSTA ---
-            # 1. Monta as partes do HTML de forma segura
+            # --- CONSTRUÇÃO DO CARD REFEITA PARA MÁXIMA ROBUSTEZ ---
+            # 1. Constrói cada parte do HTML separadamente
             image_url = row.get("IMAGE", "")
             image_html_tag = f"""<img src='{html.escape(image_url, True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>""" if image_url and image_url.startswith("http") else f"""<img src='https://via.placeholder.com/120?text=No+Image' style='width:120px; height:120px; border-radius:50%;'>"""
-
+            
             mob_r = str(row.get("MOBILE", "")).strip()
             wa_link_html = ""
             if mob_r:
@@ -304,7 +297,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
             # 2. Monta o corpo principal do card
-            card_body = f"""
+            card_body_html = f"""
                 <div style='display:flex; align-items:center; gap:20px;'>
                     {image_html_tag}
                     <div style='flex-grow: 1;'>
@@ -314,23 +307,27 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                     </div>
                 </div>
             """
-            
-            # 3. Adiciona os dados pessoais se o toggle estiver ativo
+
+            # 3. Monta os dados pessoais SE o toggle estiver ativo
+            personal_data_html = ""
             if st.session_state.show_personal_data:
+                # Construa a tabela de dados pessoais aqui
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
-                card_body += f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                personal_data_html = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
                                        <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
             
-            # 4. Renderiza o card final dentro do container principal
-            st.markdown(f"""
+            # 4. Junta tudo em um único container e renderiza
+            final_html = f"""
             <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
-                {card_body}
-            </div>""", unsafe_allow_html=True)
-
+                {card_body_html}
+                {personal_data_html}
+            </div>"""
+            st.markdown(final_html, unsafe_allow_html=True)
+            
             # 5. Renderiza os badges de status, se aplicável
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"

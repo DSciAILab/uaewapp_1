@@ -220,34 +220,40 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     html += "</div>"
     return html
 
+# --- FUNÇÃO DE ESTILO MODIFICADA ---
 def get_dashboard_style(font_size_px, num_tasks=6):
     """
-    Gera o CSS para o dashboard, utilizando CSS Grid para um layout preciso e robusto.
-    As larguras das colunas são definidas explicitamente com porcentagens.
+    Gera o CSS para o dashboard. As larguras das colunas são calculadas dinamicamente
+    para garantir que o layout se ajuste às solicitações do usuário.
     """
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
     fighter_font_size = font_size_px * 1.8 
 
-    # --- DEFINIÇÃO EXPLÍCITA DA LARGURA DAS COLUNAS EM PORCENTAGEM ---
-    # Esta é a mudança crucial para garantir o layout correto.
-    task_col_width = "3.5%"    # Colunas de tarefa são mínimas
-    photo_col_width = "6%"      # Colunas de foto são pequenas
-    center_col_width = "8%"     # Coluna central é pequena
-    # **REDUZIDO PELA METADE**: De ~32% para 16%
-    fighter_col_width = "16%"   # Colunas de nome agora são significativamente menores, mas ainda as maiores.
-    
-    # Calcula o total de colunas de tarefa e o espaço que elas ocupam
-    total_task_width = num_tasks * 3.5 * 2 # (2.5% por tarefa, vezes 2 lados)
-    # Calcula o espaço restante para distribuir igualmente entre as colunas de nome
-    remaining_space = 100 - total_task_width - (6*2) - 8
-    fighter_col_width = f"{remaining_space / 2}%"
+    # --- LÓGICA DE CÁLCULO DINÂMICO DE LARGURA ---
+    # 1. Define as larguras base para colunas pequenas em porcentagem.
+    base_task_pc = 2.5
+    base_photo_pc = 6.0
+    base_center_pc = 8.0
 
-    # Cria a string final para o 'grid-template-columns'
+    # 2. Calcula o espaço que seria originalmente das colunas de nome.
+    total_task_width = num_tasks * base_task_pc * 2
+    initial_remaining_space = 100 - total_task_width - (base_photo_pc * 2) - base_center_pc
+    original_fighter_pc = initial_remaining_space / 2
+
+    # 3. **APLICA A REDUÇÃO DE 25% NA COLUNA DO NOME**
+    reduction_amount = original_fighter_pc * 0.25
+    new_fighter_pc = original_fighter_pc - reduction_amount
+
+    # 4. **REALOCA O ESPAÇO GANHO PARA A COLUNA CENTRAL**
+    space_reallocated = reduction_amount * 2 # O espaço vem de AMBAS as colunas de nome.
+    new_center_pc = base_center_pc + space_reallocated
+
+    # 5. Cria a string final para o 'grid-template-columns' com os novos valores.
     grid_template_columns = " ".join(
-        [f"{task_col_width}"] * num_tasks + 
-        [fighter_col_width, f"{photo_col_width}", f"{center_col_width}", f"{photo_col_width}", fighter_col_width] + 
-        [f"{task_col_width}"] * num_tasks
+        [f"{base_task_pc}%"] * num_tasks + 
+        [f"{new_fighter_pc}%", f"{base_photo_pc}%", f"{new_center_pc}%", f"{base_photo_pc}%", f"{new_fighter_pc}%"] + 
+        [f"{base_task_pc}%"] * num_tasks
     )
 
     return f"""
@@ -263,7 +269,7 @@ def get_dashboard_style(font_size_px, num_tasks=6):
         .dashboard-grid {{
             display: grid;
             grid-template-columns: {grid_template_columns}; /* Aplica a definição de colunas calculada */
-            gap: 1px; /* Espaçamento entre células, que age como borda */
+            gap: 1px;
             background-color: #4a4a50;
             border-radius: 12px;
             overflow: hidden;
@@ -279,7 +285,7 @@ def get_dashboard_style(font_size_px, num_tasks=6):
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: {img_size + (cell_padding * 2)}px; /* Altura mínima baseada no tamanho da imagem */
+            min-height: {img_size + (cell_padding * 2)}px;
             word-break: break-word;
         }}
         .grid-item:hover {{ background-color: #38383c; }}
@@ -317,11 +323,11 @@ def get_dashboard_style(font_size_px, num_tasks=6):
             width: {img_size}px; height: {img_size}px;
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
-        .fight-info-number {{ font-weight: bold; font-size: 1.2em; color: #fff; }}
-        .fight-info-event {{ font-style: italic; font-size: 0.8em; color: #ccc; }}
-        .fight-info-division {{ font-style: normal; font-size: 0.85em; color: #ddd; }}
+        /* **FONTES AUMENTADAS CONFORME SOLICITADO** */
+        .fight-info-number {{ font-weight: bold; font-size: 1.4em; color: #fff; }}
+        .fight-info-event {{ font-style: italic; font-size: 1.0em; color: #ccc; }}
+        .fight-info-division {{ font-style: normal; font-size: 1.1em; color: #ddd; }}
         
-        /* Contêiner para as métricas no topo */
         .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
     """
@@ -339,6 +345,8 @@ if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
     st.rerun() # Força o rerodamento do script
 
 # Slider para controlar o tamanho da fonte (e, por consequência, o tamanho da tabela)
+if 'table_font_size' not in st.session_state:
+    st.session_state.table_font_size = 18
 st.session_state.table_font_size = st.sidebar.slider(
     "Table Font Size (px)", min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
 )

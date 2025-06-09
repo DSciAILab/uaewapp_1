@@ -44,11 +44,10 @@ TASK_EMOJI_MAP = {
     "Video Shooting": "🎥",
     "Photoshoot": "📸",
     "Blood Test": "🩸",
-    # Adicione outros mapeamentos aqui se necessário
 }
 
 
-# --- Data Loading and Connection Functions (unchanged) ---
+# --- Data Loading and Connection Functions ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -122,7 +121,6 @@ def get_task_status(athlete_id, task_name, df_attendance):
         except: pass
     return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
 
-# --- MODIFIED: calculate_task_summary ---
 def calculate_task_summary(df_processed, task_list):
     summary = {}
     for task in task_list:
@@ -135,25 +133,21 @@ def calculate_task_summary(df_processed, task_list):
                 for status, count in counts.items():
                     if status == "Done": summary[task]["Done"] += count
                     elif status == "Requested": summary[task]["Requested"] += count
-                    # Pending and other statuses are ignored
     return summary
 
-# --- MODIFIED: generate_mirrored_html_dashboard ---
 def generate_mirrored_html_dashboard(df_processed, task_list):
     header_html = "<thead><tr>"
     header_html += f"<th class='blue-corner-header' colspan='{len(task_list) + 2}'>BLUE CORNER</th>"
     header_html += "<th class='center-col-header' rowspan=2>FIGHT<br>INFO</th>"
     header_html += f"<th class='red-corner-header' colspan='{len(task_list) + 2}'>RED CORNER</th>"
     header_html += "</tr><tr>"
-    # Use emojis for headers, reversed for blue corner
     for task in reversed(task_list):
-        emoji = TASK_EMOJI_MAP.get(task, task[0]) # Fallback to first letter
+        emoji = TASK_EMOJI_MAP.get(task, task[0])
         header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
     header_html += "<th>Fighter</th><th>Photo</th>"
     header_html += "<th>Photo</th><th>Fighter</th>"
-    # Use emojis for headers for red corner
     for task in task_list:
-        emoji = TASK_EMOJI_MAP.get(task, task[0]) # Fallback to first letter
+        emoji = TASK_EMOJI_MAP.get(task, task[0])
         header_html += f"<th class='task-header' title='{task}'>{emoji}</th>"
     header_html += "</tr></thead>"
 
@@ -188,13 +182,13 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 st.set_page_config(layout="wide", page_title="Fight Dashboard")
 
 if 'table_font_size' not in st.session_state:
-    st.session_state.table_font_size = 18 # Increased default font size
+    st.session_state.table_font_size = 18
 
-# --- MODIFIED: get_dashboard_style ---
+# --- CORRECTED CSS FUNCTION ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
-    fighter_font_size = font_size_px * 1.5 # Adjusted fighter font size
+    fighter_font_size = font_size_px * 1.6 
 
     return f"""
     <style>
@@ -204,6 +198,7 @@ def get_dashboard_style(font_size_px):
         #MainMenu {{ visibility: hidden; height: 0%; }}
         header {{ visibility: hidden; height: 0%; }}
         .block-container {{ padding-top: 1rem !important; padding-bottom: 0rem !important; }}
+        
         .dashboard-container {{ font-family: 'Segoe UI', sans-serif; }}
         .dashboard-table {{
             width: 100%;
@@ -224,19 +219,46 @@ def get_dashboard_style(font_size_px):
             vertical-align: middle;
             word-break: break-word;
         }}
-        .dashboard-table th {{
-            background-color: #1c1c1f;
-            font-size: 1.5rem; /* Larger emoji header */
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            white-space: normal;
-        }}
-        .blue-corner-header {{ background-color: #0d2e4e !important; font-size: 0.8rem !important; }}
-        .red-corner-header {{ background-color: #5a1d1d !important; font-size: 0.8rem !important;}}
-        .center-col-header {{ background-color: #111 !important; font-size: 0.8rem !important;}}
         .dashboard-table td {{ font-size: {font_size_px}px !important; }}
         .dashboard-table tr:hover td {{ background-color: #38383c; }}
+
+        .dashboard-table th {{
+            background-color: #1c1c1f;
+            font-size: 1.5rem;
+            font-weight: 600;
+            white-space: normal;
+        }}
+        .blue-corner-header, .red-corner-header, .center-col-header {{
+            font-size: 0.8rem !important;
+            text-transform: uppercase;
+        }}
+        .blue-corner-header {{ background-color: #0d2e4e !important; }}
+        .red-corner-header {{ background-color: #5a1d1d !important; }}
+        .center-col-header {{ background-color: #111 !important; }}
+
+        /* === COLUMN WIDTH CORRECTIONS === */
+        .fighter-name {{
+            width: 22%; 
+            font-weight: 700;
+            font-size: {fighter_font_size}px !important;
+        }}
+        .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
+        .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
+
+        .task-header, .status-cell {{
+            width: 3%;
+        }}
+
+        .photo-cell {{
+            width: {img_size + 18}px;
+        }}
+        .center-info-cell {{
+            width: 95px;
+            background-color: #333;
+            padding: 5px !important;
+        }}
+        /* === END WIDTH CORRECTIONS === */
+
         .fighter-img {{
             width: {img_size}px;
             height: {img_size}px;
@@ -244,29 +266,6 @@ def get_dashboard_style(font_size_px):
             object-fit: cover;
             border: 2px solid #666;
         }}
-
-        /* MODIFIED: Widths for columns */
-        .fighter-name {{
-            font-weight: 700;
-            width: 25%; /* Greatly increased width for fighter name */
-            font-size: {fighter_font_size}px !important;
-        }}
-        .fighter-name-blue {{ text-align: right !important; padding-right: 15px !important; }}
-        .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
-
-        .task-header, .status-cell {{
-            width: 4%; /* Reduced width for task columns */
-        }}
-
-        .photo-cell {{
-            width: {img_size + 16}px;
-        }}
-        .center-info-cell {{
-            width: 90px;
-            background-color: #333;
-            padding: 5px !important;
-        }}
-
         .fight-info-number {{ font-weight: bold; font-size: 1.2em; color: #fff; line-height: 1.2; }}
         .fight-info-event {{ font-style: italic; font-size: 0.8em; color: #ccc; line-height: 1; }}
         .fight-info-division {{ font-style: normal; font-size: 0.85em; color: #ddd; line-height: 1.2; }}
@@ -277,9 +276,6 @@ def get_dashboard_style(font_size_px):
         .status-pending {{ background-color: #dc3545; }}
         .status-neutral {{ background-color: transparent; }}
 
-        .compact-header {{ margin-block-start: 0em; margin-block-end: 0.5em; }}
-        
-        /* Style for the summary container */
         .summary-container {{
             display: flex;
             flex-wrap: wrap;
@@ -291,7 +287,6 @@ def get_dashboard_style(font_size_px):
     """
 
 # --- Main Page Content ---
-# REMOVED: Main title to save space
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
 # --- Sidebar Controls ---
@@ -337,7 +332,7 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
         if isinstance(series, pd.Series) and not series.empty:
             name, id, pic = series.get(FC_FIGHTER_COL, "N/A"), series.get(FC_ATHLETE_ID_COL, ""), series.get(FC_PICTURE_COL, "")
             row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
-            row_d[f"Lutador {prefix}"] = f"{name}" # Store only the name for display
+            row_d[f"Lutador {prefix}"] = f"{name}"
             for task in all_tsks: row_d[f"{task} ({prefix})"] = get_task_status(id, task, df_att)
         else:
             row_d[f"Foto {prefix}"], row_d[f"Lutador {prefix}"] = "", "N/A"
@@ -348,10 +343,9 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
     
-    # --- MODIFIED: Simplified Summary Display ---
+    # --- Simplified Summary Display ---
     task_summary = calculate_task_summary(df_dash_processed, all_tsks)
     
-    # Display summary in a single horizontal line
     st.write("<div class='summary-container'>", unsafe_allow_html=True)
     cols = st.columns(len(all_tsks))
     col_index = 0
@@ -362,17 +356,15 @@ if dash_data_list:
                 label=f"{emoji} {task}",
                 value=f"{data.get('Done', 0)} Done",
                 delta=f"{data.get('Requested', 0)} Req.",
-                delta_color="off" # Keeps delta text black
+                delta_color="off"
             )
         col_index += 1
     st.write("</div>", unsafe_allow_html=True)
 
-    # --- REMOVED: "Fight Status" Title ---
     html_table = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
     st.markdown(html_table, unsafe_allow_html=True)
 
 else:
     st.info(f"No fights processed for '{sel_ev_opt}'.")
-
+    
 st.markdown(f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>", unsafe_allow_html=True, help="This page auto-refreshes every 60 seconds.")
-

@@ -220,40 +220,36 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     html += "</div>"
     return html
 
-# --- FUNÇÃO DE ESTILO MODIFICADA ---
-def get_dashboard_style(font_size_px, num_tasks=6):
+# --- FUNÇÃO DE ESTILO MODIFICADA E DINÂMICA ---
+def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_width_pc):
     """
-    Gera o CSS para o dashboard. As larguras das colunas são calculadas dinamicamente
-    para garantir que o layout se ajuste às solicitações do usuário.
+    Gera o CSS para o dashboard, recebendo as larguras das colunas a partir dos sliders
+    e ajustando as colunas de tarefas para preencher o espaço restante.
     """
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
     fighter_font_size = font_size_px * 1.8 
 
     # --- LÓGICA DE CÁLCULO DINÂMICO DE LARGURA ---
-    # 1. Define as larguras base para colunas pequenas em porcentagem.
-    base_task_pc = 2.5
-    base_photo_pc = 6.0
-    base_center_pc = 8.0
+    # 1. Define a largura fixa (em %) para as colunas de foto.
+    photo_pc = 6.0
 
-    # 2. Calcula o espaço que seria originalmente das colunas de nome.
-    total_task_width = num_tasks * base_task_pc * 2
-    initial_remaining_space = 100 - total_task_width - (base_photo_pc * 2) - base_center_pc
-    original_fighter_pc = initial_remaining_space / 2
+    # 2. Calcula o espaço total usado pelas colunas controladas pelo usuário e pelas fotos.
+    used_space = (fighter_width_pc * 2) + division_width_pc + (photo_pc * 2)
 
-    # 3. **APLICA A REDUÇÃO DE 25% NA COLUNA DO NOME**
-    reduction_amount = original_fighter_pc * 0.25
-    new_fighter_pc = original_fighter_pc - reduction_amount
+    # 3. O espaço restante é distribuído igualmente entre todas as colunas de tarefas.
+    remaining_space_for_tasks = 100 - used_space
+    num_total_task_cols = num_tasks * 2
+    
+    # Garante que a largura da tarefa não seja negativa se os sliders forem muito altos.
+    task_pc = (remaining_space_for_tasks / num_total_task_cols) if num_total_task_cols > 0 else 0
+    if task_pc < 0: task_pc = 0
 
-    # 4. **REALOCA O ESPAÇO GANHO PARA A COLUNA CENTRAL**
-    space_reallocated = reduction_amount * 2 # O espaço vem de AMBAS as colunas de nome.
-    new_center_pc = base_center_pc + space_reallocated
-
-    # 5. Cria a string final para o 'grid-template-columns' com os novos valores.
+    # 4. Cria a string final para o 'grid-template-columns' com os valores calculados.
     grid_template_columns = " ".join(
-        [f"{base_task_pc}%"] * num_tasks + 
-        [f"{new_fighter_pc}%", f"{base_photo_pc}%", f"{new_center_pc}%", f"{base_photo_pc}%", f"{new_fighter_pc}%"] + 
-        [f"{base_task_pc}%"] * num_tasks
+        [f"{task_pc}%"] * num_tasks + 
+        [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"] + 
+        [f"{task_pc}%"] * num_tasks
     )
 
     return f"""
@@ -309,24 +305,26 @@ def get_dashboard_style(font_size_px, num_tasks=6):
         .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
         .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
 
-        .center-info-cell {{ flex-direction: column; line-height: 1.2; background-color: #333; }}
+        .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
         
-        /* --- Estilos de Status (Cores) --- */
-        .status-done {{ background-color: #556B2F; }}
-        .status-requested {{ background-color: #F0E68C; }}
+        /* --- NOVAS CORES E FONTES --- */
+        .status-done {{ background-color: #4A6D2F; }} /* Verde musgo/oliva mais escuro */
+        .status-requested {{ background-color: #FF8C00; }} /* Laranja quente */
         .status-pending {{ background-color: #dc3545; }}
         .status-neutral, .status-neutral:hover {{ background-color: transparent !important; }}
         .status-cell {{ cursor: help; }}
 
-        /* --- Estilos de Imagens e Texto Interno --- */
         .fighter-img {{
             width: {img_size}px; height: {img_size}px;
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
-        /* **FONTES AUMENTADAS CONFORME SOLICITADO** */
-        .fight-info-number {{ font-weight: bold; font-size: 1.4em; color: #fff; }}
-        .fight-info-event {{ font-style: italic; font-size: 1.0em; color: #ccc; }}
-        .fight-info-division {{ font-style: normal; font-size: 1.1em; color: #ddd; }}
+        
+        .fight-info-number, .fight-info-event, .fight-info-division {{
+            font-size: 1.2em !important; /* Fonte maior para toda a coluna de info */
+        }}
+        .fight-info-number {{ font-weight: bold; color: #fff; }}
+        .fight-info-event {{ font-style: italic; color: #ccc; }}
+        .fight-info-division {{ font-style: normal; color: #ddd; }}
         
         .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
@@ -344,13 +342,32 @@ if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
     st.toast("Data refreshed!", icon="🎉")
     st.rerun() # Força o rerodamento do script
 
-# Slider para controlar o tamanho da fonte (e, por consequência, o tamanho da tabela)
+# Slider para controlar o tamanho geral da fonte
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 st.session_state.table_font_size = st.sidebar.slider(
-    "Table Font Size (px)", min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
+    "Tamanho Geral da Fonte (px)", min_value=12, max_value=30, value=st.session_state.table_font_size, step=1
 )
 st.sidebar.markdown("---")
+
+# --- NOVOS SLIDERS PARA CONTROLE DE LARGURA ---
+st.sidebar.subheader("Controle de Largura das Colunas")
+
+# Inicializa os valores dos sliders no st.session_state se não existirem
+if 'fighter_width' not in st.session_state:
+    st.session_state.fighter_width = 25
+if 'division_width' not in st.session_state:
+    st.session_state.division_width = 10
+
+# Sliders que salvam seu estado
+st.session_state.fighter_width = st.sidebar.slider(
+    "Largura Nome do Lutador (%)", min_value=15, max_value=40, value=st.session_state.fighter_width, step=1
+)
+st.session_state.division_width = st.sidebar.slider(
+    "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1
+)
+st.sidebar.markdown("---")
+
 
 # --- Carregamento Inicial dos Dados ---
 with st.spinner("Loading data..."):
@@ -363,8 +380,13 @@ if df_fc is None or df_fc.empty or not all_tsks:
     st.warning("Could not load Fightcard data or Task List. Please check the spreadsheets.")
     st.stop()
 
-# Injeta o CSS na página, passando o tamanho da fonte e o número de tarefas para o cálculo do layout.
-st.markdown(get_dashboard_style(st.session_state.table_font_size, len(all_tsks)), unsafe_allow_html=True)
+# Injeta o CSS na página, passando os valores dos sliders para o cálculo do layout.
+st.markdown(get_dashboard_style(
+    st.session_state.table_font_size,
+    len(all_tsks),
+    st.session_state.fighter_width,
+    st.session_state.division_width
+), unsafe_allow_html=True)
 
 # Filtro de evento na barra lateral
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)

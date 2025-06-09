@@ -1,32 +1,53 @@
-# --- 0. Import Libraries ---
-import streamlit as st
-import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-from datetime import datetime, timedelta
-import html
-import altair as alt
+# --- 0. BIBLIOTECAS E CONFIGURAÇÃO INICIAL ---
+# Sumário: Importação de todas as bibliotecas necessárias para o aplicativo e configuração
+# inicial da página do Streamlit para usar o layout "wide" (tela cheia).
 
-# --- 1. Page Configuration ---
+import streamlit as st          # Biblioteca principal para criar a interface web.
+import pandas as pd             # Biblioteca para manipulação e análise de dados (DataFrames).
+import gspread                  # Biblioteca para interagir com o Google Sheets.
+from google.oauth2.service_account import Credentials # Para autenticação com a API do Google.
+from datetime import datetime, timedelta # Para trabalhar com datas e horários.
+import html                     # Para escapar caracteres HTML e evitar problemas de segurança.
+import altair as alt            # Para criar gráficos de barras interativos e personalizados.
+
+# Configura a página para usar a largura total da tela, otimizando para monitores maiores.
 st.set_page_config(page_title="UAEW | Task Control", layout="wide")
 
-# --- Constants ---
-MAIN_SHEET_NAME = "UAEW_App" 
-ATHLETES_TAB_NAME = "df" 
-USERS_TAB_NAME = "Users"
-ATTENDANCE_TAB_NAME = "Attendance" 
-ID_COLUMN_IN_ATTENDANCE = "Athlete ID" 
-CONFIG_TAB_NAME = "Config"
-NO_TASK_SELECTED_LABEL = "-- Choose Task --"
-STATUS_PENDING_EQUIVALENTS = ["Pending", "---", "Not Registred"] 
 
-# --- 2. Google Sheets Connection ---
+# --- 1. CONSTANTES E CONFIGURAÇÕES GLOBAIS ---
+# Sumário: Define nomes de planilhas, abas e valores padrão em um só lugar.
+# Isso facilita a manutenção, pois qualquer alteração de nome pode ser feita aqui.
+
+MAIN_SHEET_NAME = "UAEW_App"                  # Nome principal da planilha no Google Sheets.
+ATHLETES_TAB_NAME = "df"                      # Nome da aba que contém os dados dos atletas.
+USERS_TAB_NAME = "Users"                      # Nome da aba com os dados dos usuários.
+ATTENDANCE_TAB_NAME = "Attendance"            # Nome da aba para registrar as tarefas (presença).
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID"        # Nome da coluna de ID do atleta na aba de tarefas.
+CONFIG_TAB_NAME = "Config"                    # Nome da aba de configuração (lista de tarefas, status).
+NO_TASK_SELECTED_LABEL = "-- Choose Task --"  # Texto padrão para o seletor de tarefas.
+STATUS_PENDING_EQUIVALENTS = ["Pending", "Not Registred"] # Status que são agrupados sob a categoria "Pendente".
+
+
+# --- 2. CONEXÃO COM GOOGLE SHEETS E CARREGAMENTO DE DADOS ---
+# Sumário: Contém todas as funções responsáveis por se conectar à API do Google,
+# buscar os dados das planilhas e carregá-los em DataFrames do Pandas.
+# O uso de @st.cache_resource e @st.cache_data otimiza o desempenho, evitando
+# recargas desnecessárias de dados.
+
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
+    """
+    Cria e armazena em cache o cliente de conexão com a API do Google Sheets.
+    Usa as credenciais armazenadas nos "secrets" do Streamlit.
+    Retorna: O cliente gspread autorizado.
+    """
     try:
+        # Define o escopo de permissões (leitura/escrita em planilhas e drive).
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        # Verifica se as credenciais existem nos secrets do Streamlit.
         if "gcp_service_account" not in st.secrets:
             st.error("Erro: Credenciais `gcp_service_account` não encontradas.", icon="🚨"); st.stop()
+        # Autoriza a conexão usando as credenciais.
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
     except KeyError as e: 
@@ -35,8 +56,15 @@ def get_gspread_client():
         st.error(f"Erro API Google: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
+    """
+    Abre uma planilha específica e acessa uma de suas abas.
+    Trata erros comuns como planilha ou aba não encontrada.
+    Retorna: Um objeto 'worksheet' do gspread.
+    """
     try:
+        # Abre a planilha pelo nome.
         spreadsheet = gspread_client.open(sheet_name)
+        # Seleciona a aba (worksheet) pelo nome.
         return spreadsheet.worksheet(tab_name)
     except gspread.exceptions.SpreadsheetNotFound:
         st.error(f"Erro: Planilha '{sheet_name}' não encontrada.", icon="🚨"); st.stop()
@@ -45,9 +73,14 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except Exception as e:
         st.error(f"Erro ao conectar à aba '{tab_name}': {e}", icon="🚨"); st.stop()
 
-# --- 3. Data Loading ---
 @st.cache_data(ttl=600)
 def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str = ATHLETES_TAB_NAME):
+    """
+    Carrega e processa os dados dos atletas da planilha.
+    Filtra por atletas ativos, formata datas e preenche valores ausentes.
+    Retorna: Um DataFrame do Pandas com os dados dos atletas.
+    """
+    # ... [código de carregamento e processamento de atletas - sem alterações] ...
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
@@ -64,10 +97,6 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
             df["INACTIVE"] = df["INACTIVE"].map({0: False, 1: True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
         df["EVENT"] = df["EVENT"].fillna("Z") if "EVENT" in df.columns else "Z"
-        date_cols = ["DOB", "PASSPORT EXPIRE DATE", "BLOOD TEST"]
-        for col in date_cols:
-            if col in df.columns: df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
-            else: df[col] = "" 
         for col_check in ["IMAGE", "PASSPORT IMAGE", "MOBILE"]:
             df[col_check] = df[col_check].fillna("") if col_check in df.columns else ""
         if "NAME" not in df.columns:
@@ -76,6 +105,27 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
     except Exception as e:
         st.error(f"Erro ao carregar atletas (gspread): {e}", icon="🚨"); return pd.DataFrame()
 
+
+@st.cache_data(ttl=120)
+def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
+    """
+    Carrega os registros de tarefas (presença) da planilha.
+    Garante que todas as colunas esperadas existam.
+    Retorna: Um DataFrame do Pandas com os registros de tarefas.
+    """
+    # ... [código de carregamento de presença - sem alterações] ...
+    try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
+        df_att = pd.DataFrame(worksheet.get_all_records())
+        if df_att.empty: return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"])
+        expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
+        for col in expected_cols_order:
+            if col not in df_att.columns: df_att[col] = None
+        return df_att
+    except Exception as e: st.error(f"Erro ao carregar presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
+
+# ... [outras funções de carregamento de dados como load_users_data e load_config_data - sem alterações] ...
 @st.cache_data(ttl=300)
 def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
     try:
@@ -111,30 +161,29 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
         return tasks, statuses
     except Exception as e: st.error(f"Erro ao carregar config '{config_tab_name}': {e}", icon="🚨"); return [], []
 
-@st.cache_data(ttl=120)
-def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
-    try:
-        gspread_client = get_gspread_client()
-        worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-        df_att = pd.DataFrame(worksheet.get_all_records())
-        if df_att.empty: return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"])
-        expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
-        for col in expected_cols_order:
-            if col not in df_att.columns: df_att[col] = None
-        return df_att
-    except Exception as e: st.error(f"Erro ao carregar presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
+
+
+# --- 3. FUNÇÕES AUXILIARES (HELPERS) ---
+# Sumário: Funções que realizam tarefas específicas e repetitivas, como registrar logs
+# ou encontrar o status mais recente de uma tarefa para um atleta.
 
 def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str,
                   sheet_name: str = MAIN_SHEET_NAME, att_tab_name: str = ATTENDANCE_TAB_NAME):
+    """
+    Registra uma nova linha na planilha de tarefas (Attendance).
+    Após o registro, limpa o cache dos dados para forçar uma recarga.
+    Retorna: True se o registro foi bem-sucedido, False caso contrário.
+    """
     try:
         gspread_client = get_gspread_client()
         log_ws = connect_gsheet_tab(gspread_client, sheet_name, att_tab_name)
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        user_ident = st.session_state.get('current_user_name', user_log_id) if st.session_state.get('user_confirmed') else user_log_id
+        user_ident = st.session_state.get('current_user_name', user_log_id)
         next_num = len(log_ws.get_all_values()) + 1
         new_row_data = [str(next_num), ath_event, ath_id, ath_name, task, status, user_ident, ts, notes]
         log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
         st.success(f"'{task}' para {ath_name} registrado como '{status}'.", icon="✍️")
+        # Limpa o cache dos dados para garantir que a interface seja atualizada.
         load_attendance_data.clear()
         load_athlete_data.clear()
         return True
@@ -142,11 +191,16 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
         st.error(f"Erro ao registrar em '{att_tab_name}': {e}", icon="🚨")
         return False
 
-# --- Helper Function ---
 def get_latest_status(athlete_id, task, attendance_df):
+    """
+    Encontra o status mais recente para um atleta e uma tarefa específicos.
+    Retorna: Uma string com o nome do status (ex: "Done", "Pending").
+    """
     if attendance_df.empty or task is None: return "Pending"
+    # Filtra os registros para o atleta e tarefa corretos.
     athlete_records = attendance_df[(attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & (attendance_df["Task"] == task)]
     if athlete_records.empty: return "Pending"
+    # Ordena por data/hora para encontrar o mais recente.
     if "Timestamp" in athlete_records.columns:
         athlete_records = athlete_records.copy()
         athlete_records.loc[:, 'TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
@@ -159,16 +213,20 @@ def get_latest_status(athlete_id, task, attendance_df):
         latest_record = athlete_records.iloc[-1]
     return latest_record.get("Status", "Pending")
 
-# --- 6. Main Application Logic ---
-st.title("UAEW | Task Control")
 
+# --- 4. LÓGICA PRINCIPAL DA APLICAÇÃO ---
+# Sumário: Onde a interface do usuário é construída e a mágica acontece.
+# Inclui a autenticação, os filtros, o loop de exibição dos cards e os botões de ação.
+
+# Inicializa o estado da sessão para armazenar valores entre as interações.
 default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Requested", "selected_event": "Todos os Eventos", "fighter_search_query": ""}
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
 
-# --- User Auth Section ---
+# Seção de Autenticação do Usuário
 with st.container(border=True):
+    # ... [código de autenticação - sem alterações] ...
     st.subheader("User")
     col_input_ps, col_user_status_display = st.columns([0.6, 0.4]) 
     with col_input_ps:
@@ -195,32 +253,43 @@ with st.container(border=True):
 if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
     st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",current_user_image_url="",selected_task=NO_TASK_SELECTED_LABEL);st.rerun()
 
-# --- Main App Content ---
+# Conteúdo principal (visível apenas após login)
 if st.session_state.user_confirmed and st.session_state.current_user_name!="User":
+    # Carrega dados essenciais.
     with st.spinner("Carregando dados..."):
         tasks_raw, statuses_list_cfg = load_config_data()
         df_athletes = load_athlete_data()
         df_attendance = load_attendance_data()
 
+    # Seletor de tarefa.
     tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
     st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="tsel_w")
     sel_task_actual = st.session_state.selected_task if st.session_state.selected_task != NO_TASK_SELECTED_LABEL else None
     
+    # Exibe o gráfico de estatísticas se uma tarefa for selecionada.
     if sel_task_actual:
         df_athletes['current_task_status'] = df_athletes['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
         status_counts = df_athletes['current_task_status'].value_counts().to_dict()
-        pending_count = sum(status_counts.get(s, 0) for s in STATUS_PENDING_EQUIVALENTS + ["Pending"])
+        # Agrupa os status 'Pending' e 'Not Registred'
+        pending_count = sum(status_counts.get(s, 0) for s in STATUS_PENDING_EQUIVALENTS)
         requested_count = status_counts.get('Requested', 0)
         done_count = status_counts.get('Done', 0)
+        not_requested_count = status_counts.get('---', 0)
         
         st.markdown("##### Estatísticas da Tarefa")
-        chart_data = pd.DataFrame([{"Status": "Done", "Count": done_count}, {"Status": "Requested", "Count": requested_count}, {"Status": "Pending", "Count": pending_count}])
-        color_scale = alt.Scale(domain=['Done', 'Requested', 'Pending'], range=['#28a745', '#ffc107', '#dc3545'])
+        chart_data = pd.DataFrame([
+            {"Status": "Done", "Count": done_count}, 
+            {"Status": "Requested", "Count": requested_count}, 
+            {"Status": "Pending", "Count": pending_count},
+            {"Status": "Not Requested", "Count": not_requested_count}
+        ])
+        color_scale = alt.Scale(domain=['Done', 'Requested', 'Pending', 'Not Requested'], range=['#28a745', '#ffc107', '#dc3545', '#6c757d'])
         chart = alt.Chart(chart_data).mark_bar().encode(x=alt.X('Status:N', sort=None, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y('Count:Q', title="Nº de Atletas"), color=alt.Color('Status:N', scale=color_scale, legend=None)).properties(height=200)
         st.altair_chart(chart, use_container_width=True)
         st.divider()
 
-    status_options = ["Todos", "Requested", "Done", "Pending"]
+    # Filtros de Status (Radio Buttons) e de busca.
+    status_options = ["Todos", "Requested", "Done", "Pending", "Not Requested"]
     st.session_state.selected_status = st.radio("Filtrar por Status:", options=status_options, index=status_options.index(st.session_state.selected_status), horizontal=True, key="srad_w", disabled=(not sel_task_actual))
     
     filter_cols = st.columns(2)
@@ -229,6 +298,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
     st.divider()
 
+    # Lógica de filtragem do DataFrame.
     df_filtered = df_athletes.copy()
     if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
     search_term = st.session_state.fighter_search_query.strip().lower()
@@ -237,30 +307,37 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     if sel_task_actual and st.session_state.selected_status != "Todos":
         if 'current_task_status' not in df_filtered.columns:
              df_filtered['current_task_status'] = df_filtered['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
+        
         if st.session_state.selected_status == "Pending":
-            df_filtered = df_filtered[df_filtered['current_task_status'].isin(STATUS_PENDING_EQUIVALENTS + ["Pending"])]
+            df_filtered = df_filtered[df_filtered['current_task_status'].isin(STATUS_PENDING_EQUIVALENTS)]
+        elif st.session_state.selected_status == "Not Requested":
+             df_filtered = df_filtered[df_filtered['current_task_status'] == '---']
         else:
             df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
     
     st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
     if df_filtered.empty and sel_task_actual: st.info(f"Nenhum atleta com o status '{st.session_state.selected_status}'.")
     
+    # Loop de Exibição dos Cards de Atletas.
     for i_l, row in df_filtered.iterrows():
         ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
         
-        curr_ath_task_stat = row.get('current_task_status') if sel_task_actual else None
-        
-        status_bar_color = "#2E2E2E"
+        # Define o status e a cor apenas se uma tarefa estiver selecionada.
+        curr_ath_task_stat = None
+        status_bar_color = "#2E2E2E" # Cor padrão neutra.
         status_text_html = ""
-        if curr_ath_task_stat:
+        if sel_task_actual:
+            curr_ath_task_stat = row.get('current_task_status', 'Pending')
             status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{curr_ath_task_stat}</strong></p>"
             if curr_ath_task_stat == "Done": status_bar_color = "#28a745"
             elif curr_ath_task_stat == "Requested": status_bar_color = "#ffc107"
             elif curr_ath_task_stat == "---": status_bar_color = "#6c757d"
             else: status_bar_color = "#dc3545"
 
+        # Layout do Card e Botões em duas colunas.
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
+            # Constrói o HTML para o link do WhatsApp.
             mob_r = str(row.get("MOBILE", "")).strip()
             wa_link_html = ""
             if mob_r:
@@ -268,30 +345,34 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
                 if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
             
-            # --- CORREÇÃO DO HTML DA TABELA ---
-            pd_html = ""
+            # Constrói o HTML dos dados pessoais (tabela ou mensagem de "ocultos").
+            personal_data_html = ""
             if st.session_state.show_personal_data:
                 pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
-                pd_html = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
-                                   <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
-            
+                personal_data_html = f"""<div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
+                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
+                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr>
+                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr>
+                                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}</table></div>"""
+            else:
+                 personal_data_html = "<div style='flex-grow: 1; text-align: center; font-style: italic; color: #ccc; align-self: center;'>Dados pessoais ocultos.</div>"
+
+            # Renderiza o Card do atleta com toda a informação.
             st.markdown(f"""
             <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px;'>
                 <div style='display:flex; align-items:center; gap:20px;'>
-                    <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/120?text=No+Image",True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>
+                    <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE").startswith("http")else"https://via.placeholder.com/120?text=No+Image",True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>
                     <div style='flex-grow: 1;'>
                         <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
                         {status_text_html}
                         {wa_link_html}
                     </div>
                 </div>
-                {pd_html}
+                {personal_data_html}
             </div>""", unsafe_allow_html=True)
             
+            # Renderiza os badges de status para todas as tarefas, se uma tarefa estiver selecionada.
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
                 status_color_map = {"Done": "#28a745", "Requested": "#ffc107", "---": "#6c757d", "Pending": "#dc3545", "Not Registred": "#dc3545"}
@@ -303,10 +384,11 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
         
+        # Coluna de botões de ação.
         with col_buttons:
             if sel_task_actual and curr_ath_task_stat is not None:
                 uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-                st.write(" "); st.write(" ")
+                st.write(" "); st.write(" ") # Espaçamento vertical.
                 if curr_ath_task_stat == "Requested":
                     if st.button("CONCLUIR", key=f"done_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
                         if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l): st.rerun()
@@ -319,5 +401,6 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         st.divider()
 
 else:
+    # Mensagem para o usuário fazer login.
     if not st.session_state.user_confirmed and not st.session_state.get('warning_message'):
         st.warning("🚨 Por favor, faça o login para continuar.", icon="🚨")

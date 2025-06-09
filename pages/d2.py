@@ -36,7 +36,7 @@ STATUS_INFO = {
 }
 DEFAULT_STATUS_CLASS = "status-pending"
 
-# --- Mapeamento de Tarefas para Emojis ---
+# --- Task to Emoji Mapping ---
 TASK_EMOJI_MAP = {
     "Walkout Music": "🎵",
     "Stats": "📊",
@@ -124,7 +124,7 @@ def get_task_status(athlete_id, task_name, df_attendance):
 def calculate_task_summary(df_processed, task_list):
     summary = {}
     for task in task_list:
-        summary[task] = {"Done": 0, "Requested": 0} # Omit Pending
+        summary[task] = {"Done": 0, "Requested": 0}
         for corner in ["Azul", "Vermelho"]:
             col_name = f"{task} ({corner})"
             if col_name in df_processed.columns:
@@ -184,11 +184,11 @@ st.set_page_config(layout="wide", page_title="Fight Dashboard")
 if 'table_font_size' not in st.session_state:
     st.session_state.table_font_size = 18
 
-# --- CORRECTED CSS FUNCTION ---
+# --- NEW AND FINAL CSS FUNCTION ---
 def get_dashboard_style(font_size_px):
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
-    fighter_font_size = font_size_px * 1.6 
+    fighter_font_size = font_size_px * 1.8 
 
     return f"""
     <style>
@@ -236,9 +236,9 @@ def get_dashboard_style(font_size_px):
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
 
-        /* === COLUMN WIDTH CORRECTIONS === */
+        /* === AGGRESSIVE COLUMN WIDTH CORRECTIONS === */
         .fighter-name {{
-            width: 22%; 
+            width: 35%; 
             font-weight: 700;
             font-size: {fighter_font_size}px !important;
         }}
@@ -246,7 +246,7 @@ def get_dashboard_style(font_size_px):
         .fighter-name-red {{ text-align: left !important; padding-left: 15px !important; }}
 
         .task-header, .status-cell {{
-            width: 3%;
+            width: 1.5%;
         }}
 
         .photo-cell {{
@@ -343,7 +343,6 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
     
-    # --- Simplified Summary Display ---
     task_summary = calculate_task_summary(df_dash_processed, all_tsks)
     
     st.write("<div class='summary-container'>", unsafe_allow_html=True)

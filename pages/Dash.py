@@ -231,14 +231,14 @@ def get_dashboard_style(font_size_px, num_tasks=6):
 
     # --- DEFINIÇÃO EXPLÍCITA DA LARGURA DAS COLUNAS EM PORCENTAGEM ---
     # Esta é a mudança crucial para garantir o layout correto.
-    task_col_width = "4.5%"    # Colunas de tarefa são mínimas
+    task_col_width = "3.5%"    # Colunas de tarefa são mínimas
     photo_col_width = "6%"      # Colunas de foto são pequenas
     center_col_width = "8%"     # Coluna central é pequena
     # **REDUZIDO PELA METADE**: De ~32% para 16%
     fighter_col_width = "16%"   # Colunas de nome agora são significativamente menores, mas ainda as maiores.
     
     # Calcula o total de colunas de tarefa e o espaço que elas ocupam
-    total_task_width = num_tasks * 4.5 * 2 # (2.5% por tarefa, vezes 2 lados)
+    total_task_width = num_tasks * 3.5 * 2 # (2.5% por tarefa, vezes 2 lados)
     # Calcula o espaço restante para distribuir igualmente entre as colunas de nome
     remaining_space = 100 - total_task_width - (6*2) - 8
     fighter_col_width = f"{remaining_space / 2}%"

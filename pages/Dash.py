@@ -132,20 +132,6 @@ def get_task_status(athlete_id, task_name, df_attendance):
         except: pass
     return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
 
-def calculate_task_summary(df_processed, task_list):
-    summary = {}
-    for task in task_list:
-        summary[task] = {"Done": 0, "Requested": 0}
-        for corner in ["Azul", "Vermelho"]:
-            col_name = f"{task} ({corner})"
-            if col_name in df_processed.columns:
-                status_texts = df_processed[col_name].apply(lambda x: x.get('text', 'Pending'))
-                counts = status_texts.value_counts()
-                for status, count in counts.items():
-                    if status == "Done": summary[task]["Done"] += count
-                    elif status == "Requested": summary[task]["Requested"] += count
-    return summary
-
 # --- Geração da Interface (HTML & CSS) ---
 
 def generate_mirrored_html_dashboard(df_processed, task_list):
@@ -245,7 +231,6 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
         .fight-info-number {{ font-weight: bold; color: #fff; }}
         .fight-info-event {{ font-style: italic; color: #ccc; }}
         .fight-info-division {{ font-style: normal; color: #ddd; }}
-        .summary-container {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }}
     </style>
     """
 
@@ -347,19 +332,6 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
 
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
-    task_summary = calculate_task_summary(df_dash_processed, all_tsks)
-    st.write("<div class='summary-container'>", unsafe_allow_html=True)
-    cols = st.columns(len(all_tsks))
-    for col_index, (task, data) in enumerate(task_summary.items()):
-        emoji = TASK_EMOJI_MAP.get(task, "")
-        with cols[col_index]:
-            st.metric(
-                label=f"{emoji} {task}",
-                value=f"{data.get('Done', 0)} Done",
-                delta=f"{data.get('Requested', 0)} Req.",
-                delta_color="off"
-            )
-    st.write("</div>", unsafe_allow_html=True)
     html_grid = generate_mirrored_html_dashboard(df_dash_processed, all_tsks)
     st.markdown(html_grid, unsafe_allow_html=True)
 else:

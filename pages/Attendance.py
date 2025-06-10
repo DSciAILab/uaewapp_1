@@ -1,286 +1,401 @@
-# pages/Attendance.py
-
+# --- 0. Import Libraries ---
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import html
+import altair as alt
 import time
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="Attendance Control")
+# --- 1. Page Configuration ---
+st.set_page_config(page_title="UAEW | Task Control", layout="wide")
 
-# --- REUTILIZAÇÃO DE CÓDIGO DO DASHBOARD (Mantenha-os consistentes) ---
-
-# --- Constantes Globais ---
+# --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App"
-CONFIG_TAB_NAME = "Config"
-FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
+ATHLETES_TAB_NAME = "df"
+USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance"
-ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
-ATTENDANCE_TASK_COL = "Task"
-ATTENDANCE_STATUS_COL = "Status"
-ATTENDANCE_TIMESTAMP_COL = "Timestamp"
-ATTENDANCE_ORDER_COL = "Check-in Order"  # Nova coluna!
+ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
+CONFIG_TAB_NAME = "Config"
+NO_TASK_SELECTED_LABEL = "-- Choose Task --"
+STATUS_PENDING_LIKE = ["Pending", "Not Registred"]
 
-FC_EVENT_COL = "Event"
-FC_FIGHTER_COL = "Fighter"
-FC_ATHLETE_ID_COL = "AthleteID"
-FC_CORNER_COL = "Corner"
-FC_ORDER_COL = "FightOrder"
-FC_PICTURE_COL = "Picture"
+### [MODIFICADO] ### - Novas Constantes
+ATTENDANCE_ORDER_COL = "Check-in Order"
+STATUS_CHECKED_IN = "Checked-in"
 
-# --- Funções de Conexão e Carregamento (Idênticas ao Dashboard) ---
 
+# --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         if "gcp_service_account" not in st.secrets:
-            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨")
-            st.stop()
+            st.error("Erro: Credenciais `gcp_service_account` não encontradas.", icon="🚨"); st.stop()
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
+    except KeyError as e:
+        st.error(f"Erro config: Chave GCP ausente. Detalhes: {e}", icon="🚨"); st.stop()
     except Exception as e:
-        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨")
-        st.stop()
+        st.error(f"Erro API Google: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    if not gspread_client:
-        st.error("CRITICAL: Gspread client not initialized.", icon="🚨")
-        st.stop()
     try:
-        return gspread_client.open(sheet_name).worksheet(tab_name)
+        spreadsheet = gspread_client.open(sheet_name)
+        return spreadsheet.worksheet(tab_name)
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Erro: Planilha '{sheet_name}' não encontrada.", icon="🚨"); st.stop()
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"Erro: Aba '{tab_name}' não encontrada em '{sheet_name}'.", icon="🚨"); st.stop()
     except Exception as e:
-        st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨")
-        st.stop()
+        st.error(f"Erro ao conectar à aba '{tab_name}': {e}", icon="🚨"); st.stop()
 
-@st.cache_data
-def load_fightcard_data():
-    try:
-        df = pd.read_csv(FIGHTCARD_SHEET_URL)
-        df.columns = df.columns.str.strip()
-        df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL])
-        df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
-        df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
-        return df.drop_duplicates(subset=[FC_ATHLETE_ID_COL])
-    except Exception as e:
-        st.error(f"Error loading Fightcard: {e}")
-        return pd.DataFrame()
-
-@st.cache_data(ttl=30) # Reduzido para atualizações mais rápidas
-def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
-    gspread_client = get_gspread_client()
-    worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-    try:
-        df_att = pd.DataFrame(worksheet.get_all_records())
-        # Garante que colunas essenciais existam, mesmo que vazias
-        for col in [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_ORDER_COL]:
-            if col not in df_att.columns:
-                df_att[col] = None
-        
-        # Converte para tipos corretos para evitar erros de comparação
-        df_att[ATTENDANCE_ATHLETE_ID_COL] = df_att[ATTENDANCE_ATHLETE_ID_COL].astype(str)
-        df_att[ATTENDANCE_ORDER_COL] = pd.to_numeric(df_att[ATTENDANCE_ORDER_COL], errors='coerce')
-        return df_att
-    except Exception as e:
-        st.error(f"Error loading Attendance: {e}")
-        return pd.DataFrame()
-
-# --- FUNÇÃO CORRIGIDA ---
+# --- 3. Data Loading ---
 @st.cache_data(ttl=600)
-def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
-    gspread_client = get_gspread_client()
-    worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
-    try:
-        # Usar get_all_values() para evitar a verificação estrita de cabeçalho do gspread
-        data = worksheet.get_all_values()
-        if not data or len(data) < 1:
-            st.warning(f"A aba '{config_tab}' na planilha está vazia.")
-            return []
-
-        # Criar o DataFrame manualmente a partir dos valores
-        headers = data[0]
-        
-        df_conf = pd.DataFrame(data[1:], columns=headers)
-        
-        if "TaskList" in df_conf.columns:
-            # Pega a primeira coluna "TaskList" se houver duplicatas
-            task_list_series = df_conf["TaskList"]
-            if isinstance(task_list_series, pd.DataFrame): # Se houver múltiplas colunas "TaskList"
-                task_list_series = task_list_series.iloc[:, 0]
-            return task_list_series.dropna().astype(str).str.strip().unique().tolist()
-        else:
-            st.error(f"Erro Crítico: A coluna 'TaskList' não foi encontrada na aba '{config_tab}'.")
-            return []
-            
-    except Exception as e:
-        st.error(f"Erro ao carregar TaskList de Config: {e}")
-        return []
-
-# --- NOVAS FUNÇÕES DE LÓGICA E INTERAÇÃO ---
-
-def record_attendance(athlete_id: str, task_name: str, status: str):
-    """Grava um novo registro na planilha de Attendance."""
+def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str = ATHLETES_TAB_NAME):
     try:
         gspread_client = get_gspread_client()
-        worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, ATTENDANCE_TAB_NAME)
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        order_number = ''
-        if status == "Checked-in":
-            # Calcula o próximo número da ordem para esta tarefa
-            all_attendance = pd.DataFrame(worksheet.get_all_records())
-            if not all_attendance.empty:
-                task_attendance = all_attendance[all_attendance[ATTENDANCE_TASK_COL] == task_name]
-                if not task_attendance.empty and ATTENDANCE_ORDER_COL in task_attendance.columns:
-                    max_order = pd.to_numeric(task_attendance[ATTENDANCE_ORDER_COL], errors='coerce').max()
-                    order_number = int(max_order + 1) if pd.notna(max_order) else 1
-                else:
-                    order_number = 1
-            else:
-                 order_number = 1
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
+        data = worksheet.get_all_records()
+        if not data: return pd.DataFrame()
+        df = pd.DataFrame(data)
+        if df.empty: return pd.DataFrame()
+        if "ROLE" not in df.columns or "INACTIVE" not in df.columns:
+            st.error(f"Colunas 'ROLE'/'INACTIVE' não encontradas em '{athletes_tab_name}'.", icon="🚨"); return pd.DataFrame()
+        df.columns = df.columns.str.strip()
+        if df["INACTIVE"].dtype == 'object':
+            df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+        elif pd.api.types.is_numeric_dtype(df["INACTIVE"]):
+            df["INACTIVE"] = df["INACTIVE"].map({0: False, 1: True}).fillna(True)
+        df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
+        df["EVENT"] = df["EVENT"].fillna("Z") if "EVENT" in df.columns else "Z"
+        date_cols = ["DOB", "PASSPORT EXPIRE DATE", "BLOOD TEST"]
+        for col in date_cols:
+            if col in df.columns: df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
+            else: df[col] = ""
+        for col_check in ["IMAGE", "PASSPORT IMAGE", "MOBILE"]:
+            df[col_check] = df[col_check].fillna("") if col_check in df.columns else ""
+        if "NAME" not in df.columns:
+            st.error(f"'NAME' não encontrada em '{athletes_tab_name}'.", icon="🚨"); return pd.DataFrame()
+        return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
+    except Exception as e:
+        st.error(f"Erro ao carregar atletas (gspread): {e}", icon="🚨"); return pd.DataFrame()
 
-        # A ordem das colunas DEVE corresponder à sua planilha
-        new_row = [timestamp, str(athlete_id), task_name, status, str(order_number)]
-        worksheet.append_row(new_row, value_input_option='USER_ENTERED')
+@st.cache_data(ttl=300)
+def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
+    try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
+        return worksheet.get_all_records() or []
+    except Exception as e:
+        st.error(f"Erro ao carregar usuários '{users_tab_name}': {e}", icon="🚨"); return []
+
+def get_valid_user_info(user_input: str, sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
+    if not user_input: return None
+    all_users = load_users_data(sheet_name, users_tab_name)
+    if not all_users: return None
+    proc_input = user_input.strip().upper()
+    val_id_input = proc_input[2:] if proc_input.startswith("PS") and len(proc_input) > 2 and proc_input[2:].isdigit() else proc_input
+    for record in all_users:
+        ps_sheet = str(record.get("PS", "")).strip(); name_sheet = str(record.get("USER", "")).strip().upper()
+        if ps_sheet == val_id_input or ("PS" + ps_sheet) == proc_input or name_sheet == proc_input or ps_sheet == proc_input: return record
+    return None
+
+@st.cache_data(ttl=600)
+def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = CONFIG_TAB_NAME):
+    try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab_name)
+        data = worksheet.get_all_values()
+        if not data or len(data) < 1: st.error(f"Aba '{config_tab_name}' vazia/sem cabeçalho.", icon="🚨"); return [],[]
+        df_conf = pd.DataFrame(data[1:], columns=data[0])
+        tasks = df_conf["TaskList"].dropna().unique().tolist() if "TaskList" in df_conf.columns else []
+        statuses = df_conf["TaskStatus"].dropna().unique().tolist() if "TaskStatus" in df_conf.columns else []
+        if not tasks: st.warning(f"'TaskList' não encontrada/vazia em '{config_tab_name}'.", icon="⚠️")
+        if not statuses: st.warning(f"'TaskStatus' não encontrada/vazia em '{config_tab_name}'.", icon="⚠️")
+        return tasks, statuses
+    except Exception as e: st.error(f"Erro ao carregar config '{config_tab_name}': {e}", icon="🚨"); return [], []
+
+### [MODIFICADO] ### - Carregamento de dados de presença atualizado
+@st.cache_data(ttl=30)
+def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
+    try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
+        df_att = pd.DataFrame(worksheet.get_all_records())
+        if df_att.empty:
+            return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes", ATTENDANCE_ORDER_COL])
+        
+        expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes", ATTENDANCE_ORDER_COL]
+        for col in expected_cols_order:
+            if col not in df_att.columns: df_att[col] = pd.NA
+        return df_att
+    except Exception as e: st.error(f"Erro ao carregar presença '{attendance_tab_name}': {e}", icon="🚨"); return pd.DataFrame()
+
+### [MODIFICADO] ### - Função de registro com cálculo de ordem de check-in
+def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str,
+                  sheet_name: str = MAIN_SHEET_NAME, att_tab_name: str = ATTENDANCE_TAB_NAME):
+    try:
+        gspread_client = get_gspread_client()
+        log_ws = connect_gsheet_tab(gspread_client, sheet_name, att_tab_name)
+        
+        all_records_df = pd.DataFrame(log_ws.get_all_records())
+        
+        check_in_order_num = ''
+        if status == STATUS_CHECKED_IN:
+            if not all_records_df.empty and ATTENDANCE_ORDER_COL in all_records_df.columns:
+                # Filtra para a tarefa atual e converte a coluna de ordem para numérico
+                task_records = all_records_df[all_records_df['Task'] == task]
+                task_orders = pd.to_numeric(task_records[ATTENDANCE_ORDER_COL], errors='coerce')
+                
+                # Encontra a ordem máxima e incrementa
+                max_order = task_orders.max()
+                check_in_order_num = int(max_order + 1) if pd.notna(max_order) else 1
+            else:
+                check_in_order_num = 1 # Primeiro check-in para esta tarefa
+
+        ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        user_ident = st.session_state.get('current_user_name', user_log_id) if st.session_state.get('user_confirmed') else user_log_id
+        next_num = len(all_records_df) + 2 # +2 para contar o header e a nova linha
+        
+        # Garante que a ordem das colunas corresponde à sua planilha
+        new_row_data = [str(next_num), ath_event, ath_id, ath_name, task, status, user_ident, ts, notes, str(check_in_order_num)]
+        
+        log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
+        st.success(f"'{task}' para {ath_name} registrado como '{status}'.", icon="✍️")
+        
+        # Limpa os caches para forçar a recarga dos dados
+        load_attendance_data.clear()
+        load_athlete_data.clear()
         return True
     except Exception as e:
-        st.error(f"Failed to record attendance for {athlete_id}: {e}")
+        st.error(f"Erro ao registrar em '{att_tab_name}': {e}", icon="🚨")
         return False
 
-def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.DataFrame):
-    """Obtém o status mais recente de um atleta para uma tarefa específica."""
-    if df_attendance.empty:
-        return {"status": "Pending", "order": None}
-
-    athlete_records = df_attendance[
-        (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) &
-        (df_attendance[ATTENDANCE_TASK_COL] == task_name)
-    ]
-
+### [MODIFICADO] ### - Helper para pegar status E ordem
+def get_latest_status_and_order(athlete_id, task, attendance_df):
+    if attendance_df.empty or task is None:
+        return "Pending", None
+    
+    athlete_records = attendance_df[(attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & (attendance_df["Task"] == task)]
     if athlete_records.empty:
-        return {"status": "Pending", "order": None}
+        return "Pending", None
     
-    # Ordena por timestamp para pegar o registro mais recente
-    if ATTENDANCE_TIMESTAMP_COL in athlete_records.columns:
-        athlete_records = athlete_records.copy()
-        athlete_records[ATTENDANCE_TIMESTAMP_COL] = pd.to_datetime(athlete_records[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-        latest_record = athlete_records.sort_values(by=ATTENDANCE_TIMESTAMP_COL, ascending=False).iloc[0]
-    else:
+    # Ordenar por timestamp para obter o registro mais recente
+    athlete_records = athlete_records.copy()
+    athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+    valid_records = athlete_records.dropna(subset=['TS_dt']).sort_values(by="TS_dt", ascending=False)
+    
+    if valid_records.empty:
         latest_record = athlete_records.iloc[-1]
+    else:
+        latest_record = valid_records.iloc[0]
 
-    status = latest_record[ATTENDANCE_STATUS_COL]
-    order = latest_record.get(ATTENDANCE_ORDER_COL) if status == "Checked-in" else None
-
-    # Se o último status for "Done", encontre o registro de "Checked-in" para obter a ordem
-    if status == "Done":
-        checked_in_record = athlete_records[athlete_records[ATTENDANCE_STATUS_COL] == "Checked-in"]
-        if not checked_in_record.empty:
-            order = checked_in_record.sort_values(by=ATTENDANCE_TIMESTAMP_COL, ascending=False).iloc[0].get(ATTENDANCE_ORDER_COL)
+    latest_status = latest_record.get("Status", "Pending")
     
-    return {"status": status, "order": int(order) if pd.notna(order) else None}
+    # Encontrar a ordem de check-in, que pode estar em um registro anterior
+    check_in_record = valid_records[valid_records['Status'] == STATUS_CHECKED_IN]
+    if not check_in_record.empty:
+        check_in_order = check_in_record.iloc[0].get(ATTENDANCE_ORDER_COL)
+    else:
+        check_in_order = None
+
+    return latest_status, check_in_order
 
 
-# --- APLICAÇÃO PRINCIPAL ---
+# --- 6. Main Application Logic ---
+st.title("UAEW | Task Control")
 
-st.title("✔️ Attendance Control")
-st.markdown("Select a task and event to manage athlete check-ins and check-outs.")
+# Session State Initialization
+default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Todos", "selected_event": "Todos os Eventos", "fighter_search_query": ""}
+for k,v in default_ss.items():
+    if k not in st.session_state: st.session_state[k]=v
+if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
 
-# Carregar dados essenciais
-with st.spinner("Loading initial data..."):
-    task_list = get_task_list()
-    df_fc = load_fightcard_data()
-    df_att = load_attendance_data()
-    
-if df_fc.empty or not task_list:
-    st.error("Could not load Fight Card or Task List. Check the configuration.")
-    st.stop()
+# --- User Auth Section ---
+with st.container(border=True):
+    st.subheader("User")
+    col_input_ps, col_user_status_display = st.columns([0.6, 0.4])
+    with col_input_ps:
+        st.session_state['user_id_input'] = st.text_input("PS Number", value=st.session_state['user_id_input'], max_chars=50, key="uid_w", label_visibility="collapsed", placeholder="Digite os 4 dígitos do seu PS")
+        if st.button("Login", key="confirm_b_w", use_container_width=True, type="primary"):
+            u_in=st.session_state['user_id_input'].strip()
+            if u_in:
+                u_inf=get_valid_user_info(u_in)
+                if u_inf:
+                    st.session_state.update(current_user_ps_id_internal=str(u_inf.get("PS",u_in)).strip(), current_user_id=u_in, current_user_name=str(u_inf.get("USER",u_in)).strip(), current_user_image_url=str(u_inf.get("USER_IMAGE","")).strip(), user_confirmed=True, warning_message=None)
+                else:
+                    st.session_state.update(user_confirmed=False,current_user_image_url="",warning_message=f"⚠️ Usuário '{u_in}' não encontrado.")
+            else:
+                st.session_state.update(warning_message="⚠️ ID/Nome do usuário vazio.",user_confirmed=False,current_user_image_url="")
+    with col_user_status_display:
+        if st.session_state.user_confirmed and st.session_state.current_user_name != "User":
+            un, ui = html.escape(st.session_state.current_user_name), html.escape(st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id))
+            uim = st.session_state.get('current_user_image_url', "")
+            image_html = f"""<img src="{html.escape(uim, True)}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;border:1px solid #555;vertical-align:middle;margin-right:10px;">""" if uim and (uim.startswith("http://") or uim.startswith("https://")) else "<div style='width:50px;height:50px;border-radius:50%;background-color:#333;margin-right:10px;display:inline-block;vertical-align:middle;'></div>"
+            st.markdown(f"""<div style="display:flex;align-items:center;height:50px;margin-top:0px;">{image_html}<div style="line-height:1.2;vertical-align:middle;"><span style="font-weight:bold;">{un}</span><br><span style="font-size:0.9em;color:#ccc;">PS: {ui}</span></div></div>""", unsafe_allow_html=True)
+        elif st.session_state.get('warning_message'):
+            st.warning(st.session_state.warning_message, icon="🚨")
 
-# --- Filtros de Seleção ---
-col1, col2 = st.columns(2)
-with col1:
-    selected_task = st.selectbox("Select a Task to manage:", options=task_list, index=None, placeholder="Choose a task...")
-with col2:
-    event_list = ["All Events"] + sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
-    selected_event = st.selectbox("Filter by Event:", options=event_list)
+if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
+    st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",current_user_image_url="",selected_task=NO_TASK_SELECTED_LABEL);st.rerun()
 
-if not selected_task:
-    st.info("Please select a task from the dropdown to begin.")
-    st.stop()
+# --- Main App Content ---
+if st.session_state.user_confirmed and st.session_state.current_user_name!="User":
+    with st.spinner("Carregando dados..."):
+        tasks_raw, statuses_list_cfg = load_config_data()
+        df_athletes = load_athlete_data()
+        df_attendance = load_attendance_data()
 
-# Filtrar atletas pelo evento selecionado
-if selected_event != "All Events":
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event].copy()
-else:
-    athletes_to_display = df_fc.copy()
+    tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
+    st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="tsel_w")
+    sel_task_actual = st.session_state.selected_task if st.session_state.selected_task != NO_TASK_SELECTED_LABEL else None
 
-if athletes_to_display.empty:
-    st.warning(f"No athletes found for the event '{selected_event}'.")
-    st.stop()
+    if sel_task_actual:
+        ### [MODIFICADO] ### - Aplicando a nova função para obter status e ordem
+        status_order_df = df_athletes['ID'].apply(lambda id: pd.Series(get_latest_status_and_order(id, sel_task_actual, df_attendance)))
+        df_athletes[['current_task_status', 'current_task_order']] = status_order_df
 
-# --- Exibição e Interação ---
-
-st.markdown("---")
-st.header(f"Athletes for '{selected_task}'")
-
-# Ordenar atletas por status (Done por último) e depois por ordem de check-in
-status_list = []
-for _, athlete in athletes_to_display.iterrows():
-    status_info = get_athlete_task_status(athlete[FC_ATHLETE_ID_COL], selected_task, df_att)
-    status_list.append({
-        'athlete_id': athlete[FC_ATHLETE_ID_COL],
-        'status': status_info['status'],
-        'order': status_info['order'] if status_info['order'] is not None else float('inf')
-    })
-
-if status_list:
-    df_status = pd.DataFrame(status_list)
-    athletes_to_display = athletes_to_display.merge(df_status, left_on=FC_ATHLETE_ID_COL, right_on='athlete_id')
-
-    # Define a ordem de exibição
-    status_order = {'Checked-in': 0, 'Pending': 1, 'Done': 2}
-    athletes_to_display['status_order'] = athletes_to_display['status'].map(status_order)
-    athletes_to_display = athletes_to_display.sort_values(by=['status_order', 'order'])
-
-for _, athlete in athletes_to_display.iterrows():
-    athlete_id = athlete[FC_ATHLETE_ID_COL]
-    status_info = {"status": athlete['status'], "order": athlete['order'] if athlete['order'] != float('inf') else None}
-    
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([1, 4, 2, 2])
+        status_counts = df_athletes['current_task_status'].value_counts().to_dict()
         
-        with c1:
-            st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
+        pending_count = status_counts.get('Pending', 0)
+        requested_count = status_counts.get('Requested', 0)
+        checked_in_count = status_counts.get(STATUS_CHECKED_IN, 0)
+        done_count = status_counts.get('Done', 0)
 
-        with c2:
-            st.subheader(athlete[FC_FIGHTER_COL])
-            status = status_info['status']
-            order = status_info['order']
+        st.markdown("##### Estatísticas da Tarefa")
+        chart_data = pd.DataFrame([
+            {"Status": "Done", "Count": done_count}, 
+            {"Status": STATUS_CHECKED_IN, "Count": checked_in_count},
+            {"Status": "Requested", "Count": requested_count}, 
+            {"Status": "Pending", "Count": pending_count}
+        ])
+        color_scale = alt.Scale(domain=['Done', STATUS_CHECKED_IN, 'Requested', 'Pending'], range=['#28a745', '#17a2b8', '#ffc107', '#dc3545'])
+        chart = alt.Chart(chart_data).mark_bar().encode(x=alt.X('Status:N', sort=None, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y('Count:Q', title="Nº de Atletas"), color=alt.Color('Status:N', scale=color_scale, legend=None)).properties(height=200)
+        st.altair_chart(chart, use_container_width=True)
+        st.divider()
 
-            if status == "Done":
-                st.markdown(f"Status: **<span style='color: #28a745;'>✅ Completed</span>** (Order: #{order})", unsafe_allow_html=True)
-            elif status == "Checked-in":
-                st.markdown(f"Status: **<span style='color: #ffc107;'>⏳ Waiting...</span>**", unsafe_allow_html=True)
-                st.metric(label="Check-in Order", value=f"#{order}")
+    status_options = ["Todos", "Requested", STATUS_CHECKED_IN, "Done", "Pending"]
+    st.session_state.selected_status = st.radio("Filtrar por Status:", options=status_options, index=status_options.index(st.session_state.selected_status) if st.session_state.selected_status in status_options else 0, horizontal=True, key="srad_w", disabled=(not sel_task_actual))
+
+    filter_cols = st.columns(2)
+    filter_cols[0].selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
+    filter_cols[1].text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
+    st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
+    st.divider()
+
+    df_filtered = df_athletes.copy()
+    if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
+    search_term = st.session_state.fighter_search_query.strip().lower()
+    if search_term: df_filtered = df_filtered[df_filtered["NAME"].str.lower().str.contains(search_term, na=False) | df_filtered["ID"].astype(str).str.contains(search_term, na=False)]
+
+    if sel_task_actual and st.session_state.selected_status != "Todos":
+        df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
+
+    st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
+    if not sel_task_actual: st.info("Selecione uma tarefa para ver as opções.", icon="ℹ️")
+
+    for i_l, row in df_filtered.iterrows():
+        ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
+
+        status_bar_color = "#2E2E2E"
+        status_text_html = ""
+        
+        ### [MODIFICADO] ### - Lógica principal de exibição do card e botões
+        if sel_task_actual:
+            curr_ath_task_stat = row.get('current_task_status', 'Pending')
+            curr_ath_task_order = row.get('current_task_order')
+
+            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status: <strong>{curr_ath_task_stat}</strong></p>"
+            if curr_ath_task_stat == "Done":
+                status_bar_color = "#28a745"
+                if pd.notna(curr_ath_task_order):
+                    status_text_html += f"<p style='margin:5px 0 0 0; font-size:0.9em;color:#A9A9A9;'>Ordem de Atendimento: <strong>#{int(curr_ath_task_order)}</strong></p>"
+            elif curr_ath_task_stat == STATUS_CHECKED_IN:
+                status_bar_color = "#17a2b8" # Azul/Ciano para Checked-in
+                if pd.notna(curr_ath_task_order):
+                    status_text_html = f"""<div style='background-color:#0d7a8b; color:white; padding: 5px 10px; border-radius: 8px; text-align:center;'>
+                                            <span style='font-size:0.8em; display:block;'>EM ATENDIMENTO</span>
+                                            <span style='font-size:1.5em; font-weight:bold;'>#{int(curr_ath_task_order)}</span>
+                                         </div>"""
+            elif curr_ath_task_stat == "Requested":
+                status_bar_color = "#ffc107"
+            elif curr_ath_task_stat == "---":
+                status_bar_color = "#6c757d"
             else: # Pending
-                st.markdown(f"Status: **<span style='color: #dc3545;'>⌛ Pending Check-in</span>**", unsafe_allow_html=True)
+                status_bar_color = "#dc3545"
 
-        with c3:
-            if st.button("Check-in", key=f"in_{athlete_id}", use_container_width=True, disabled=(status != "Pending")):
-                with st.spinner("Checking in..."):
-                    if record_attendance(athlete_id, selected_task, "Checked-in"):
-                        st.toast(f"{athlete[FC_FIGHTER_COL]} checked in!", icon="✅")
-                        # Limpa o cache para recarregar os dados e reexecuta para atualizar a UI
-                        st.cache_data.clear()
-                        time.sleep(0.5) # Pequena pausa para garantir que o sheet atualize
-                        st.rerun()
+        col_card, col_buttons = st.columns([2.5, 1])
+        with col_card:
+            mob_r = str(row.get("MOBILE", "")).strip()
+            wa_link_html = ""
+            if mob_r:
+                phone_digits = "".join(filter(str.isdigit, mob_r))
+                if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
+                if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
-        with c4:
-            if st.button("Check-out", key=f"out_{athlete_id}", type="primary", use_container_width=True, disabled=(status != "Checked-in")):
-                with st.spinner("Checking out..."):
-                    if record_attendance(athlete_id, selected_task, "Done"):
-                        st.toast(f"Task completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
-                        st.cache_data.clear()
-                        time.sleep(0.5)
-                        st.rerun()
+            pd_content_html = ""
+            if st.session_state.show_personal_data:
+                pass_img_h = f"<tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE")) and row.get("PASSPORT IMAGE") else ""
+                pd_content_html = f"""
+                <div style='margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;'>
+                    <table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr>
+                       <tr><td style='padding: 2px 10px 2px 0;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr>
+                    </table>
+                </div>"""
+            
+            st.markdown(f"""
+            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 20px; border-radius: 10px; min-height: 160px;'>
+                <div style='display:flex; align-items:center; gap:20px;'>
+                    <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/120?text=No+Image",True)}' style='width:120px; height:120px; border-radius:50%; object-fit:cover;'>
+                    <div style='flex-grow: 1;'>
+                        <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
+                        <div style='margin-top:10px;'>{status_text_html}</div>
+                        {wa_link_html}
+                    </div>
+                </div>
+                {pd_content_html}
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_buttons:
+            if sel_task_actual:
+                uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
+                st.write(" "); st.write(" ") 
+
+                ### [MODIFICADO] ### - Lógica de botões com Check-in/Check-out
+                if curr_ath_task_stat == "Requested":
+                    if st.button("CHECK-IN", key=f"checkin_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_CHECKED_IN, "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
+
+                elif curr_ath_task_stat == STATUS_CHECKED_IN:
+                    if st.button("CHECK-OUT (Concluir)", key=f"checkout_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Done", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
+                    if st.button("Retornar para Fila", key=f"requeue_b_{ath_id_d}_{i_l}", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "Retornou para fila", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
+
+                elif curr_ath_task_stat in STATUS_PENDING_LIKE:
+                    if st.button("REQUISITAR TAREFA", key=f"req_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
+                
+                elif curr_ath_task_stat == "Done":
+                    if st.button("SOLICITAR NOVAMENTE", key=f"req_again_b_{ath_id_d}_{i_l}", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Requested", "Solicitado novamente", uid_l):
+                            time.sleep(1.5)
+                            st.rerun()
+        st.divider()
+
+else:
+    if not st.session_state.user_confirmed and not st.session_state.get('warning_message'):
+        st.warning("🚨 Por favor, faça o login para continuar.", icon="🚨")
+            

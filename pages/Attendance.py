@@ -10,8 +10,6 @@ import time
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="Attendance Control")
 
-# --- REUTILIZAÇÃO DE CÓDIGO DO DASHBOARD (Mantenha-os consistentes) ---
-
 # --- Constantes Globais ---
 MAIN_SHEET_NAME = "UAEW_App"
 CONFIG_TAB_NAME = "Config"
@@ -21,16 +19,14 @@ ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
-ATTENDANCE_ORDER_COL = "Check-in Order"  # Nova coluna!
+ATTENDANCE_ORDER_COL = "Check-in Order"
 
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
-FC_CORNER_COL = "Corner"
-FC_ORDER_COL = "FightOrder"
 FC_PICTURE_COL = "Picture"
 
-# --- Funções de Conexão e Carregamento (Idênticas ao Dashboard) ---
+# --- Funções de Conexão e Carregamento de Dados ---
 
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
@@ -68,18 +64,15 @@ def load_fightcard_data():
         st.error(f"Error loading Fightcard: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=30) # Reduzido para atualizações mais rápidas
+@st.cache_data(ttl=30)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
     try:
         df_att = pd.DataFrame(worksheet.get_all_records())
-        # Garante que colunas essenciais existam, mesmo que vazias
         for col in [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_ORDER_COL]:
             if col not in df_att.columns:
                 df_att[col] = None
-        
-        # Converte para tipos corretos para evitar erros de comparação
         df_att[ATTENDANCE_ATHLETE_ID_COL] = df_att[ATTENDANCE_ATHLETE_ID_COL].astype(str)
         df_att[ATTENDANCE_ORDER_COL] = pd.to_numeric(df_att[ATTENDANCE_ORDER_COL], errors='coerce')
         return df_att
@@ -87,38 +80,48 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         st.error(f"Error loading Attendance: {e}")
         return pd.DataFrame()
 
-# --- FUNÇÃO CORRIGIDA ---
+# --- NOVA FUNÇÃO PARA CARREGAR DADOS DA ABA "Config" ---
 @st.cache_data(ttl=600)
-def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
+def load_config_data(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
+    """Carrega a lista de tarefas (TaskList) e a lista de eventos (TaskAttendance) da aba Config."""
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
+    task_list = []
+    event_list = []
     try:
-        # Usar get_all_values() para evitar a verificação estrita de cabeçalho do gspread
         data = worksheet.get_all_values()
         if not data or len(data) < 1:
             st.warning(f"A aba '{config_tab}' na planilha está vazia.")
-            return []
+            return task_list, event_list
 
-        # Criar o DataFrame manualmente a partir dos valores
         headers = data[0]
-        
         df_conf = pd.DataFrame(data[1:], columns=headers)
-        
-        if "TaskList" in df_conf.columns:
-            # Pega a primeira coluna "TaskList" se houver duplicatas
-            task_list_series = df_conf["TaskList"]
-            if isinstance(task_list_series, pd.DataFrame): # Se houver múltiplas colunas "TaskList"
-                task_list_series = task_list_series.iloc[:, 0]
-            return task_list_series.dropna().astype(str).str.strip().unique().tolist()
-        else:
-            st.error(f"Erro Crítico: A coluna 'TaskList' não foi encontrada na aba '{config_tab}'.")
-            return []
-            
-    except Exception as e:
-        st.error(f"Erro ao carregar TaskList de Config: {e}")
-        return []
 
-# --- NOVAS FUNÇÕES DE LÓGICA E INTERAÇÃO ---
+        # Carrega a lista de tarefas
+        if "TaskList" in df_conf.columns:
+            task_series = df_conf["TaskList"]
+            if isinstance(task_series, pd.DataFrame):
+                task_series = task_series.iloc[:, 0]
+            task_list = task_series.dropna().astype(str).str.strip().unique().tolist()
+        else:
+            st.error(f"Erro: Coluna 'TaskList' não encontrada na aba '{config_tab}'.")
+
+        # Carrega a lista de eventos para attendance
+        if "TaskAttendance" in df_conf.columns:
+            event_series = df_conf["TaskAttendance"]
+            if isinstance(event_series, pd.DataFrame):
+                event_series = event_series.iloc[:, 0]
+            event_list = event_series.dropna().astype(str).str.strip().unique().tolist()
+        else:
+            st.error(f"Erro: Coluna 'TaskAttendance' não encontrada na aba '{config_tab}'.")
+        
+        return task_list, event_list
+
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da aba Config: {e}")
+        return task_list, event_list
+
+# --- Funções de Lógica e Interação ---
 
 def record_attendance(athlete_id: str, task_name: str, status: str):
     """Grava um novo registro na planilha de Attendance."""
@@ -129,19 +132,15 @@ def record_attendance(athlete_id: str, task_name: str, status: str):
         
         order_number = ''
         if status == "Checked-in":
-            # Calcula o próximo número da ordem para esta tarefa
             all_attendance = pd.DataFrame(worksheet.get_all_records())
             if not all_attendance.empty:
                 task_attendance = all_attendance[all_attendance[ATTENDANCE_TASK_COL] == task_name]
                 if not task_attendance.empty and ATTENDANCE_ORDER_COL in task_attendance.columns:
                     max_order = pd.to_numeric(task_attendance[ATTENDANCE_ORDER_COL], errors='coerce').max()
                     order_number = int(max_order + 1) if pd.notna(max_order) else 1
-                else:
-                    order_number = 1
-            else:
-                 order_number = 1
+                else: order_number = 1
+            else: order_number = 1
 
-        # A ordem das colunas DEVE corresponder à sua planilha
         new_row = [timestamp, str(athlete_id), task_name, status, str(order_number)]
         worksheet.append_row(new_row, value_input_option='USER_ENTERED')
         return True
@@ -151,29 +150,24 @@ def record_attendance(athlete_id: str, task_name: str, status: str):
 
 def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.DataFrame):
     """Obtém o status mais recente de um atleta para uma tarefa específica."""
-    if df_attendance.empty:
-        return {"status": "Pending", "order": None}
+    if df_attendance.empty: return {"status": "Pending", "order": None}
 
     athlete_records = df_attendance[
-        (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) &
+        (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).strip() == str(athlete_id).strip()) &
         (df_attendance[ATTENDANCE_TASK_COL] == task_name)
     ]
 
-    if athlete_records.empty:
-        return {"status": "Pending", "order": None}
+    if athlete_records.empty: return {"status": "Pending", "order": None}
     
-    # Ordena por timestamp para pegar o registro mais recente
+    athlete_records = athlete_records.copy()
     if ATTENDANCE_TIMESTAMP_COL in athlete_records.columns:
-        athlete_records = athlete_records.copy()
         athlete_records[ATTENDANCE_TIMESTAMP_COL] = pd.to_datetime(athlete_records[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
         latest_record = athlete_records.sort_values(by=ATTENDANCE_TIMESTAMP_COL, ascending=False).iloc[0]
-    else:
-        latest_record = athlete_records.iloc[-1]
+    else: latest_record = athlete_records.iloc[-1]
 
     status = latest_record[ATTENDANCE_STATUS_COL]
-    order = latest_record.get(ATTENDANCE_ORDER_COL) if status == "Checked-in" else None
-
-    # Se o último status for "Done", encontre o registro de "Checked-in" para obter a ordem
+    order = latest_record.get(ATTENDANCE_ORDER_COL)
+    
     if status == "Done":
         checked_in_record = athlete_records[athlete_records[ATTENDANCE_STATUS_COL] == "Checked-in"]
         if not checked_in_record.empty:
@@ -183,18 +177,16 @@ def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.D
 
 
 # --- APLICAÇÃO PRINCIPAL ---
-
 st.title("✔️ Attendance Control")
 st.markdown("Select a task and event to manage athlete check-ins and check-outs.")
 
-# Carregar dados essenciais
 with st.spinner("Loading initial data..."):
-    task_list = get_task_list()
+    task_list, event_list_from_config = load_config_data()
     df_fc = load_fightcard_data()
     df_att = load_attendance_data()
     
-if df_fc.empty or not task_list:
-    st.error("Could not load Fight Card or Task List. Check the configuration.")
+if df_fc.empty or not task_list or not event_list_from_config:
+    st.error("Could not load Fight Card or required lists from Config sheet. Please check the spreadsheet configuration.")
     st.stop()
 
 # --- Filtros de Seleção ---
@@ -202,8 +194,9 @@ col1, col2 = st.columns(2)
 with col1:
     selected_task = st.selectbox("Select a Task to manage:", options=task_list, index=None, placeholder="Choose a task...")
 with col2:
-    event_list = ["All Events"] + sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True)
-    selected_event = st.selectbox("Filter by Event:", options=event_list)
+    # A lista de eventos agora vem da coluna "TaskAttendance" da aba Config
+    event_options = ["All Events"] + sorted(event_list_from_config, reverse=True)
+    selected_event = st.selectbox("Filter by Event:", options=event_options)
 
 if not selected_task:
     st.info("Please select a task from the dropdown to begin.")
@@ -213,18 +206,17 @@ if not selected_task:
 if selected_event != "All Events":
     athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event].copy()
 else:
-    athletes_to_display = df_fc.copy()
+    # Se "All Events" for selecionado, mostre atletas de todos os eventos listados em TaskAttendance
+    athletes_to_display = df_fc[df_fc[FC_EVENT_COL].isin(event_list_from_config)].copy()
 
 if athletes_to_display.empty:
     st.warning(f"No athletes found for the event '{selected_event}'.")
     st.stop()
 
 # --- Exibição e Interação ---
-
 st.markdown("---")
-st.header(f"Athletes for '{selected_task}'")
+st.header(f"Athletes for '{selected_task}' at '{selected_event}'")
 
-# Ordenar atletas por status (Done por último) e depois por ordem de check-in
 status_list = []
 for _, athlete in athletes_to_display.iterrows():
     status_info = get_athlete_task_status(athlete[FC_ATHLETE_ID_COL], selected_task, df_att)
@@ -238,7 +230,6 @@ if status_list:
     df_status = pd.DataFrame(status_list)
     athletes_to_display = athletes_to_display.merge(df_status, left_on=FC_ATHLETE_ID_COL, right_on='athlete_id')
 
-    # Define a ordem de exibição
     status_order = {'Checked-in': 0, 'Pending': 1, 'Done': 2}
     athletes_to_display['status_order'] = athletes_to_display['status'].map(status_order)
     athletes_to_display = athletes_to_display.sort_values(by=['status_order', 'order'])
@@ -271,9 +262,8 @@ for _, athlete in athletes_to_display.iterrows():
                 with st.spinner("Checking in..."):
                     if record_attendance(athlete_id, selected_task, "Checked-in"):
                         st.toast(f"{athlete[FC_FIGHTER_COL]} checked in!", icon="✅")
-                        # Limpa o cache para recarregar os dados e reexecuta para atualizar a UI
                         st.cache_data.clear()
-                        time.sleep(0.5) # Pequena pausa para garantir que o sheet atualize
+                        time.sleep(0.5)
                         st.rerun()
 
         with c4:

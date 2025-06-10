@@ -8,23 +8,27 @@ from datetime import datetime
 import time
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="Attendance Control")
+st.set_page_config(layout="wide", page_title="Live Attendance Station")
 
 # --- Constantes Globais ---
 MAIN_SHEET_NAME = "UAEW_App"
-CONFIG_TAB_NAME = "Config"
-FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 ATTENDANCE_TAB_NAME = "Attendance"
+FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
+
+# Colunas da Planilha de Attendance
 ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
 ATTENDANCE_ORDER_COL = "Check-in Order"
 
+# Colunas da Planilha Fightcard
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
 FC_PICTURE_COL = "Picture"
+FC_CORNER_COL = "Corner"
+FC_DIVISION_COL = "Division"
 
 # --- Funções de Conexão e Carregamento de Dados ---
 
@@ -33,13 +37,11 @@ def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         if "gcp_service_account" not in st.secrets:
-            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨")
-            st.stop()
+            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨"); st.stop()
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨")
-        st.stop()
+        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     if not gspread_client: st.error("CRITICAL: Gspread client not initialized.", icon="🚨"); st.stop()
@@ -52,9 +54,9 @@ def load_fightcard_data():
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
         df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_EVENT_COL])
-        df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
-        df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
-        return df.drop_duplicates(subset=[FC_ATHLETE_ID_COL])
+        for col in [FC_ATHLETE_ID_COL, FC_FIGHTER_COL, FC_CORNER_COL, FC_DIVISION_COL]:
+            df[col] = df[col].astype(str).str.strip()
+        return df
     except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
 
 @st.cache_data(ttl=30)
@@ -69,20 +71,6 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         df_att[ATTENDANCE_ORDER_COL] = pd.to_numeric(df_att[ATTENDANCE_ORDER_COL], errors='coerce')
         return df_att
     except Exception as e: st.error(f"Error loading Attendance: {e}"); return pd.DataFrame()
-
-@st.cache_data(ttl=600)
-def load_config_df(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
-    gspread_client = get_gspread_client()
-    worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
-    try:
-        data = worksheet.get_all_values()
-        if not data or len(data) < 1:
-            st.warning(f"A aba '{config_tab}' na planilha está vazia.")
-            return pd.DataFrame()
-        headers = data[0]
-        df_conf = pd.DataFrame(data[1:], columns=headers).fillna('')
-        return df_conf
-    except Exception as e: st.error(f"Erro ao carregar dados da aba Config: {e}"); return pd.DataFrame()
 
 def record_attendance(athlete_id: str, task_name: str, status: str):
     try:
@@ -105,7 +93,7 @@ def record_attendance(athlete_id: str, task_name: str, status: str):
     except Exception as e: st.error(f"Failed to record attendance for {athlete_id}: {e}"); return False
 
 def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.DataFrame):
-    if df_attendance.empty: return {"status": "Pending", "order": None}
+    if df_attendance.empty or not task_name: return {"status": "Pending", "order": None}
     athlete_records = df_attendance[(df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) & (df_attendance[ATTENDANCE_TASK_COL] == task_name)]
     if athlete_records.empty: return {"status": "Pending", "order": None}
     athlete_records = athlete_records.copy()
@@ -120,92 +108,69 @@ def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.D
         if not checked_in_record.empty: order = checked_in_record.sort_values(by=ATTENDANCE_TIMESTAMP_COL, ascending=False).iloc[0].get(ATTENDANCE_ORDER_COL)
     return {"status": status, "order": int(order) if pd.notna(order) else None}
 
-# --- APLICAÇÃO PRINCIPAL (LÓGICA ATUALIZADA) ---
-st.title("✔️ Athlete Attendance Control")
-st.markdown("Select an event view to manage all tasks for each athlete.")
+# --- APLICAÇÃO PRINCIPAL ---
+st.title("Live Attendance Station")
 
-with st.spinner("Loading initial data..."):
-    df_config = load_config_df()
+with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
     df_att = load_attendance_data()
     
-if df_fc.empty or df_config.empty:
-    st.error("Could not load Fight Card or Config sheet. Please check the spreadsheet configuration.")
+if df_fc.empty:
+    st.error("Could not load Fight Card data. Please check the spreadsheet URL and format.")
     st.stop()
 
-# --- SELEÇÃO DO EVENTO COM BOTÕES DE RÁDIO ---
-st.header("Select Event View")
-event_list = df_config["TaskAttendance"].str.strip().replace('', pd.NA).dropna().unique().tolist()
-radio_options = ["All Events"] + sorted(event_list)
-selected_event_option = st.radio(
-    "Events:", 
-    options=radio_options,
-    horizontal=True,
-    label_visibility="collapsed"
-)
+# --- INTERFACE DE CONTROLE ---
+st.header("Controls")
+event_list = sorted(df_fc[FC_EVENT_COL].unique())
+selected_events = st.multiselect("Step 1: Select Event(s)", options=event_list, default=event_list)
+
+task_name = st.text_input("Step 2: Enter the Current Task Name (e.g., 'Blood Test')", key="task_input").strip()
 
 st.markdown("---")
-st.header(f"Athlete Status for: {selected_event_option}")
 
-# --- FILTRAGEM DOS ATLETAS BASEADO NA SELEÇÃO DO RÁDIO ---
-if selected_event_option == "All Events":
-    # Filtra atletas que pertencem a QUALQUER evento listado na config
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL].isin(event_list)].copy()
+# --- LÓGICA DE EXIBIÇÃO ---
+if not selected_events:
+    st.info("Please select at least one event to see the list of athletes.")
+elif not task_name:
+    st.info("Please enter a task name above to manage attendance.")
 else:
-    # Filtra atletas que pertencem ao evento específico selecionado
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event_option].copy()
-
-if athletes_to_display.empty:
-    st.warning(f"No athletes found in the Fight Card for the selected view: '{selected_event_option}'.")
-    st.stop()
+    st.header(f"Athletes for '{task_name}'")
     
-# Exibe um card para cada atleta
-for _, athlete in athletes_to_display.iterrows():
-    athlete_id = athlete[FC_ATHLETE_ID_COL]
-    athlete_event = athlete[FC_EVENT_COL]
+    # Filtra e ordena os atletas
+    athletes_to_display = df_fc[df_fc[FC_EVENT_COL].isin(selected_events)].sort_values(by=[FC_EVENT_COL, FC_FIGHTER_COL])
     
-    with st.container(border=True):
-        # Seção de informações do atleta
-        info_cols = st.columns([1, 5])
-        with info_cols[0]:
-            st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
-        with info_cols[1]:
-            st.subheader(athlete[FC_FIGHTER_COL])
-            # Mostra o evento do atleta, especialmente útil na visão "All Events"
-            st.caption(f"Event: {athlete_event} | Athlete ID: {athlete_id}")
+    for _, athlete in athletes_to_display.iterrows():
+        athlete_id = athlete[FC_ATHLETE_ID_COL]
+        
+        with st.container(border=True):
+            cols = st.columns([1, 4, 3, 1, 1])
+            
+            with cols[0]:
+                st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=70)
 
-        st.markdown("---")
-        st.write("**Tasks Status**")
+            with cols[1]:
+                st.subheader(athlete[FC_FIGHTER_COL])
+                st.caption(f"{athlete[FC_DIVISION_COL]} | Corner: {athlete[FC_CORNER_COL]} | Event: {athlete[FC_EVENT_COL]}")
 
-        # Pega as tarefas relevantes para o evento específico DESTE atleta
-        relevant_tasks_df = df_config[(df_config["TaskAttendance"] == athlete_event) | (df_config["TaskAttendance"] == "")]
-        tasks_for_this_athlete = relevant_tasks_df["TaskList"].str.strip().replace('', pd.NA).dropna().unique().tolist()
-
-        if not tasks_for_this_athlete:
-            st.caption("No tasks configured for this athlete's event.")
-            continue # Pula para o próximo atleta
-
-        # Loop aninhado: para cada atleta, itere sobre suas tarefas específicas
-        for task in tasks_for_this_athlete:
-            button_key_suffix = f"{athlete_id}_{task}".replace(" ", "_")
-            status_info = get_athlete_task_status(athlete_id, task, df_att)
+            # Status e botões
+            status_info = get_athlete_task_status(athlete_id, task_name, df_att)
             status = status_info['status']
-
-            task_cols = st.columns([3, 2, 1, 1])
-            with task_cols[0]: st.write(task)
-            with task_cols[1]:
+            
+            with cols[2]:
                 if status == "Done": st.markdown("✅ **Completed**")
                 elif status == "Checked-in": st.markdown(f"⏳ **Waiting** (Order: #{status_info['order']})")
                 else: st.markdown("⌛ Pending")
-            with task_cols[2]:
-                if st.button("Check-in", key=f"in_{button_key_suffix}", use_container_width=True, disabled=(status != "Pending")):
-                    with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]} for {task}..."):
-                        if record_attendance(athlete_id, task, "Checked-in"):
-                            st.toast(f"{athlete[FC_FIGHTER_COL]} checked in for {task}!", icon="✅")
+            
+            with cols[3]:
+                # A chave do botão é única para cada atleta, garantindo que o estado não vaze
+                if st.button("Check-in", key=f"in_{athlete_id}", use_container_width=True, disabled=(status != "Pending")):
+                    with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]}..."):
+                        if record_attendance(athlete_id, task_name, "Checked-in"):
+                            st.toast(f"{athlete[FC_FIGHTER_COL]} checked in for '{task_name}'!", icon="✅")
                             st.cache_data.clear(); time.sleep(0.5); st.rerun()
-            with task_cols[3]:
-                if st.button("Check-out", key=f"out_{button_key_suffix}", use_container_width=True, disabled=(status != "Checked-in")):
-                    with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]} for {task}..."):
-                        if record_attendance(athlete_id, task, "Done"):
-                            st.toast(f"Task '{task}' completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
+            with cols[4]:
+                if st.button("Check-out", key=f"out_{athlete_id}", use_container_width=True, disabled=(status != "Checked-in")):
+                    with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]}..."):
+                        if record_attendance(athlete_id, task_name, "Done"):
+                            st.toast(f"Task '{task_name}' completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
                             st.cache_data.clear(); time.sleep(0.5); st.rerun()

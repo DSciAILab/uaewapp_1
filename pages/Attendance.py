@@ -15,14 +15,12 @@ MAIN_SHEET_NAME = "UAEW_App"
 ATTENDANCE_TAB_NAME = "Attendance"
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 
-# Colunas da Planilha de Attendance
 ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
 ATTENDANCE_ORDER_COL = "Check-in Order"
 
-# Colunas da Planilha Fightcard
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
@@ -30,44 +28,59 @@ FC_PICTURE_COL = "Picture"
 FC_CORNER_COL = "Corner"
 FC_DIVISION_COL = "Division"
 
+# --- ESTILOS CSS PARA OS CARDS ---
+st.markdown("""
+<style>
+    /* Estilo para o container principal de cada card */
+    div[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 10px;
+        padding: 1rem;
+    }
+    /* Estilos de fundo baseados em uma classe que adicionaremos */
+    .card-checked-in {
+        background-color: #4A4A50; /* Cinza escuro */
+    }
+    .card-done {
+        background-color: #1C4B2C; /* Verde escuro */
+    }
+    /* Altera a cor do texto do caption para melhor visibilidade nos fundos coloridos */
+    .card-checked-in p, .card-done p,
+    .card-checked-in small, .card-done small {
+        color: #FFFFFF !important;
+    }
+    .card-checked-in h3, .card-done h3 {
+        color: #FFFFFF !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- Funções de Conexão e Carregamento de Dados ---
 
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        if "gcp_service_account" not in st.secrets:
-            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨"); st.stop()
+        if "gcp_service_account" not in st.secrets: st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨"); st.stop()
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨"); st.stop()
+    except Exception as e: st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨"); st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     if not gspread_client: st.error("CRITICAL: Gspread client not initialized.", icon="🚨"); st.stop()
     try: return gspread_client.open(sheet_name).worksheet(tab_name)
     except Exception as e: st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
 
-# --- FUNÇÃO CORRIGIDA ---
 @st.cache_data
 def load_fightcard_data():
-    """
-    Carrega todos os registros do Fightcard, sem remover duplicatas de atletas,
-    para garantir que eles apareçam em todos os eventos em que estão listados.
-    """
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
-        # Garante que as colunas essenciais não sejam nulas
         df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_EVENT_COL])
-        # Limpa os dados
         for col in [FC_ATHLETE_ID_COL, FC_FIGHTER_COL, FC_CORNER_COL, FC_DIVISION_COL]:
             df[col] = df[col].astype(str).str.strip()
-        # **A linha que removia duplicatas foi retirada**
         return df
-    except Exception as e:
-        st.error(f"Error loading Fightcard: {e}")
-        return pd.DataFrame()
+    except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
 
 @st.cache_data(ttl=30)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
@@ -126,53 +139,70 @@ with st.spinner("Loading data..."):
     df_att = load_attendance_data()
     
 if df_fc.empty:
-    st.error("Could not load Fight Card data. Please check the spreadsheet URL and format.")
-    st.stop()
+    st.error("Could not load Fight Card data. Please check the spreadsheet URL and format."); st.stop()
 
-# --- INTERFACE DE CONTROLE ---
 st.header("Controls")
 event_list = sorted(df_fc[FC_EVENT_COL].unique())
 selected_events = st.multiselect("Step 1: Select Event(s)", options=event_list, default=event_list)
-
-task_name = st.text_input("Step 2: Enter the Current Task Name (e.g., 'Blood Test')", key="task_input").strip()
+task_name = st.text_input("Step 2: Enter the Current Task Name", key="task_input").strip()
 
 st.markdown("---")
 
-# --- LÓGICA DE EXIBIÇÃO ---
 if not selected_events:
-    st.info("Please select at least one event to see the list of athletes.")
+    st.info("Please select at least one event.")
 elif not task_name:
-    st.info("Please enter a task name above to manage attendance.")
+    st.info("Please enter a task name to manage attendance.")
 else:
     st.header(f"Athletes for '{task_name}'")
     
-    # Filtra e ordena os atletas
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL].isin(selected_events)].sort_values(by=[FC_EVENT_COL, FC_FIGHTER_COL])
+    athletes_in_scope = df_fc[df_fc[FC_EVENT_COL].isin(selected_events)].copy()
     
+    # Adicionar status e ordem de chamada para cada atleta para permitir a ordenação
+    status_list = []
+    for index, athlete in athletes_in_scope.iterrows():
+        status_info = get_athlete_task_status(athlete[FC_ATHLETE_ID_COL], task_name, df_att)
+        status_list.append({**status_info, 'original_index': index})
+
+    df_status = pd.DataFrame(status_list)
+    athletes_to_display = athletes_in_scope.merge(df_status, left_index=True, right_on='original_index')
+
+    # Define a ordem de exibição: Pendente > Em Espera > Concluído
+    status_order_map = {"Pending": 0, "Checked-in": 1, "Done": 2}
+    athletes_to_display['sort_order'] = athletes_to_display['status'].map(status_order_map)
+    athletes_to_display = athletes_to_display.sort_values(by=['sort_order', FC_FIGHTER_COL])
+
     for _, athlete in athletes_to_display.iterrows():
         athlete_id = athlete[FC_ATHLETE_ID_COL]
+        status = athlete['status']
+        order = athlete['order']
+        
+        # Define a classe CSS para o fundo do card
+        css_class = ""
+        if status == "Checked-in": css_class = "card-checked-in"
+        elif status == "Done": css_class = "card-done"
+        
+        # O st.html é um "hack" para aplicar a classe ao container pai
+        st.html(f"<div class='{css_class}'></div>")
         
         with st.container(border=True):
-            cols = st.columns([1, 4, 3, 1, 1])
+            cols = st.columns([1, 2, 4, 1, 1])
             
             with cols[0]:
-                st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=70)
-
+                st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
+            
             with cols[1]:
+                if status == "Checked-in":
+                    st.metric("Running Order", f"#{int(order)}")
+                elif status == "Done":
+                    st.metric("Finished at #", f"{int(order)}")
+                else:
+                    st.write("") # Espaçador
+
+            with cols[2]:
                 st.subheader(athlete[FC_FIGHTER_COL])
                 st.caption(f"{athlete[FC_DIVISION_COL]} | Corner: {athlete[FC_CORNER_COL]} | Event: {athlete[FC_EVENT_COL]}")
 
-            # Status e botões
-            status_info = get_athlete_task_status(athlete_id, task_name, df_att)
-            status = status_info['status']
-            
-            with cols[2]:
-                if status == "Done": st.markdown("✅ **Completed**")
-                elif status == "Checked-in": st.markdown(f"⏳ **Waiting** (Order: #{status_info['order']})")
-                else: st.markdown("⌛ Pending")
-            
             with cols[3]:
-                # A chave do botão é única para cada atleta, garantindo que o estado não vaze
                 if st.button("Check-in", key=f"in_{athlete_id}", use_container_width=True, disabled=(status != "Pending")):
                     with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]}..."):
                         if record_attendance(athlete_id, task_name, "Checked-in"):

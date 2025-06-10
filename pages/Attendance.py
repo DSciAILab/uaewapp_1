@@ -48,16 +48,26 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     try: return gspread_client.open(sheet_name).worksheet(tab_name)
     except Exception as e: st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
 
+# --- FUNÇÃO CORRIGIDA ---
 @st.cache_data
 def load_fightcard_data():
+    """
+    Carrega todos os registros do Fightcard, sem remover duplicatas de atletas,
+    para garantir que eles apareçam em todos os eventos em que estão listados.
+    """
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
+        # Garante que as colunas essenciais não sejam nulas
         df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_EVENT_COL])
+        # Limpa os dados
         for col in [FC_ATHLETE_ID_COL, FC_FIGHTER_COL, FC_CORNER_COL, FC_DIVISION_COL]:
             df[col] = df[col].astype(str).str.strip()
+        # **A linha que removia duplicatas foi retirada**
         return df
-    except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading Fightcard: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=30)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):

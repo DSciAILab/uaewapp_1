@@ -31,26 +31,14 @@ FC_DIVISION_COL = "Division"
 # --- ESTILOS CSS PARA OS CARDS ---
 st.markdown("""
 <style>
-    /* Estilo para o container principal de cada card */
     div[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 10px;
         padding: 1rem;
     }
-    /* Estilos de fundo baseados em uma classe que adicionaremos */
-    .card-checked-in {
-        background-color: #4A4A50; /* Cinza escuro */
-    }
-    .card-done {
-        background-color: #1C4B2C; /* Verde escuro */
-    }
-    /* Altera a cor do texto do caption para melhor visibilidade nos fundos coloridos */
-    .card-checked-in p, .card-done p,
-    .card-checked-in small, .card-done small {
-        color: #FFFFFF !important;
-    }
-    .card-checked-in h3, .card-done h3 {
-        color: #FFFFFF !important;
-    }
+    .card-checked-in { background-color: #4A4A50; }
+    .card-done { background-color: #1C4B2C; }
+    .card-checked-in p, .card-done p, .card-checked-in small, .card-done small,
+    .card-checked-in h3, .card-done h3 { color: #FFFFFF !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,22 +83,18 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         return df_att
     except Exception as e: st.error(f"Error loading Attendance: {e}"); return pd.DataFrame()
 
-def record_attendance(athlete_id: str, task_name: str, status: str):
+# --- FUNÇÃO DE ESCRITA SIMPLIFICADA ---
+def record_attendance(athlete_id: str, task_name: str, status: str, order_number: int = None):
+    """Grava o registro na planilha. O número da ordem agora é pré-calculado."""
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, ATTENDANCE_TAB_NAME)
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         
-        order_number = ''
-        if status == "Checked-in":
-            all_attendance = pd.DataFrame(worksheet.get_all_records())
-            task_attendance = all_attendance[all_attendance[ATTENDANCE_TASK_COL] == task_name]
-            if not task_attendance.empty and ATTENDANCE_ORDER_COL in task_attendance.columns:
-                max_order = pd.to_numeric(task_attendance[ATTENDANCE_ORDER_COL], errors='coerce').max()
-                order_number = int(max_order + 1) if pd.notna(max_order) else 1
-            else: order_number = 1
+        # O order_number é passado como argumento, não mais calculado aqui.
+        row_order = str(order_number) if order_number is not None else ''
         
-        new_row = [timestamp, str(athlete_id), task_name, status, str(order_number)]
+        new_row = [timestamp, str(athlete_id), task_name, status, row_order]
         worksheet.append_row(new_row, value_input_option='USER_ENTERED')
         return True
     except Exception as e: st.error(f"Failed to record attendance for {athlete_id}: {e}"); return False
@@ -155,9 +139,18 @@ elif not task_name:
 else:
     st.header(f"Athletes for '{task_name}'")
     
+    # --- LÓGICA DO RUNNING ORDER CORRIGIDA ---
+    # 1. Filtra os registros de presença da tarefa atual
+    task_records = df_att[df_att[ATTENDANCE_TASK_COL] == task_name]
+    # 2. Encontra o maior número de ordem já registrado
+    current_max_order = 0
+    if not task_records.empty and task_records[ATTENDANCE_ORDER_COL].notna().any():
+        current_max_order = task_records[ATTENDANCE_ORDER_COL].max()
+    # 3. Calcula o próximo número da fila
+    next_order_number = int(current_max_order + 1)
+    
     athletes_in_scope = df_fc[df_fc[FC_EVENT_COL].isin(selected_events)].copy()
     
-    # Adicionar status e ordem de chamada para cada atleta para permitir a ordenação
     status_list = []
     for index, athlete in athletes_in_scope.iterrows():
         status_info = get_athlete_task_status(athlete[FC_ATHLETE_ID_COL], task_name, df_att)
@@ -166,51 +159,50 @@ else:
     df_status = pd.DataFrame(status_list)
     athletes_to_display = athletes_in_scope.merge(df_status, left_index=True, right_on='original_index')
 
-    # Define a ordem de exibição: Pendente > Em Espera > Concluído
     status_order_map = {"Pending": 0, "Checked-in": 1, "Done": 2}
     athletes_to_display['sort_order'] = athletes_to_display['status'].map(status_order_map)
     athletes_to_display = athletes_to_display.sort_values(by=['sort_order', FC_FIGHTER_COL])
 
     for _, athlete in athletes_to_display.iterrows():
-        athlete_id = athlete[FC_ATHLETE_ID_COL]
-        status = athlete['status']
-        order = athlete['order']
+        athlete_id, status, order = athlete[FC_ATHLETE_ID_COL], athlete['status'], athlete['order']
         
-        # Define a classe CSS para o fundo do card
-        css_class = ""
-        if status == "Checked-in": css_class = "card-checked-in"
-        elif status == "Done": css_class = "card-done"
-        
-        # O st.html é um "hack" para aplicar a classe ao container pai
+        css_class = "card-checked-in" if status == "Checked-in" else "card-done" if status == "Done" else ""
         st.html(f"<div class='{css_class}'></div>")
         
         with st.container(border=True):
-            cols = st.columns([1, 2, 4, 1, 1])
+            cols = st.columns([1.5, 3, 2.5, 2])
             
             with cols[0]:
                 st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
-            
+                if status == "Checked-in": st.metric("Order #", f"{int(order)}")
+                elif status == "Done": st.metric("Finished #", f"{int(order)}")
+
             with cols[1]:
-                if status == "Checked-in":
-                    st.metric("Running Order", f"#{int(order)}")
-                elif status == "Done":
-                    st.metric("Finished at #", f"{int(order)}")
-                else:
-                    st.write("") # Espaçador
+                st.subheader(athlete[FC_FIGHTER_COL])
+                st.caption(f"{athlete[FC_DIVISION_COL]} | {athlete[FC_CORNER_COL].title()} Corner")
+                st.caption(f"Event: {athlete[FC_EVENT_COL]}")
 
             with cols[2]:
-                st.subheader(athlete[FC_FIGHTER_COL])
-                st.caption(f"{athlete[FC_DIVISION_COL]} | Corner: {athlete[FC_CORNER_COL]} | Event: {athlete[FC_EVENT_COL]}")
-
+                if status == "Pending":
+                    st.write("") # Espaçador
+                elif status == "Checked-in":
+                    st.info("⏳ Waiting for Check-out...")
+                elif status == "Done":
+                    st.success("✅ Task Completed!")
+            
             with cols[3]:
-                if st.button("Check-in", key=f"in_{athlete_id}", use_container_width=True, disabled=(status != "Pending")):
-                    with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]}..."):
-                        if record_attendance(athlete_id, task_name, "Checked-in"):
-                            st.toast(f"{athlete[FC_FIGHTER_COL]} checked in for '{task_name}'!", icon="✅")
-                            st.cache_data.clear(); time.sleep(0.5); st.rerun()
-            with cols[4]:
-                if st.button("Check-out", key=f"out_{athlete_id}", use_container_width=True, disabled=(status != "Checked-in")):
-                    with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]}..."):
-                        if record_attendance(athlete_id, task_name, "Done"):
-                            st.toast(f"Task '{task_name}' completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
-                            st.cache_data.clear(); time.sleep(0.5); st.rerun()
+                # --- LÓGICA DOS BOTÕES CORRIGIDA ---
+                if status == "Pending":
+                    if st.button("Check-in", key=f"in_{athlete_id}", use_container_width=True):
+                        with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]}..."):
+                            # Passa o número da ordem pré-calculado
+                            if record_attendance(athlete_id, task_name, "Checked-in", order_number=next_order_number):
+                                st.toast(f"Checked-in {athlete[FC_FIGHTER_COL]} as #{next_order_number}", icon="✅")
+                                st.cache_data.clear(); time.sleep(0.5); st.rerun()
+                elif status == "Checked-in":
+                    if st.button("Check-out", key=f"out_{athlete_id}", use_container_width=True, type="primary"):
+                        with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]}..."):
+                            # Não precisa passar a ordem no check-out
+                            if record_attendance(athlete_id, task_name, "Done"):
+                                st.toast(f"Task completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
+                                st.cache_data.clear(); time.sleep(0.5); st.rerun()

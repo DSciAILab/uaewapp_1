@@ -87,15 +87,35 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
         st.error(f"Error loading Attendance: {e}")
         return pd.DataFrame()
 
+# --- FUNÇÃO CORRIGIDA ---
 @st.cache_data(ttl=600)
 def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
     try:
-        df_conf = pd.DataFrame(worksheet.get_all_records())
-        return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
+        # Usar get_all_values() para evitar a verificação estrita de cabeçalho do gspread
+        data = worksheet.get_all_values()
+        if not data or len(data) < 1:
+            st.warning(f"A aba '{config_tab}' na planilha está vazia.")
+            return []
+
+        # Criar o DataFrame manualmente a partir dos valores
+        headers = data[0]
+        
+        df_conf = pd.DataFrame(data[1:], columns=headers)
+        
+        if "TaskList" in df_conf.columns:
+            # Pega a primeira coluna "TaskList" se houver duplicatas
+            task_list_series = df_conf["TaskList"]
+            if isinstance(task_list_series, pd.DataFrame): # Se houver múltiplas colunas "TaskList"
+                task_list_series = task_list_series.iloc[:, 0]
+            return task_list_series.dropna().astype(str).str.strip().unique().tolist()
+        else:
+            st.error(f"Erro Crítico: A coluna 'TaskList' não foi encontrada na aba '{config_tab}'.")
+            return []
+            
     except Exception as e:
-        st.error(f"Error loading TaskList from Config: {e}")
+        st.error(f"Erro ao carregar TaskList de Config: {e}")
         return []
 
 # --- NOVAS FUNÇÕES DE LÓGICA E INTERAÇÃO ---
@@ -144,6 +164,7 @@ def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.D
     
     # Ordena por timestamp para pegar o registro mais recente
     if ATTENDANCE_TIMESTAMP_COL in athlete_records.columns:
+        athlete_records = athlete_records.copy()
         athlete_records[ATTENDANCE_TIMESTAMP_COL] = pd.to_datetime(athlete_records[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
         latest_record = athlete_records.sort_values(by=ATTENDANCE_TIMESTAMP_COL, ascending=False).iloc[0]
     else:
@@ -190,9 +211,9 @@ if not selected_task:
 
 # Filtrar atletas pelo evento selecionado
 if selected_event != "All Events":
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event]
+    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event].copy()
 else:
-    athletes_to_display = df_fc
+    athletes_to_display = df_fc.copy()
 
 if athletes_to_display.empty:
     st.warning(f"No athletes found for the event '{selected_event}'.")
@@ -212,13 +233,15 @@ for _, athlete in athletes_to_display.iterrows():
         'status': status_info['status'],
         'order': status_info['order'] if status_info['order'] is not None else float('inf')
     })
-df_status = pd.DataFrame(status_list)
-athletes_to_display = athletes_to_display.merge(df_status, left_on=FC_ATHLETE_ID_COL, right_on='athlete_id')
 
-# Define a ordem de exibição
-status_order = {'Checked-in': 0, 'Pending': 1, 'Done': 2}
-athletes_to_display['status_order'] = athletes_to_display['status'].map(status_order)
-athletes_to_display = athletes_to_display.sort_values(by=['status_order', 'order'])
+if status_list:
+    df_status = pd.DataFrame(status_list)
+    athletes_to_display = athletes_to_display.merge(df_status, left_on=FC_ATHLETE_ID_COL, right_on='athlete_id')
+
+    # Define a ordem de exibição
+    status_order = {'Checked-in': 0, 'Pending': 1, 'Done': 2}
+    athletes_to_display['status_order'] = athletes_to_display['status'].map(status_order)
+    athletes_to_display = athletes_to_display.sort_values(by=['status_order', 'order'])
 
 for _, athlete in athletes_to_display.iterrows():
     athlete_id = athlete[FC_ATHLETE_ID_COL]

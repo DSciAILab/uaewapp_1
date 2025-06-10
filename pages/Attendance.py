@@ -26,7 +26,7 @@ FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
 FC_PICTURE_COL = "Picture"
 
-# --- Funções de Conexão e Carregamento de Dados (sem alterações) ---
+# --- Funções de Conexão e Carregamento de Dados ---
 
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
@@ -51,7 +51,7 @@ def load_fightcard_data():
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
-        df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL])
+        df = df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_EVENT_COL])
         df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
         df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
         return df.drop_duplicates(subset=[FC_ATHLETE_ID_COL])
@@ -93,7 +93,6 @@ def record_attendance(athlete_id: str, task_name: str, status: str):
         order_number = ''
         if status == "Checked-in":
             all_attendance = pd.DataFrame(worksheet.get_all_records())
-            # A ordem de check-in é por tarefa, então filtramos por ela
             task_attendance = all_attendance[all_attendance[ATTENDANCE_TASK_COL] == task_name]
             if not task_attendance.empty and ATTENDANCE_ORDER_COL in task_attendance.columns:
                 max_order = pd.to_numeric(task_attendance[ATTENDANCE_ORDER_COL], errors='coerce').max()
@@ -123,7 +122,7 @@ def get_athlete_task_status(athlete_id: str, task_name: str, df_attendance: pd.D
 
 # --- APLICAÇÃO PRINCIPAL (LÓGICA ATUALIZADA) ---
 st.title("✔️ Athlete Attendance Control")
-st.markdown("Select an event to manage all tasks for each athlete.")
+st.markdown("Select an event view to manage all tasks for each athlete.")
 
 with st.spinner("Loading initial data..."):
     df_config = load_config_df()
@@ -134,79 +133,79 @@ if df_fc.empty or df_config.empty:
     st.error("Could not load Fight Card or Config sheet. Please check the spreadsheet configuration.")
     st.stop()
 
-# --- SELEÇÃO DO EVENTO ---
-st.header("Step 1: Select an Event")
+# --- SELEÇÃO DO EVENTO COM BOTÕES DE RÁDIO ---
+st.header("Select Event View")
 event_list = df_config["TaskAttendance"].str.strip().replace('', pd.NA).dropna().unique().tolist()
-event_options = [""] + sorted(event_list)
-selected_event = st.selectbox(
-    "Select the active Event:", 
-    options=event_options,
-    format_func=lambda x: "Choose an event..." if x == "" else x
+radio_options = ["All Events"] + sorted(event_list)
+selected_event_option = st.radio(
+    "Events:", 
+    options=radio_options,
+    horizontal=True,
+    label_visibility="collapsed"
 )
 
-# A aplicação continua apenas se um evento for selecionado
-if selected_event:
-    st.markdown("---")
-    st.header(f"Athlete Status for '{selected_event}'")
+st.markdown("---")
+st.header(f"Athlete Status for: {selected_event_option}")
 
-    # Pega as tarefas relevantes para o evento selecionado
-    relevant_tasks_df = df_config[(df_config["TaskAttendance"] == selected_event) | (df_config["TaskAttendance"] == "")]
-    tasks_for_event = relevant_tasks_df["TaskList"].str.strip().replace('', pd.NA).dropna().unique().tolist()
-
-    # Pega os atletas relevantes para o evento
-    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event].copy()
-
-    if athletes_to_display.empty:
-        st.warning(f"No athletes found in the Fight Card for the event '{selected_event}'.")
-        st.stop()
-
-    if not tasks_for_event:
-        st.warning(f"No tasks found in the Config sheet for the event '{selected_event}'.")
-        st.stop()
-        
-    # Exibe um card para cada atleta
-    for _, athlete in athletes_to_display.iterrows():
-        athlete_id = athlete[FC_ATHLETE_ID_COL]
-        
-        with st.container(border=True):
-            # Seção de informações do atleta
-            info_cols = st.columns([1, 5])
-            with info_cols[0]:
-                st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
-            with info_cols[1]:
-                st.subheader(athlete[FC_FIGHTER_COL])
-                st.caption(f"Athlete ID: {athlete_id}")
-
-            st.markdown("---")
-
-            # Seção de tarefas para o atleta
-            st.write("**Tasks Status**")
-            # Loop aninhado: para cada atleta, itere sobre todas as tarefas do evento
-            for task in tasks_for_event:
-                # O key do botão precisa ser único para cada atleta E cada tarefa
-                button_key_suffix = f"{athlete_id}_{task}".replace(" ", "_")
-                
-                status_info = get_athlete_task_status(athlete_id, task, df_att)
-                status = status_info['status']
-
-                task_cols = st.columns([3, 2, 1, 1])
-                with task_cols[0]:
-                    st.write(task)
-                with task_cols[1]:
-                    if status == "Done": st.markdown("✅ **Completed**")
-                    elif status == "Checked-in": st.markdown(f"⏳ **Waiting** (Order: #{status_info['order']})")
-                    else: st.markdown("⌛ Pending")
-                with task_cols[2]:
-                    if st.button("Check-in", key=f"in_{button_key_suffix}", use_container_width=True, disabled=(status != "Pending")):
-                        with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]} for {task}..."):
-                            if record_attendance(athlete_id, task, "Checked-in"):
-                                st.toast(f"{athlete[FC_FIGHTER_COL]} checked in for {task}!", icon="✅")
-                                st.cache_data.clear(); time.sleep(0.5); st.rerun()
-                with task_cols[3]:
-                    if st.button("Check-out", key=f"out_{button_key_suffix}", use_container_width=True, disabled=(status != "Checked-in")):
-                        with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]} for {task}..."):
-                            if record_attendance(athlete_id, task, "Done"):
-                                st.toast(f"Task '{task}' completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
-                                st.cache_data.clear(); time.sleep(0.5); st.rerun()
+# --- FILTRAGEM DOS ATLETAS BASEADO NA SELEÇÃO DO RÁDIO ---
+if selected_event_option == "All Events":
+    # Filtra atletas que pertencem a QUALQUER evento listado na config
+    athletes_to_display = df_fc[df_fc[FC_EVENT_COL].isin(event_list)].copy()
 else:
-    st.info("Please select an event to view athlete attendance status.")
+    # Filtra atletas que pertencem ao evento específico selecionado
+    athletes_to_display = df_fc[df_fc[FC_EVENT_COL] == selected_event_option].copy()
+
+if athletes_to_display.empty:
+    st.warning(f"No athletes found in the Fight Card for the selected view: '{selected_event_option}'.")
+    st.stop()
+    
+# Exibe um card para cada atleta
+for _, athlete in athletes_to_display.iterrows():
+    athlete_id = athlete[FC_ATHLETE_ID_COL]
+    athlete_event = athlete[FC_EVENT_COL]
+    
+    with st.container(border=True):
+        # Seção de informações do atleta
+        info_cols = st.columns([1, 5])
+        with info_cols[0]:
+            st.image(athlete.get(FC_PICTURE_COL, "https://via.placeholder.com/100"), width=80)
+        with info_cols[1]:
+            st.subheader(athlete[FC_FIGHTER_COL])
+            # Mostra o evento do atleta, especialmente útil na visão "All Events"
+            st.caption(f"Event: {athlete_event} | Athlete ID: {athlete_id}")
+
+        st.markdown("---")
+        st.write("**Tasks Status**")
+
+        # Pega as tarefas relevantes para o evento específico DESTE atleta
+        relevant_tasks_df = df_config[(df_config["TaskAttendance"] == athlete_event) | (df_config["TaskAttendance"] == "")]
+        tasks_for_this_athlete = relevant_tasks_df["TaskList"].str.strip().replace('', pd.NA).dropna().unique().tolist()
+
+        if not tasks_for_this_athlete:
+            st.caption("No tasks configured for this athlete's event.")
+            continue # Pula para o próximo atleta
+
+        # Loop aninhado: para cada atleta, itere sobre suas tarefas específicas
+        for task in tasks_for_this_athlete:
+            button_key_suffix = f"{athlete_id}_{task}".replace(" ", "_")
+            status_info = get_athlete_task_status(athlete_id, task, df_att)
+            status = status_info['status']
+
+            task_cols = st.columns([3, 2, 1, 1])
+            with task_cols[0]: st.write(task)
+            with task_cols[1]:
+                if status == "Done": st.markdown("✅ **Completed**")
+                elif status == "Checked-in": st.markdown(f"⏳ **Waiting** (Order: #{status_info['order']})")
+                else: st.markdown("⌛ Pending")
+            with task_cols[2]:
+                if st.button("Check-in", key=f"in_{button_key_suffix}", use_container_width=True, disabled=(status != "Pending")):
+                    with st.spinner(f"Checking in {athlete[FC_FIGHTER_COL]} for {task}..."):
+                        if record_attendance(athlete_id, task, "Checked-in"):
+                            st.toast(f"{athlete[FC_FIGHTER_COL]} checked in for {task}!", icon="✅")
+                            st.cache_data.clear(); time.sleep(0.5); st.rerun()
+            with task_cols[3]:
+                if st.button("Check-out", key=f"out_{button_key_suffix}", use_container_width=True, disabled=(status != "Checked-in")):
+                    with st.spinner(f"Checking out {athlete[FC_FIGHTER_COL]} for {task}..."):
+                        if record_attendance(athlete_id, task, "Done"):
+                            st.toast(f"Task '{task}' completed for {athlete[FC_FIGHTER_COL]}!", icon="🎉")
+                            st.cache_data.clear(); time.sleep(0.5); st.rerun()

@@ -48,7 +48,6 @@ def load_base_athlete_data(url):
 
 @st.cache_data(ttl=10)
 def load_live_queue_data_all():
-    # --- [MODIFIED] --- This function now loads ALL live data, not filtered by task.
     try:
         client = get_gspread_client()
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
@@ -57,7 +56,6 @@ def load_live_queue_data_all():
         
         df['AthleteID'] = df['AthleteID'].astype(str)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        # Get the latest status for each athlete within each task
         latest_status = df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
         return latest_status
     except Exception as e:
@@ -89,9 +87,18 @@ st.title("Task Control Panel")
 base_athletes_df = load_base_athlete_data(FIGHTCARD_SHEET_URL)
 task_name = ""
 
-# --- [MODIFIED] --- Load all live data first to get the list of tasks.
 live_queue_df_all = load_live_queue_data_all()
-existing_tasks = sorted(live_queue_df_all['TaskName'].unique().tolist()) if not live_queue_df_all.empty else []
+
+# --- [THE FIX IS HERE] ---
+# Clean the list of tasks to remove any non-string values before sorting.
+if not live_queue_df_all.empty:
+    # 1. Get unique values, which might include None or other types.
+    unique_tasks = live_queue_df_all['TaskName'].unique()
+    # 2. Filter the list to keep only non-empty strings, then sort.
+    existing_tasks = sorted([task for task in unique_tasks if isinstance(task, str) and task.strip()])
+else:
+    existing_tasks = []
+
 
 with st.sidebar:
     st.header("Task Selection")
@@ -102,7 +109,6 @@ with st.sidebar:
         if new_task_name:
             task_name = new_task_name.strip()
     else:
-        # The selectbox now uses the pre-fetched list of tasks
         selected_task = st.selectbox("Load Existing Task:", options=["-"] + existing_tasks)
         if selected_task and selected_task != "-":
             task_name = selected_task
@@ -119,7 +125,6 @@ with st.sidebar:
 if task_name:
     st.success(f"Controlling queue for: **{task_name}**")
     
-    # Filter the already-loaded data for the selected task
     live_queue_df_task = live_queue_df_all[live_queue_df_all['TaskName'] == task_name] if not live_queue_df_all.empty else pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
     
     athletes_to_display_df = base_athletes_df

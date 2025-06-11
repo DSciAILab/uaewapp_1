@@ -92,33 +92,30 @@ if selected_task and selected_task != "-":
         on_queue_df = display_df[display_df['Status'] == 'na fila'].sort_values('CheckinNumber')
         st.header(f"On Queue ({len(on_queue_df)})")
         
-        # --- [THE FIX] ---
-        # Use enumerate to get a reliable 0, 1, 2... index for the loop.
         for loop_index, (_, row) in enumerate(on_queue_df.iterrows()):
-            is_next = (loop_index == 0) # This now correctly identifies the first item.
+            is_next = (loop_index == 0)
             
-            # Use a clean if/else block to render the card
             if is_next:
-                # For the highlighted card, create the div with markdown first
                 st.markdown('<div class="next-in-queue">', unsafe_allow_html=True)
-                with st.container(): # Use a container inside for layout
+                with st.container():
                     num_col, pic_col, name_col = st.columns([1, 1, 2])
                     with num_col:
                         st.markdown(f"<p class='call-number' style='color:#00BFFF;'>{int(row['CheckinNumber'])}</p>", unsafe_allow_html=True)
                     with pic_col:
-                        st.image(row['Picture'], width=st.session_state.dash_photo_size)
+                        # --- [CORRECTED] --- Use markdown for consistent styling
+                        st.markdown(f'<img class="athlete-photo" style="border:2px solid #00BFFF;" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                     with name_col:
                         st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)
                         st.markdown("⭐ **NEXT!**")
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
-                # For all other cards, use the standard container
                 with st.container(border=True):
                     num_col, pic_col, name_col = st.columns([1, 1, 2])
                     with num_col:
                         st.markdown(f"<p class='call-number' style='color:#808495;'>{int(row['CheckinNumber'])}</p>", unsafe_allow_html=True)
                     with pic_col:
-                        st.image(row['Picture'], width=st.session_state.dash_photo_size)
+                        # --- [CORRECTED] --- Use markdown for consistent styling
+                        st.markdown(f'<img class="athlete-photo" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                     with name_col:
                         st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)
 
@@ -129,7 +126,7 @@ if selected_task and selected_task != "-":
             with st.container(border=True):
                 pic_col, name_col = st.columns([1, 4])
                 with pic_col:
-                    st.image(row['Picture'], width=int(st.session_state.dash_photo_size * 0.7), use_column_width='auto', output_format='auto', clamp=False, channels='RGB')
+                    # --- [CORRECTED] --- Removed the redundant st.image call. This is the only line needed.
                     st.markdown(f'<img class="finished-photo" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                 with name_col:
                     st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)

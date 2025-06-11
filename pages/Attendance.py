@@ -7,10 +7,9 @@ from datetime import datetime
 st.set_page_config(page_title="Controle de Tarefas", layout="wide")
 
 # --- Inicialização do Session State ---
-# ### [MODIFICADO] ### Adiciona 'photo_size' ao estado da sessão.
 if 'name_font_size' not in st.session_state: st.session_state.name_font_size = 18
 if 'number_font_size' not in st.session_state: st.session_state.number_font_size = 48
-if 'photo_size' not in st.session_state: st.session_state.photo_size = 60 # Tamanho padrão da foto
+if 'photo_size' not in st.session_state: st.session_state.photo_size = 60
 if 'task_locked' not in st.session_state: st.session_state.task_locked = False
 if 'task_name_input' not in st.session_state: st.session_state.task_name_input = ""
 
@@ -20,12 +19,11 @@ with st.sidebar:
     st.header("Controles de Exibição")
     st.session_state.name_font_size = st.slider("Tamanho do Nome (px)", 12, 32, st.session_state.name_font_size)
     st.session_state.number_font_size = st.slider("Tamanho do Número (px)", 24, 96, st.session_state.number_font_size)
-    # ### [MODIFICADO] ### Adiciona o slider para controlar o tamanho da foto.
     st.session_state.photo_size = st.slider("Tamanho da Foto (px)", 40, 120, st.session_state.photo_size)
 
 
 # --- CSS Dinâmico ---
-# ### [MODIFICADO] ### O CSS agora usa o valor de 'photo_size' para as imagens.
+# ### [MODIFICADO] ### Adiciona a classe .center-vertically com Flexbox.
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
@@ -37,7 +35,7 @@ st.markdown(f"""
         border: 2px solid #4F4F4F;
     }}
     .finished-photo {{
-        width: {int(st.session_state.photo_size * 0.7)}px; /* Foto finalizada um pouco menor */
+        width: {int(st.session_state.photo_size * 0.7)}px;
         height: {int(st.session_state.photo_size * 0.7)}px;
         border-radius: 50%;
         object-fit: cover;
@@ -46,6 +44,14 @@ st.markdown(f"""
     }}
     .athlete-name {{ font-size: {st.session_state.name_font_size}px !important; font-weight: bold; line-height: 1.2; }}
     .call-number {{ font-size: {st.session_state.number_font_size}px !important; font-weight: bold; text-align: center; color: #17a2b8; }}
+    
+    /* Nova classe para centralização vertical */
+    .center-vertically {{
+        display: flex;
+        justify-content: center; /* Centraliza horizontalmente (bom para o caso geral) */
+        align-items: center;   /* Centraliza verticalmente */
+        height: 100%;          /* Crucial para que a centralização funcione */
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,7 +146,9 @@ if st.session_state.task_locked and st.session_state.task_name_input:
         for athlete_id, athlete in waiting_list:
             with st.container(border=True):
                 pic_col, name_col = st.columns([1, 3])
-                with pic_col: st.markdown(f'<img class="athlete-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
+                with pic_col:
+                    # ### [MODIFICADO] ### Envolve a imagem em um div para centralizá-la.
+                    st.markdown(f'<div class="center-vertically"><img class="athlete-photo" src="{athlete["pic"]}"></div>', unsafe_allow_html=True)
                 with name_col:
                     st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
                     st.button("➡️ Check-in", key=f"checkin_{task_name}_{athlete_id}", on_click=update_athlete_status, args=(task_name, athlete_id, 'na fila'), use_container_width=True, type="secondary")
@@ -152,8 +160,10 @@ if st.session_state.task_locked and st.session_state.task_name_input:
             container_border_color = "#00BFFF" if is_next else "#808495"
             with st.container(border=True):
                 num_col, pic_col, name_col = st.columns([1, 1, 2])
-                with num_col: st.markdown(f"<p class='call-number' style='color:{container_border_color};'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
-                with pic_col: st.markdown(f'<img class="athlete-photo" style="border-color:{container_border_color};" src="{athlete["pic"]}">', unsafe_allow_html=True)
+                with num_col: st.markdown(f"<div class='center-vertically'><p class='call-number' style='color:{container_border_color};'>{athlete['checkin_number']}</p></div>", unsafe_allow_html=True)
+                with pic_col:
+                    # ### [MODIFICADO] ### Envolve a imagem em um div para centralizá-la.
+                    st.markdown(f'<div class="center-vertically"><img class="athlete-photo" style="border-color:{container_border_color};" src="{athlete["pic"]}"></div>', unsafe_allow_html=True)
                 with name_col:
                     st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
                     if is_next: st.markdown("⭐ **PRÓXIMO!**")
@@ -164,8 +174,11 @@ if st.session_state.task_locked and st.session_state.task_name_input:
         for athlete_id, athlete in finished_list:
              with st.container(border=True):
                 pic_col, name_col = st.columns([1, 4])
-                with pic_col: st.markdown(f'<img class="finished-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
-                with name_col: st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{athlete['name']}</p>", unsafe_allow_html=True)
+                with pic_col:
+                    # ### [MODIFICADO] ### Envolve a imagem em um div para centralizá-la.
+                    st.markdown(f'<div class="center-vertically"><img class="finished-photo" src="{athlete["pic"]}"></div>', unsafe_allow_html=True)
+                with name_col:
+                    st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{athlete['name']}</p>", unsafe_allow_html=True)
 
 elif not st.session_state.task_locked:
     st.info("Digite um nome de tarefa e clique em 'Iniciar Fila' para começar.")

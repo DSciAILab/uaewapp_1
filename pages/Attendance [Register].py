@@ -9,14 +9,25 @@ from google.oauth2.service_account import Credentials
 # --- Page Configuration ---
 st.set_page_config(page_title="Task Control", layout="wide")
 
-# --- CSS for Circular Photos ---
+# --- Dynamic CSS ---
+# --- [CORRECTED] --- Added .main-columns-wrapper for top alignment.
 st.markdown("""
 <style>
+.main-columns-wrapper {
+    display: flex;
+    align-items: flex-start; /* Aligns columns to the top */
+}
 .athlete-photo-circle { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
 .finished-photo-circle { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); }
-div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div { display: flex; flex-direction: column; justify-content: center; }
+/* This rule centers content *within* a card */
+div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 # --- Global Constants ---
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -53,14 +64,10 @@ def load_live_queue_data_all():
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         df = pd.DataFrame(sheet.get_all_records())
         if df.empty: return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
-        
         df['AthleteID'] = df['AthleteID'].astype(str)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        latest_status = df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
-        return latest_status
-    except Exception as e:
-        st.error(f"Error loading live queue: {e}")
-        return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
+        return df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
+    except Exception as e: st.error(f"Error loading live queue: {e}"); return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
 
 def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
     try:
@@ -88,31 +95,22 @@ base_athletes_df = load_base_athlete_data(FIGHTCARD_SHEET_URL)
 task_name = ""
 
 live_queue_df_all = load_live_queue_data_all()
-
-# --- [THE FIX IS HERE] ---
-# Clean the list of tasks to remove any non-string values before sorting.
 if not live_queue_df_all.empty:
-    # 1. Get unique values, which might include None or other types.
     unique_tasks = live_queue_df_all['TaskName'].unique()
-    # 2. Filter the list to keep only non-empty strings, then sort.
     existing_tasks = sorted([task for task in unique_tasks if isinstance(task, str) and task.strip()])
 else:
     existing_tasks = []
 
-
 with st.sidebar:
     st.header("Task Selection")
     st.session_state.create_new_task = st.toggle("Create New Task", value=st.session_state.create_new_task)
-
     if st.session_state.create_new_task:
         new_task_name = st.text_input("Enter New Task Name:", key="new_task_input")
-        if new_task_name:
-            task_name = new_task_name.strip()
+        if new_task_name: task_name = new_task_name.strip()
     else:
         selected_task = st.selectbox("Load Existing Task:", options=["-"] + existing_tasks)
-        if selected_task and selected_task != "-":
-            task_name = selected_task
-
+        if selected_task and selected_task != "-": task_name = selected_task
+    
     st.divider()
     st.header("Filters")
     if not base_athletes_df.empty:
@@ -136,6 +134,8 @@ if task_name:
     merged_df = pd.merge(athletes_to_display_df, live_queue_df_task, on='AthleteID', how='left')
     merged_df['Status'] = merged_df['Status'].fillna('aguardando')
 
+    # --- [CORRECTED] --- Wrap the columns in the custom div
+    st.markdown('<div class="main-columns-wrapper">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([0.6, 1, 0.6])
     
     with col1:
@@ -181,5 +181,7 @@ if task_name:
                     st.markdown(f'<img src="{row["Picture"]}" class="finished-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"~~{row['Fighter']}~~")
+    
+    st.markdown('</div>', unsafe_allow_html=True) # Close the wrapper div
 else:
     st.info("Select or create a task in the sidebar to begin.")

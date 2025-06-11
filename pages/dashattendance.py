@@ -7,7 +7,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Live Dashboard", layout="wide")
+#st.set_page_config(page_title="Live Dashboard", layout="wide")
+st.set_page_config( layout="wide")
+
 
 # --- Global Constants ---
 LIVE_QUEUE_SHEET_NAME = "LiveQueue"

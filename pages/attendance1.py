@@ -9,14 +9,32 @@ from google.oauth2.service_account import Credentials
 # --- Page Configuration ---
 st.set_page_config(page_title="Task Control", layout="wide")
 
+# --- CSS for Circular Photos ---
+st.markdown("""
+<style>
+.athlete-photo-circle {
+    width: 60px; height: 60px; border-radius: 50%; object-fit: cover;
+}
+.finished-photo-circle {
+    width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%);
+}
+/* Center content vertically inside columns */
+div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
+    display: flex; flex-direction: column; justify-content: center;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- Global Constants ---
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 LIVE_QUEUE_SHEET_NAME = "LiveQueue"
 MAIN_SHEET_NAME = "UAEW_App"
+CREATE_NEW_TASK_OPTION = "< Create New Task >"
 
 # --- Session State Initialization ---
 if 'selected_events' not in st.session_state: st.session_state.selected_events = []
 if 'selected_corner' not in st.session_state: st.session_state.selected_corner = "All"
+if 'selected_task' not in st.session_state: st.session_state.selected_task = None
 
 # --- Data Loading and Backend Functions ---
 @st.cache_resource(ttl=3600)
@@ -28,25 +46,30 @@ def get_gspread_client():
 @st.cache_data(ttl=300)
 def load_base_athlete_data(url):
     try:
-        df = pd.read_csv(url)
-        df.columns = df.columns.str.strip()
-        df = df.dropna(subset=['AthleteID', 'Fighter', 'Event'])
-        df['AthleteID'] = df['AthleteID'].astype(str)
-        df['Fighter'] = df['Fighter'].str.strip()
-        if 'Corner' in df.columns:
-            df['Corner'] = df['Corner'].str.lower()
-        if 'Picture' not in df.columns:
-            df['Picture'] = 'https://via.placeholder.com/100?text=NA'
-        else:
-            df['Picture'] = df['Picture'].fillna('https://via.placeholder.com/100?text=NA')
-            df.loc[df['Picture'] == '', 'Picture'] = 'https://via.placeholder.com/100?text=NA'
+        df = pd.read_csv(url); df.columns = df.columns.str.strip(); df = df.dropna(subset=['AthleteID', 'Fighter', 'Event'])
+        df['AthleteID'] = df['AthleteID'].astype(str); df['Fighter'] = df['Fighter'].str.strip()
+        if 'Corner' in df.columns: df['Corner'] = df['Corner'].str.lower()
+        df['Picture'] = df.get('Picture', pd.Series(dtype=str)).fillna('https://via.placeholder.com/100?text=NA')
+        df.loc[df['Picture'] == '', 'Picture'] = 'https://via.placeholder.com/100?text=NA'
         return df
-    except Exception as e:
-        st.error(f"Error loading base athlete data: {e}")
-        return pd.DataFrame()
+    except Exception as e: st.error(f"Error loading base athlete data: {e}"); return pd.DataFrame()
+
+# --- [NEW] --- Function to get existing task names
+@st.cache_data(ttl=60)
+def get_existing_task_names():
+    try:
+        client = get_gspread_client()
+        sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
+        df = pd.DataFrame(sheet.get_all_records())
+        if not df.empty and 'TaskName' in df.columns:
+            return sorted(df['TaskName'].unique().tolist())
+        return []
+    except Exception:
+        return []
 
 @st.cache_data(ttl=10)
 def load_live_queue_data(task_name):
+    if not task_name: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
     try:
         client = get_gspread_client()
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
@@ -58,9 +81,7 @@ def load_live_queue_data(task_name):
         df_task['Timestamp'] = pd.to_datetime(df_task['Timestamp'], errors='coerce')
         latest_status = df_task.sort_values('Timestamp').groupby('AthleteID').tail(1)
         return latest_status[['AthleteID', 'Status', 'CheckinNumber']]
-    except Exception as e:
-        st.error(f"Error loading live queue: {e}")
-        return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
+    except Exception as e: st.error(f"Error loading live queue: {e}"); return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
 
 def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
     try:
@@ -81,9 +102,7 @@ def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
         sheet.append_row(new_row, value_input_option='USER_ENTERED')
         st.cache_data.clear()
         return True
-    except Exception as e:
-        st.error(f"Failed to update status: {e}")
-        return False
+    except Exception as e: st.error(f"Failed to update status: {e}"); return False
 
 # --- Main App Interface ---
 st.title("Task Control Panel")
@@ -98,8 +117,25 @@ with st.sidebar:
     else:
         st.warning("Could not load athlete data for filtering.")
 
-task_name = st.text_input("Enter Task Name to Control:")
+# --- [MODIFIED] --- Task Selector Logic
+existing_tasks = get_existing_task_names()
+task_options = existing_tasks + [CREATE_NEW_TASK_OPTION]
 
+st.session_state.selected_task = st.selectbox(
+    "Select or Create a Task:",
+    options=task_options,
+    index=task_options.index(st.session_state.selected_task) if st.session_state.selected_task in task_options else 0
+)
+
+task_name = ""
+if st.session_state.selected_task == CREATE_NEW_TASK_OPTION:
+    new_task_name = st.text_input("Enter New Task Name:", key="new_task_input")
+    if new_task_name:
+        task_name = new_task_name.strip()
+else:
+    task_name = st.session_state.selected_task
+
+# Main logic runs only if a task name is active
 if task_name:
     st.success(f"Controlling queue for: **{task_name}**")
     
@@ -123,10 +159,10 @@ if task_name:
             with st.container(border=True):
                 pic_col, name_col = st.columns([1, 2])
                 with pic_col:
-                    st.image(row['Picture'], width=60)
+                    st.markdown(f'<img src="{row["Picture"]}" class="athlete-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"**{row['Fighter']}**")
-                    if st.button("➡️ Check-in", key=f"checkin_{row['AthleteID']}"):
+                    if st.button("➡️ Check-in", key=f"checkin_{task_name}_{row['AthleteID']}"):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'na fila')
                         st.rerun()
 
@@ -139,13 +175,13 @@ if task_name:
                 with num_col:
                     st.markdown(f"<h1 style='text-align: center;'>{int(row['CheckinNumber'])}</h1>", unsafe_allow_html=True)
                 with pic_col:
-                    st.image(row['Picture'], width=60)
+                    st.markdown(f'<img src="{row["Picture"]}" class="athlete-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"**{row['Fighter']}**")
-                    if st.button("🏁 Check-out", key=f"checkout_{row['AthleteID']}", type="primary", use_container_width=True):
+                    if st.button("🏁 Check-out", key=f"checkout_{task_name}_{row['AthleteID']}", type="primary", use_container_width=True):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'finalizado')
                         st.rerun()
-                    if st.button("↩️ Remove from Queue", key=f"remove_{row['AthleteID']}", use_container_width=True):
+                    if st.button("↩️ Remove from Queue", key=f"remove_{task_name}_{row['AthleteID']}", use_container_width=True):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'aguardando')
                         st.rerun()
 
@@ -156,9 +192,8 @@ if task_name:
             with st.container(border=True):
                 pic_col, name_col = st.columns([1, 4])
                 with pic_col:
-                    # --- [CORRECTED] --- Removed the problematic st.image call
-                    st.image(row['Picture'], width=40)
+                    st.markdown(f'<img src="{row["Picture"]}" class="finished-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"~~{row['Fighter']}~~")
 else:
-    st.info("Enter a task name to begin.")
+    st.info("Select a task or create a new one to begin.")

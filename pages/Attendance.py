@@ -64,17 +64,15 @@ with st.sidebar:
 
 
 # --- Dynamic CSS ---
-# --- [MODIFIED] --- Removed the global alignment and added a specific one for card content.
+# --- [CORRECTED] --- Removed the global alignment rule and added a more specific one.
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
     
-    /* This rule ensures that the content INSIDE a card's columns are vertically centered */
-    /* It targets the direct children of a horizontal block, which are the columns */
-    div[data-testid="stHorizontalBlock"] > div {{
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+    /* This rule targets ONLY the horizontal blocks (columns) INSIDE a st.container (stVerticalBlock) */
+    /* This ensures that photos and names within a card are centered, but the main columns are not. */
+    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] {{
+        align-items: center;
     }}
 
     .athlete-photo {{ width: {st.session_state.photo_size}px; height: {st.session_state.photo_size}px; border-radius: 50%; object-fit: cover; border: 2px solid #4F4F4F; }}
@@ -151,7 +149,6 @@ if st.session_state.task_locked and st.session_state.task_name_input:
     else:
         totals = {'aguardando': len(waiting_list), 'na fila': len(checked_in_list), 'finalizado': len(finished_list)}
 
-    # --- [MODIFIED] --- Column widths are now set with a ratio [0.6, 1, 0.6]
     col1, col2, col3 = st.columns([0.6, 1, 0.6])
 
     with col1:

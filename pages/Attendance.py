@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-# Use a biblioteca de QR Code que é mais robusta
-from streamlit_qr_scanner import qr_scanner
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
@@ -28,7 +26,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
 
 # --- Carregamento de Dados da Planilha ---
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -106,15 +103,12 @@ if task_name_input:
     st.divider()
 
     st.subheader("2. Encontre o Atleta")
-    col_search, col_scan = st.columns([2, 1])
-    with col_search:
-        search_query = st.text_input("Buscar por Nome ou ID:", key=f"search_{task_name_input}").lower()
-    with col_scan:
-        st.write(" ")
-        qr_code = qr_scanner(key=f"scanner_{task_name_input}")
-        if qr_code:
-            st.session_state[f"search_{task_name_input}"] = qr_code
-            st.rerun()
+    # --- [MODIFICADO] --- Layout de busca simplificado para uma única coluna
+    search_query = st.text_input(
+        "Buscar por Nome ou ID:",
+        key=f"search_{task_name_input}",
+        placeholder="Digite o nome ou ID para filtrar a lista abaixo..."
+    ).lower()
 
     if search_query:
         df_filtered = all_athletes_df[
@@ -165,11 +159,7 @@ if task_name_input:
         st.header(f"Na Fila ({total_in_queue})")
         for athlete_id, athlete in checked_in_list:
             with st.container(border=True):
-                # ### [CORRIGIDO] ###
-                # Criamos todas as 3 colunas de uma só vez para evitar o aninhamento duplo.
-                # As proporções [1, 1, 2] dão um bom espaçamento.
                 num_col, pic_col, name_col = st.columns([1, 1, 2])
-                
                 with num_col:
                     st.markdown(f"<h1 style='text-align: center;'>{athlete['checkin_number']}</h1>", unsafe_allow_html=True)
                 with pic_col:

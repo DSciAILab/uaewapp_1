@@ -64,23 +64,16 @@ with st.sidebar:
 
 
 # --- Dynamic CSS ---
-# --- [CORRECTED] --- CSS is now more specific to solve alignment and border issues.
+# --- [CORRECTED] --- CSS is now fully controlled by custom classes.
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
     
-    /* This targets ONLY the columns INSIDE a st.container, ensuring content within cards is centered */
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] {{
+    /* This class is applied to the div that WRAPS the columns inside a card */
+    .card-content-wrapper {{
+        display: flex;
         align-items: center;
-    }}
-    
-    /* Card for the "NEXT!" person, designed to look like st.container(border=True) */
-    .next-in-queue {{
-        background-color: #1c2833; /* Highlight color */
-        border: 1px solid #00BFFF; /* Bright border for highlight */
-        border-radius: 0.5rem;      /* Matches st.container */
-        padding: 1rem;              /* Matches st.container */
-        margin-bottom: 1rem;        /* Space between cards */
+        min-height: {st.session_state.photo_size + 20}px; /* Ensures all cards have a minimum height */
     }}
 
     .athlete-photo {{ width: {st.session_state.photo_size}px; height: {st.session_state.photo_size}px; border-radius: 50%; object-fit: cover; border: 2px solid #4F4F4F; }}
@@ -88,6 +81,7 @@ st.markdown(f"""
     .athlete-name {{ font-size: {st.session_state.name_font_size}px !important; font-weight: bold; line-height: 1.2; margin-bottom: 5px; }}
     .call-number {{ font-size: {st.session_state.number_font_size}px !important; font-weight: bold; text-align: center; color: #808495; }}
     .eta-text {{ font-size: 0.8em; color: #A0A0A0; }}
+    .next-in-queue {{ background-color: #1c2833; border: 1px solid #00BFFF; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -162,22 +156,23 @@ if st.session_state.task_locked and st.session_state.task_name_input:
         st.header(f"Waiting ({totals['aguardando']})")
         for athlete_id, athlete in waiting_list:
             with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 pic_col, name_col = st.columns([1, 2])
                 with pic_col: st.markdown(f'<img class="athlete-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
                 with name_col:
                     st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
                     st.button("➡️ Check-in", key=f"checkin_{task_name}_{athlete_id}", on_click=update_athlete_status, args=(task_name, athlete_id, 'na fila'), use_container_width=True, type="secondary")
+                st.markdown('</div>', unsafe_allow_html=True)
+
 
     with col2:
         st.header(f"On Queue ({totals['na fila']})")
         for index, (athlete_id, athlete) in enumerate(checked_in_list):
             is_next = index == 0
+            container_class = "next-in-queue" if is_next else ""
             
-            # --- [CORRECTED] --- The conditional rendering logic is now cleaner.
-            # We use a placeholder to render inside the highlighted div or a normal container.
-            container = st.markdown('<div class="next-in-queue">', unsafe_allow_html=True) if is_next else st.container(border=True)
-            
-            with container:
+            with st.markdown(f'<div class="{container_class}">', unsafe_allow_html=True) if is_next else st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 num_col, pic_col, name_col = st.columns([1, 1, 2])
                 with num_col: st.markdown(f"<p class='call-number' style='color:{'#00BFFF' if is_next else '#808495'};'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
                 with pic_col: st.markdown(f'<img class="athlete-photo" style="border-color:{"#00BFFF" if is_next else "#808495"};" src="{athlete["pic"]}">', unsafe_allow_html=True)
@@ -187,16 +182,18 @@ if st.session_state.task_locked and st.session_state.task_name_input:
                     st.markdown(f"<p class='eta-text'>ETA: {eta.strftime('%H:%M')}</p>", unsafe_allow_html=True)
                     if is_next: st.markdown("⭐ **NEXT!**")
                     st.button("🏁 Check-out", key=f"checkout_{task_name}_{athlete_id}", on_click=update_athlete_status, args=(task_name, athlete_id, 'finalizado'), use_container_width=True, type="primary")
-            
+                st.markdown('</div>', unsafe_allow_html=True)
             if is_next: st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.header(f"Finished ({totals['finalizado']})")
         for athlete_id, athlete in finished_list:
              with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 pic_col, name_col = st.columns([1, 4])
                 with pic_col: st.markdown(f'<img class="finished-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
                 with name_col: st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{athlete['name']}</p>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.info("Define a task in the sidebar to begin.")

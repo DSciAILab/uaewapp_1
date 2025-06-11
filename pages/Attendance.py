@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from streamlit_barcode_scanner import st_barcode_scanner
+#from streamlit_barcode_scanner import st_barcode_scanner
 from streamlit_autorefresh import st_autorefresh  # <-- 1. Importado para o relógio
 from datetime import datetime                 # <-- 1. Importado para o relógio
 

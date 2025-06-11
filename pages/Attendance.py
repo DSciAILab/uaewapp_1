@@ -1,14 +1,12 @@
 import streamlit as st
 import pandas as pd
-#from streamlit_barcode_scanner import st_barcode_scanner
-from streamlit_autorefresh import st_autorefresh  # <-- 1. Importado para o relógio
-from datetime import datetime                 # <-- 1. Importado para o relógio
+from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Controle de Tarefas", layout="wide")
 
 # --- CSS para Fotos Circulares ---
-# 2. Injetamos o CSS para criar o estilo da foto circular
 st.markdown("""
 <style>
 .athlete-photo {
@@ -82,12 +80,10 @@ col_title, col_clock = st.columns([3, 1])
 with col_title:
     st.title("Controle de Tarefas com Fila Dinâmica")
 with col_clock:
-    # Este placeholder será atualizado a cada segundo
     clock_placeholder = st.empty()
 
-# Força a página a recarregar a cada segundo (1000ms)
+# Força a página a recarregar a cada segundo
 st_autorefresh(interval=1000, key="clock_refresh")
-# Atualiza o relógio com a hora atual
 clock_placeholder.markdown(
     f"<h3 style='text-align: right; color: #A0A0A0;'>{datetime.now().strftime('%H:%M:%S')}</h3>",
     unsafe_allow_html=True
@@ -114,17 +110,12 @@ if task_name_input:
     st.success(f"Fila ativa para a tarefa: **{task_name_input}**")
     st.divider()
 
-    # --- 3. Ferramentas de Busca e Scanner ---
+    # --- 3. Ferramenta de Busca ---
     st.subheader("2. Encontre o Atleta")
-    col_search, col_scan = st.columns([2, 1])
-    with col_search:
-        search_query = st.text_input("Buscar por Nome ou ID:", key=f"search_{task_name_input}").lower()
-    with col_scan:
-        st.write(" ")
-        scanned_code = st_barcode_scanner(key=f"scanner_{task_name_input}")
-        if scanned_code:
-            st.session_state[f"search_{task_name_input}"] = scanned_code
-            st.rerun()
+    search_query = st.text_input(
+        "Buscar por Nome ou ID:",
+        key=f"search_{task_name_input}"
+    ).lower()
 
     if search_query:
         df_filtered = all_athletes_df[

@@ -12,15 +12,9 @@ st.set_page_config(page_title="Task Control", layout="wide")
 # --- CSS for Circular Photos ---
 st.markdown("""
 <style>
-.athlete-photo-circle {
-    width: 60px; height: 60px; border-radius: 50%; object-fit: cover;
-}
-.finished-photo-circle {
-    width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%);
-}
-div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
-    display: flex; flex-direction: column; justify-content: center;
-}
+.athlete-photo-circle { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
+.finished-photo-circle { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); }
+div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div { display: flex; flex-direction: column; justify-content: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,7 +26,7 @@ MAIN_SHEET_NAME = "UAEW_App"
 # --- Session State Initialization ---
 if 'selected_events' not in st.session_state: st.session_state.selected_events = []
 if 'selected_corner' not in st.session_state: st.session_state.selected_corner = "All"
-if 'create_new_task' not in st.session_state: st.session_state.create_new_task = False # State for the toggle
+if 'create_new_task' not in st.session_state: st.session_state.create_new_task = False
 
 # --- Data Loading and Backend Functions ---
 @st.cache_resource(ttl=3600)
@@ -52,30 +46,23 @@ def load_base_athlete_data(url):
         return df
     except Exception as e: st.error(f"Error loading base athlete data: {e}"); return pd.DataFrame()
 
-@st.cache_data(ttl=60)
-def get_existing_task_names():
+@st.cache_data(ttl=10)
+def load_live_queue_data_all():
+    # --- [MODIFIED] --- This function now loads ALL live data, not filtered by task.
     try:
         client = get_gspread_client()
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         df = pd.DataFrame(sheet.get_all_records())
-        if not df.empty and 'TaskName' in df.columns:
-            return sorted(df['TaskName'].unique().tolist())
-        return []
-    except Exception: return []
-
-@st.cache_data(ttl=10)
-def load_live_queue_data(task_name):
-    if not task_name: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
-    try:
-        client = get_gspread_client(); sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
-        df = pd.DataFrame(sheet.get_all_records())
-        if df.empty: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
-        df_task = df[df['TaskName'] == task_name].copy()
-        if df_task.empty: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
-        df_task['AthleteID'] = df_task['AthleteID'].astype(str); df_task['Timestamp'] = pd.to_datetime(df_task['Timestamp'], errors='coerce')
-        latest_status = df_task.sort_values('Timestamp').groupby('AthleteID').tail(1)
-        return latest_status[['AthleteID', 'Status', 'CheckinNumber']]
-    except Exception as e: st.error(f"Error loading live queue: {e}"); return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
+        if df.empty: return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
+        
+        df['AthleteID'] = df['AthleteID'].astype(str)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        # Get the latest status for each athlete within each task
+        latest_status = df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
+        return latest_status
+    except Exception as e:
+        st.error(f"Error loading live queue: {e}")
+        return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
 
 def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
     try:
@@ -102,19 +89,20 @@ st.title("Task Control Panel")
 base_athletes_df = load_base_athlete_data(FIGHTCARD_SHEET_URL)
 task_name = ""
 
-# --- [MODIFIED] --- Sidebar now contains the toggle and conditional inputs
+# --- [MODIFIED] --- Load all live data first to get the list of tasks.
+live_queue_df_all = load_live_queue_data_all()
+existing_tasks = sorted(live_queue_df_all['TaskName'].unique().tolist()) if not live_queue_df_all.empty else []
+
 with st.sidebar:
     st.header("Task Selection")
     st.session_state.create_new_task = st.toggle("Create New Task", value=st.session_state.create_new_task)
 
     if st.session_state.create_new_task:
-        # Show text input if toggle is ON
         new_task_name = st.text_input("Enter New Task Name:", key="new_task_input")
         if new_task_name:
             task_name = new_task_name.strip()
     else:
-        # Show selectbox if toggle is OFF
-        existing_tasks = get_existing_task_names()
+        # The selectbox now uses the pre-fetched list of tasks
         selected_task = st.selectbox("Load Existing Task:", options=["-"] + existing_tasks)
         if selected_task and selected_task != "-":
             task_name = selected_task
@@ -128,11 +116,11 @@ with st.sidebar:
     else:
         st.warning("Could not load athlete data for filtering.")
 
-# Main logic runs only if a task name is active
 if task_name:
     st.success(f"Controlling queue for: **{task_name}**")
     
-    live_queue_df = load_live_queue_data(task_name)
+    # Filter the already-loaded data for the selected task
+    live_queue_df_task = live_queue_df_all[live_queue_df_all['TaskName'] == task_name] if not live_queue_df_all.empty else pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
     
     athletes_to_display_df = base_athletes_df
     if st.session_state.selected_events:
@@ -140,7 +128,7 @@ if task_name:
     if st.session_state.selected_corner != "All":
         athletes_to_display_df = athletes_to_display_df[athletes_to_display_df['Corner'] == st.session_state.selected_corner.lower()]
 
-    merged_df = pd.merge(athletes_to_display_df, live_queue_df, on='AthleteID', how='left')
+    merged_df = pd.merge(athletes_to_display_df, live_queue_df_task, on='AthleteID', how='left')
     merged_df['Status'] = merged_df['Status'].fillna('aguardando')
 
     col1, col2, col3 = st.columns([0.6, 1, 0.6])

@@ -10,20 +10,21 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Task Control", layout="wide")
 
 # --- Dynamic CSS ---
-# --- [CORRECTED] --- Added .main-columns-wrapper for top alignment.
+# --- [CORRECTED] --- Added .main-columns-wrapper for definitive top alignment.
 st.markdown("""
 <style>
+/* This new class wraps the three main columns and forces them to the top */
 .main-columns-wrapper {
     display: flex;
-    align-items: flex-start; /* Aligns columns to the top */
+    align-items: flex-start; /* Aligns all columns to the top */
 }
 .athlete-photo-circle { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
 .finished-photo-circle { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); }
-/* This rule centers content *within* a card */
-div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
+/* This rule centers content *within* a card, not the main columns */
+.card-content-wrapper {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
+    align-items: center;
+    min-height: 80px; /* Give cards a consistent minimum height */
 }
 </style>
 """, unsafe_allow_html=True)
@@ -143,6 +144,7 @@ if task_name:
         st.header(f"Waiting ({len(waiting_df)})")
         for _, row in waiting_df.iterrows():
             with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 pic_col, name_col = st.columns([1, 2])
                 with pic_col:
                     st.markdown(f'<img src="{row["Picture"]}" class="athlete-photo-circle">', unsafe_allow_html=True)
@@ -151,12 +153,14 @@ if task_name:
                     if st.button("➡️ Check-in", key=f"checkin_{task_name}_{row['AthleteID']}"):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'na fila')
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         on_queue_df = merged_df[merged_df['Status'] == 'na fila'].sort_values('CheckinNumber')
         st.header(f"On Queue ({len(on_queue_df)})")
         for _, row in on_queue_df.iterrows():
             with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 num_col, pic_col, name_col = st.columns([1, 1, 2])
                 with num_col:
                     st.markdown(f"<h1 style='text-align: center;'>{int(row['CheckinNumber'])}</h1>", unsafe_allow_html=True)
@@ -170,17 +174,20 @@ if task_name:
                     if st.button("↩️ Remove from Queue", key=f"remove_{task_name}_{row['AthleteID']}", use_container_width=True):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'aguardando')
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         finished_df = merged_df[merged_df['Status'] == 'finalizado']
         st.header(f"Finished ({len(finished_df)})")
         for _, row in finished_df.iterrows():
             with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 pic_col, name_col = st.columns([1, 4])
                 with pic_col:
                     st.markdown(f'<img src="{row["Picture"]}" class="finished-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"~~{row['Fighter']}~~")
+                st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True) # Close the wrapper div
 else:

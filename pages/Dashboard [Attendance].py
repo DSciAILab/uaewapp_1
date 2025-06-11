@@ -1,15 +1,12 @@
 import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
 # --- Page Configuration ---
-#st.set_page_config(page_title="Live Dashboard", layout="wide")
-st.set_page_config( layout="wide")
-
+st.set_page_config(layout="wide")
 
 # --- Global Constants ---
 LIVE_QUEUE_SHEET_NAME = "LiveQueue"
@@ -35,20 +32,25 @@ def load_live_data():
         client = get_gspread_client()
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         df = pd.DataFrame(sheet.get_all_records())
-        if df.empty: return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber'])
+        if df.empty: return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
         df['AthleteID'] = df['AthleteID'].astype(str)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
         return df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
-    except Exception as e: st.error(f"Error loading live data: {e}"); return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber'])
+    except Exception as e: st.error(f"Error loading live data: {e}"); return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
 
+# --- [MODIFIED] --- Now loads the 'Corner' column as well.
 @st.cache_data(ttl=300)
 def load_athlete_details(url):
     try:
         df = pd.read_csv(url)
+        df.columns = df.columns.str.strip()
         df['AthleteID'] = df['AthleteID'].astype(str)
         df['Picture'] = df['Picture'].fillna('https://via.placeholder.com/100?text=NA')
         df.loc[df['Picture'] == '', 'Picture'] = 'https://via.placeholder.com/100?text=NA'
-        return df[['AthleteID', 'Fighter', 'Picture']]
+        # Ensure 'Corner' is lowercase for consistent matching
+        if 'Corner' in df.columns:
+            df['Corner'] = df['Corner'].str.lower()
+        return df[['AthleteID', 'Fighter', 'Picture', 'Corner']]
     except Exception as e: st.error(f"Error loading athlete details: {e}"); return pd.DataFrame()
 
 # --- Main App ---
@@ -69,10 +71,9 @@ with st.sidebar:
 
 # --- Dynamic Title and CSS ---
 selected_task = st.session_state.dash_selected_task
-#st.title(f"Live Dashboard: {selected_task}" if selected_task and selected_task != "-" else "Live Dashboard")
 st.title(f"{selected_task}" if selected_task and selected_task != "-" else "Live Dashboard")
 
-
+# --- [MODIFIED] --- Added CSS for corner labels.
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
@@ -82,6 +83,22 @@ st.markdown(f"""
     .finished-photo {{ width: {int(st.session_state.dash_photo_size * 0.7)}px; height: {int(st.session_state.dash_photo_size * 0.7)}px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); }}
     .athlete-name {{ font-size: {st.session_state.dash_name_font_size}px !important; font-weight: bold; }}
     .call-number {{ font-size: {st.session_state.dash_number_font_size}px !important; font-weight: bold; text-align: center; }}
+    
+    /* New styles for the corner labels */
+    .corner-label {{
+        display: inline-block;
+        padding: 0.2em 0.5em;
+        margin-left: 10px;
+        font-size: 0.7em;
+        font-weight: bold;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: baseline;
+        border-radius: 0.25rem;
+        color: white;
+    }}
+    .red-corner {{ background-color: #dc3545; }}
+    .blue-corner {{ background-color: #0d6efd; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,40 +116,61 @@ if selected_task and selected_task != "-":
         for loop_index, (_, row) in enumerate(on_queue_df.iterrows()):
             is_next = (loop_index == 0)
             
+            # --- [MODIFIED] --- Logic to create corner label HTML
+            corner = row.get('Corner', '').lower()
+            corner_label_html = ""
+            if corner == 'red':
+                corner_label_html = '<span class="corner-label red-corner">RED</span>'
+            elif corner == 'blue':
+                corner_label_html = '<span class="corner-label blue-corner">BLUE</span>'
+
             if is_next:
                 st.markdown('<div class="next-in-queue">', unsafe_allow_html=True)
                 with st.container():
+                    st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                     num_col, pic_col, name_col = st.columns([1, 1, 2])
                     with num_col:
                         st.markdown(f"<p class='call-number' style='color:#00BFFF;'>{int(row['CheckinNumber'])}</p>", unsafe_allow_html=True)
                     with pic_col:
-                        # --- [CORRECTED] --- Use markdown for consistent styling
                         st.markdown(f'<img class="athlete-photo" style="border:2px solid #00BFFF;" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                     with name_col:
-                        st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')} {corner_label_html}</p>", unsafe_allow_html=True)
                         st.markdown("⭐ **NEXT!**")
+                    st.markdown('</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
                 with st.container(border=True):
+                    st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                     num_col, pic_col, name_col = st.columns([1, 1, 2])
                     with num_col:
                         st.markdown(f"<p class='call-number' style='color:#808495;'>{int(row['CheckinNumber'])}</p>", unsafe_allow_html=True)
                     with pic_col:
-                        # --- [CORRECTED] --- Use markdown for consistent styling
                         st.markdown(f'<img class="athlete-photo" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                     with name_col:
-                        st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p class='athlete-name'>{row.get('Fighter', 'N/A')} {corner_label_html}</p>", unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         finished_df = display_df[display_df['Status'] == 'finalizado']
         st.header(f"Finished ({len(finished_df)})")
-        for _, row in finished_df.iterrows():
+        
+        finished_df_sorted = finished_df.sort_values('Timestamp', ascending=False)
+        
+        for _, row in finished_df_sorted.iterrows():
+            corner = row.get('Corner', '').lower()
+            corner_label_html = ""
+            if corner == 'red':
+                corner_label_html = '<span class="corner-label red-corner">RED</span>'
+            elif corner == 'blue':
+                corner_label_html = '<span class="corner-label blue-corner">BLUE</span>'
+
             with st.container(border=True):
+                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
                 pic_col, name_col = st.columns([1, 4])
                 with pic_col:
-                    # --- [CORRECTED] --- Removed the redundant st.image call. This is the only line needed.
                     st.markdown(f'<img class="finished-photo" src="{row.get("Picture", "https://via.placeholder.com/100?text=NA")}">', unsafe_allow_html=True)
                 with name_col:
-                    st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{row.get('Fighter', 'N/A')}</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{row.get('Fighter', 'N/A')} {corner_label_html}</p>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("Select an active task from the sidebar to view the dashboard.")

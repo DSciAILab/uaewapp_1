@@ -1,97 +1,70 @@
 import streamlit as st
+import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
 
-# --- Page Configuration ---
+# --- Configuração ---
 st.set_page_config(page_title="Live Dashboard", layout="wide")
+LIVE_QUEUE_SHEET_NAME = "LiveQueue"
+MAIN_SHEET_NAME = "UAEW_App"
+FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 
-# --- Auto-Refresh ---
-# Refresh the dashboard every 5 seconds to get the latest data
+# --- Conexão e Lógica ---
+@st.cache_resource(ttl=3600)
+def get_gspread_client():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    return gspread.authorize(creds)
+
+@st.cache_data(ttl=5) # Cache muito baixo para dashboard em tempo real
+def load_live_data():
+    try:
+        client = get_gspread_client()
+        sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
+        df = pd.DataFrame(sheet.get_all_records())
+        if df.empty:
+            return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber'])
+        
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        latest_status = df.sort_values('Timestamp').groupby(['TaskName', 'AthleteID']).tail(1)
+        return latest_status
+    except Exception:
+        return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber'])
+
 st_autorefresh(interval=5000, key="dashboard_refresh")
-
-# --- Dynamic CSS (Copied from the main page for consistency) ---
-# We retrieve styles from session_state if they exist, otherwise use defaults.
-name_font_size = st.session_state.get('name_font_size', 18)
-number_font_size = st.session_state.get('number_font_size', 48)
-photo_size = st.session_state.get('photo_size', 60)
-
-st.markdown(f"""
-<style>
-    div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
-    div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] {{ align-items: center; }}
-    
-    .next-in-queue {{ background-color: #1c2833; border: 1px solid #00BFFF; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }}
-    .athlete-photo {{ width: {photo_size}px; height: {photo_size}px; border-radius: 50%; object-fit: cover; border: 2px solid #4F4F4F; }}
-    .finished-photo {{ width: {int(photo_size * 0.7)}px; height: {int(photo_size * 0.7)}px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.6; }}
-    .athlete-name {{ font-size: {name_font_size}px !important; font-weight: bold; line-height: 1.2; margin-bottom: 5px; }}
-    .call-number {{ font-size: {number_font_size}px !important; font-weight: bold; text-align: center; color: #808495; }}
-    .eta-text {{ font-size: 0.8em; color: #A0A0A0; }}
-</style>
-""", unsafe_allow_html=True)
-
-
-# --- Main Dashboard Interface ---
 st.title("Live Queue Dashboard")
 
-# --- Check if any tasks have been started on the main page ---
-if 'tasks' not in st.session_state or not st.session_state.tasks:
-    st.info("No tasks are currently active. Please go to the 'Task Control' page to start a queue.")
+live_df = load_live_data()
+
+if live_df.empty:
+    st.info("No task data found. Please start a task on the Control Panel page.")
     st.stop()
+    
+# Carrega dados dos atletas para obter nomes e fotos
+all_athletes_df = pd.read_csv(FIGHTCARD_SHEET_URL)
+all_athletes_df['AthleteID'] = all_athletes_df['AthleteID'].astype(str)
 
-# --- Task Selector ---
-# The user selects which active task they want to view on the dashboard.
-available_tasks = list(st.session_state.tasks.keys())
-selected_task = st.selectbox("Select a Task to Display:", options=available_tasks)
-
-st.divider()
+# Filtro de Tarefa
+task_options = live_df['TaskName'].unique().tolist()
+selected_task = st.selectbox("Select a Task to Display:", options=task_options)
 
 if selected_task:
-    task_data = st.session_state.tasks[selected_task]
-
-    # --- Data Processing for Display ---
-    checked_in_list, finished_list = [], []
-    for athlete_id, athlete_data in task_data['athletes'].items():
-        if athlete_data['status'] == 'na fila':
-            checked_in_list.append((athlete_id, athlete_data))
-        elif athlete_data['status'] == 'finalizado':
-            finished_list.append((athlete_id, athlete_data))
+    task_df = live_df[live_df['TaskName'] == selected_task]
     
-    # Sort the queue by check-in number
-    checked_in_list.sort(key=lambda item: item[1]['checkin_number'])
+    # Juntar para obter detalhes do atleta
+    display_df = pd.merge(task_df, all_athletes_df, on='AthleteID', how='left')
 
-    # --- Display Columns ---
     col1, col2 = st.columns(2)
 
-    # --- "On Queue" Column (Read-Only) ---
     with col1:
-        st.header(f"On Queue ({len(checked_in_list)})")
-        for index, (athlete_id, athlete) in enumerate(checked_in_list):
-            is_next = index == 0
-            card_class = "next-in-queue" if is_next else ""
-            
-            with st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True) if is_next else st.container(border=True):
-                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
-                num_col, pic_col, name_col = st.columns([1, 1, 2])
-                with num_col:
-                    st.markdown(f"<p class='call-number' style='color:{'#00BFFF' if is_next else '#808495'};'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
-                with pic_col:
-                    st.markdown(f'<img class="athlete-photo" style="border-color:{"#00BFFF" if is_next else "#808495"};" src="{athlete["pic"]}">', unsafe_allow_html=True)
-                with name_col:
-                    st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
-                    if is_next:
-                        st.markdown("⭐ **NEXT!**")
-                st.markdown('</div>', unsafe_allow_html=True)
-            if is_next: st.markdown('</div>', unsafe_allow_html=True)
+        st.header("On Queue")
+        on_queue_df = display_df[display_df['Status'] == 'na fila'].sort_values('CheckinNumber')
+        for _, row in on_queue_df.iterrows():
+            st.write(f"#{int(row['CheckinNumber'])} - {row['Fighter']}")
 
-    # --- "Finished" Column (Read-Only) ---
     with col2:
-        st.header(f"Finished ({len(finished_list)})")
-        for athlete_id, athlete in finished_list:
-             with st.container(border=True):
-                st.markdown('<div class="card-content-wrapper">', unsafe_allow_html=True)
-                pic_col, name_col = st.columns([1, 4])
-                with pic_col:
-                    st.markdown(f'<img class="finished-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
-                with name_col:
-                    st.markdown(f"<p class='athlete-name' style='text-decoration: line-through; color: #808495;'>{athlete['name']}</p>", unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+        st.header("Finished")
+        finished_df = display_df[display_df['Status'] == 'finalizado']
+        for _, row in finished_df.iterrows():
+            st.write(f"✅ {row['Fighter']}")

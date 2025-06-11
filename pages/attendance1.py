@@ -18,7 +18,6 @@ st.markdown("""
 .finished-photo-circle {
     width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%);
 }
-/* Center content vertically inside columns */
 div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
     display: flex; flex-direction: column; justify-content: center;
 }
@@ -29,12 +28,11 @@ div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] > div {
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
 LIVE_QUEUE_SHEET_NAME = "LiveQueue"
 MAIN_SHEET_NAME = "UAEW_App"
-CREATE_NEW_TASK_OPTION = "< Create New Task >"
 
 # --- Session State Initialization ---
 if 'selected_events' not in st.session_state: st.session_state.selected_events = []
 if 'selected_corner' not in st.session_state: st.session_state.selected_corner = "All"
-if 'selected_task' not in st.session_state: st.session_state.selected_task = None
+if 'create_new_task' not in st.session_state: st.session_state.create_new_task = False # State for the toggle
 
 # --- Data Loading and Backend Functions ---
 @st.cache_resource(ttl=3600)
@@ -54,7 +52,6 @@ def load_base_athlete_data(url):
         return df
     except Exception as e: st.error(f"Error loading base athlete data: {e}"); return pd.DataFrame()
 
-# --- [NEW] --- Function to get existing task names
 @st.cache_data(ttl=60)
 def get_existing_task_names():
     try:
@@ -64,29 +61,25 @@ def get_existing_task_names():
         if not df.empty and 'TaskName' in df.columns:
             return sorted(df['TaskName'].unique().tolist())
         return []
-    except Exception:
-        return []
+    except Exception: return []
 
 @st.cache_data(ttl=10)
 def load_live_queue_data(task_name):
     if not task_name: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
     try:
-        client = get_gspread_client()
-        sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
+        client = get_gspread_client(); sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         df = pd.DataFrame(sheet.get_all_records())
         if df.empty: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
         df_task = df[df['TaskName'] == task_name].copy()
         if df_task.empty: return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
-        df_task['AthleteID'] = df_task['AthleteID'].astype(str)
-        df_task['Timestamp'] = pd.to_datetime(df_task['Timestamp'], errors='coerce')
+        df_task['AthleteID'] = df_task['AthleteID'].astype(str); df_task['Timestamp'] = pd.to_datetime(df_task['Timestamp'], errors='coerce')
         latest_status = df_task.sort_values('Timestamp').groupby('AthleteID').tail(1)
         return latest_status[['AthleteID', 'Status', 'CheckinNumber']]
     except Exception as e: st.error(f"Error loading live queue: {e}"); return pd.DataFrame(columns=['AthleteID', 'Status', 'CheckinNumber'])
 
 def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
     try:
-        client = get_gspread_client()
-        sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
+        client = get_gspread_client(); sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         check_in_number = ""
         if new_status == 'na fila':
             all_records = pd.DataFrame(sheet.get_all_records())
@@ -106,9 +99,27 @@ def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
 
 # --- Main App Interface ---
 st.title("Task Control Panel")
-
 base_athletes_df = load_base_athlete_data(FIGHTCARD_SHEET_URL)
+task_name = ""
+
+# --- [MODIFIED] --- Sidebar now contains the toggle and conditional inputs
 with st.sidebar:
+    st.header("Task Selection")
+    st.session_state.create_new_task = st.toggle("Create New Task", value=st.session_state.create_new_task)
+
+    if st.session_state.create_new_task:
+        # Show text input if toggle is ON
+        new_task_name = st.text_input("Enter New Task Name:", key="new_task_input")
+        if new_task_name:
+            task_name = new_task_name.strip()
+    else:
+        # Show selectbox if toggle is OFF
+        existing_tasks = get_existing_task_names()
+        selected_task = st.selectbox("Load Existing Task:", options=["-"] + existing_tasks)
+        if selected_task and selected_task != "-":
+            task_name = selected_task
+
+    st.divider()
     st.header("Filters")
     if not base_athletes_df.empty:
         event_options = sorted(base_athletes_df['Event'].unique().tolist())
@@ -116,24 +127,6 @@ with st.sidebar:
         st.radio("Filter by Corner:", options=["All", "Red", "Blue"], key="selected_corner", horizontal=True)
     else:
         st.warning("Could not load athlete data for filtering.")
-
-# --- [MODIFIED] --- Task Selector Logic
-existing_tasks = get_existing_task_names()
-task_options = existing_tasks + [CREATE_NEW_TASK_OPTION]
-
-st.session_state.selected_task = st.selectbox(
-    "Select or Create a Task:",
-    options=task_options,
-    index=task_options.index(st.session_state.selected_task) if st.session_state.selected_task in task_options else 0
-)
-
-task_name = ""
-if st.session_state.selected_task == CREATE_NEW_TASK_OPTION:
-    new_task_name = st.text_input("Enter New Task Name:", key="new_task_input")
-    if new_task_name:
-        task_name = new_task_name.strip()
-else:
-    task_name = st.session_state.selected_task
 
 # Main logic runs only if a task name is active
 if task_name:
@@ -196,4 +189,4 @@ if task_name:
                 with name_col:
                     st.write(f"~~{row['Fighter']}~~")
 else:
-    st.info("Select a task or create a new one to begin.")
+    st.info("Select or create a task in the sidebar to begin.")

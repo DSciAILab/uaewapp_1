@@ -7,27 +7,48 @@ from datetime import datetime
 st.set_page_config(page_title="Controle de Tarefas", layout="wide")
 
 # --- Inicialização do Session State ---
+# ### [MODIFICADO] ### Adiciona 'photo_size' ao estado da sessão.
 if 'name_font_size' not in st.session_state: st.session_state.name_font_size = 18
 if 'number_font_size' not in st.session_state: st.session_state.number_font_size = 48
+if 'photo_size' not in st.session_state: st.session_state.photo_size = 60 # Tamanho padrão da foto
 if 'task_locked' not in st.session_state: st.session_state.task_locked = False
 if 'task_name_input' not in st.session_state: st.session_state.task_name_input = ""
+
 
 # --- Controles da Sidebar ---
 with st.sidebar:
     st.header("Controles de Exibição")
     st.session_state.name_font_size = st.slider("Tamanho do Nome (px)", 12, 32, st.session_state.name_font_size)
     st.session_state.number_font_size = st.slider("Tamanho do Número (px)", 24, 96, st.session_state.number_font_size)
+    # ### [MODIFICADO] ### Adiciona o slider para controlar o tamanho da foto.
+    st.session_state.photo_size = st.slider("Tamanho da Foto (px)", 40, 120, st.session_state.photo_size)
+
 
 # --- CSS Dinâmico ---
+# ### [MODIFICADO] ### O CSS agora usa o valor de 'photo_size' para as imagens.
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
-    .athlete-photo {{ width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #4F4F4F; }}
-    .finished-photo {{ width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.6; }}
+    .athlete-photo {{
+        width: {st.session_state.photo_size}px;
+        height: {st.session_state.photo_size}px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #4F4F4F;
+    }}
+    .finished-photo {{
+        width: {int(st.session_state.photo_size * 0.7)}px; /* Foto finalizada um pouco menor */
+        height: {int(st.session_state.photo_size * 0.7)}px;
+        border-radius: 50%;
+        object-fit: cover;
+        filter: grayscale(100%);
+        opacity: 0.6;
+    }}
     .athlete-name {{ font-size: {st.session_state.name_font_size}px !important; font-weight: bold; line-height: 1.2; }}
     .call-number {{ font-size: {st.session_state.number_font_size}px !important; font-weight: bold; text-align: center; color: #17a2b8; }}
 </style>
 """, unsafe_allow_html=True)
+
 
 # --- Carregamento de Dados ---
 FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
@@ -68,16 +89,11 @@ clock_placeholder.markdown(f"<h3 style='text-align: right; color: #A0A0A0;'>{dat
 all_athletes_df = load_fightcard_data(FIGHTCARD_SHEET_URL)
 if all_athletes_df.empty: st.stop()
 
-# --- [CORRIGIDO] Lógica para definir e travar a tarefa ---
 if not st.session_state.task_locked:
     st.subheader("1. Defina a Tarefa")
-    # Usa uma chave temporária para o input
     temp_task_name = st.text_input("Digite o nome da tarefa para criar ou acessar a fila:", placeholder="Ex: Photoshoot, Media Day, Pesagem...", key="temp_input")
-    
-    # Botão explícito para iniciar a fila
     if st.button("Iniciar Fila para esta Tarefa"):
         if temp_task_name:
-            # Define os estados e força o rerun
             st.session_state.task_name_input = temp_task_name
             st.session_state.task_locked = True
             st.rerun()
@@ -88,7 +104,6 @@ else:
     with col_task_info: st.success(f"Fila ativa para a tarefa: **{st.session_state.task_name_input}**")
     with col_task_button: st.button("Mudar Tarefa", on_click=unlock_task, use_container_width=True)
 
-# --- [CORRIGIDO] A condição principal agora funciona corretamente ---
 if st.session_state.task_locked and st.session_state.task_name_input:
     task_name = st.session_state.task_name_input
     if task_name not in st.session_state.get('tasks', {}): initialize_task_state(task_name, all_athletes_df)
@@ -96,7 +111,6 @@ if st.session_state.task_locked and st.session_state.task_name_input:
     st.divider()
     st.subheader("2. Encontre o Atleta")
     search_query = st.text_input("Buscar por Nome ou ID:", key=f"search_{task_name}").lower()
-
     df_filtered = all_athletes_df[all_athletes_df['Fighter'].str.lower().str.contains(search_query) | all_athletes_df['AthleteID'].str.contains(search_query)] if search_query else all_athletes_df
 
     st.divider()

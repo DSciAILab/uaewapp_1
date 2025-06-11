@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+# Use a biblioteca de QR Code que é mais robusta
+from streamlit_qr_scanner import qr_scanner
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
@@ -74,15 +76,12 @@ def update_athlete_status(task_name, athlete_id, new_status):
 
 
 # --- Interface Principal do Aplicativo ---
-
-# --- 1. Header com Título e Relógio Dinâmico ---
 col_title, col_clock = st.columns([3, 1])
 with col_title:
     st.title("Controle de Tarefas com Fila Dinâmica")
 with col_clock:
     clock_placeholder = st.empty()
 
-# Força a página a recarregar a cada segundo
 st_autorefresh(interval=1000, key="clock_refresh")
 clock_placeholder.markdown(
     f"<h3 style='text-align: right; color: #A0A0A0;'>{datetime.now().strftime('%H:%M:%S')}</h3>",
@@ -91,16 +90,12 @@ clock_placeholder.markdown(
 
 
 all_athletes_df = load_fightcard_data(FIGHTCARD_SHEET_URL)
+if all_athletes_df.empty: st.stop()
 
-if all_athletes_df.empty:
-    st.stop()
-
-# --- 2. Definição da Tarefa ---
 st.subheader("1. Defina a Tarefa")
 task_name_input = st.text_input(
     "Digite o nome da tarefa para criar ou acessar a fila:",
-    placeholder="Ex: Photoshoot, Media Day, Pesagem...",
-    help="Cada nome de tarefa cria uma fila de check-in separada."
+    placeholder="Ex: Photoshoot, Media Day, Pesagem..."
 ).strip()
 
 if task_name_input:
@@ -110,12 +105,16 @@ if task_name_input:
     st.success(f"Fila ativa para a tarefa: **{task_name_input}**")
     st.divider()
 
-    # --- 3. Ferramenta de Busca ---
     st.subheader("2. Encontre o Atleta")
-    search_query = st.text_input(
-        "Buscar por Nome ou ID:",
-        key=f"search_{task_name_input}"
-    ).lower()
+    col_search, col_scan = st.columns([2, 1])
+    with col_search:
+        search_query = st.text_input("Buscar por Nome ou ID:", key=f"search_{task_name_input}").lower()
+    with col_scan:
+        st.write(" ")
+        qr_code = qr_scanner(key=f"scanner_{task_name_input}")
+        if qr_code:
+            st.session_state[f"search_{task_name_input}"] = qr_code
+            st.rerun()
 
     if search_query:
         df_filtered = all_athletes_df[
@@ -126,8 +125,6 @@ if task_name_input:
         df_filtered = all_athletes_df
 
     st.divider()
-
-    # --- 4. Listas de Status ---
     st.subheader("3. Gerencie a Fila")
 
     waiting_list, checked_in_list, finished_list = [], [], []
@@ -151,7 +148,6 @@ if task_name_input:
 
     col1, col2, col3 = st.columns(3)
 
-    # --- Coluna "Aguardando" ---
     with col1:
         st.header(f"Aguardando ({total_waiting})")
         for athlete_id, athlete in waiting_list:
@@ -165,25 +161,25 @@ if task_name_input:
                               on_click=update_athlete_status, args=(task_name_input, athlete_id, 'na fila'),
                               use_container_width=True, type="secondary")
 
-    # --- Coluna "Na Fila" ---
     with col2:
         st.header(f"Na Fila ({total_in_queue})")
         for athlete_id, athlete in checked_in_list:
             with st.container(border=True):
-                num_col, content_col = st.columns([1, 4])
+                # ### [CORRIGIDO] ###
+                # Criamos todas as 3 colunas de uma só vez para evitar o aninhamento duplo.
+                # As proporções [1, 1, 2] dão um bom espaçamento.
+                num_col, pic_col, name_col = st.columns([1, 1, 2])
+                
                 with num_col:
                     st.markdown(f"<h1 style='text-align: center;'>{athlete['checkin_number']}</h1>", unsafe_allow_html=True)
-                with content_col:
-                    pic_col, name_col = st.columns([1, 2])
-                    with pic_col:
-                         st.markdown(f'<img class="athlete-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
-                    with name_col:
-                        st.write(f"**{athlete['name']}**")
-                        st.button("🏁 Check-out", key=f"checkout_{task_name_input}_{athlete_id}",
-                                  on_click=update_athlete_status, args=(task_name_input, athlete_id, 'finalizado'),
-                                  use_container_width=True, type="primary")
+                with pic_col:
+                     st.markdown(f'<img class="athlete-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
+                with name_col:
+                    st.write(f"**{athlete['name']}**")
+                    st.button("🏁 Check-out", key=f"checkout_{task_name_input}_{athlete_id}",
+                              on_click=update_athlete_status, args=(task_name_input, athlete_id, 'finalizado'),
+                              use_container_width=True, type="primary")
 
-    # --- Coluna "Finalizados" ---
     with col3:
         st.header(f"Finalizados ({total_finished})")
         for athlete_id, athlete in finished_list:

@@ -18,19 +18,6 @@ if 'selected_timezone' not in st.session_state: st.session_state.selected_timezo
 if 'selected_events' not in st.session_state: st.session_state.selected_events = []
 
 
-# --- Data Loading ---
-FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
-@st.cache_data(ttl=300)
-def load_fightcard_data(url):
-    try:
-        df = pd.read_csv(url); df.columns = df.columns.str.strip(); df = df.dropna(subset=['AthleteID', 'Fighter', 'Event'])
-        df['AthleteID'] = df['AthleteID'].astype(str); df['Fighter'] = df['Fighter'].str.strip()
-        return df
-    except Exception as e: st.error(f"Error loading data: {e}"); return pd.DataFrame()
-
-all_athletes_df = load_fightcard_data(FIGHTCARD_SHEET_URL)
-
-
 # --- Sidebar Controls ---
 with st.sidebar:
     st.header("Task Setup")
@@ -38,8 +25,7 @@ with st.sidebar:
         temp_task_name = st.text_input("1. Enter Task Name:", placeholder="e.g., Photoshoot, Weigh-in...", key="temp_input")
         if st.button("Start Queue for this Task", type="primary"):
             if temp_task_name:
-                st.session_state.task_name_input = temp_task_name
-                st.session_state.task_locked = True
+                st.session_state.task_name_input = temp_task_name; st.session_state.task_locked = True
                 st.rerun()
             else:
                 st.warning("Please enter a task name.")
@@ -50,10 +36,11 @@ with st.sidebar:
             st.rerun()
     
     st.divider()
-    # --- [NEW] --- Event Filter multiselect box
     st.header("Filters")
-    if not all_athletes_df.empty:
-        event_options = sorted(all_athletes_df['Event'].unique().tolist())
+    # We load the data once at the top to populate the multiselect
+    all_athletes_df_for_filter = pd.read_csv("https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard")
+    if not all_athletes_df_for_filter.empty:
+        event_options = sorted(all_athletes_df_for_filter['Event'].dropna().unique().tolist())
         st.session_state.selected_events = st.multiselect("Filter by Event(s):", options=event_options, default=st.session_state.selected_events)
     
     st.divider()
@@ -66,24 +53,36 @@ with st.sidebar:
 
 
 # --- Dynamic CSS ---
-# --- [MODIFIED] --- Added a new rule for vertical alignment of columns
+# --- [MODIFIED] --- Added the .next-in-queue class for the highlight
 st.markdown(f"""
 <style>
     div[data-testid="stToolbar"], #MainMenu, header {{ visibility: hidden; }}
-    
-    /* This new rule targets the container of columns and aligns them vertically */
-    div[data-testid="stHorizontalBlock"] {{
-        align-items: center;
-    }}
-
+    div[data-testid="stHorizontalBlock"] {{ align-items: center; }}
     .athlete-photo {{ width: {st.session_state.photo_size}px; height: {st.session_state.photo_size}px; border-radius: 50%; object-fit: cover; border: 2px solid #4F4F4F; }}
     .finished-photo {{ width: {int(st.session_state.photo_size * 0.7)}px; height: {int(st.session_state.photo_size * 0.7)}px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.6; }}
     .athlete-name {{ font-size: {st.session_state.name_font_size}px !important; font-weight: bold; line-height: 1.2; margin-bottom: 5px; }}
-    .call-number {{ font-size: {st.session_state.number_font_size}px !important; font-weight: bold; text-align: center; color: #17a2b8; }}
+    .call-number {{ font-size: {st.session_state.number_font_size}px !important; font-weight: bold; text-align: center; color: #808495; }}
     .eta-text {{ font-size: 0.8em; color: #A0A0A0; }}
+
+    /* This new class styles the entire card for the "NEXT!" person */
+    .next-in-queue {{
+        background-color: #1c2833; /* A subtle dark blue highlight */
+        border: 1px solid #00BFFF;
+        border-radius: 0.5rem;
+        padding: 1rem 1rem 1.1rem 1rem;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
+
+# --- Data Loading ---
+@st.cache_data(ttl=300)
+def load_fightcard_data(url):
+    try:
+        df = pd.read_csv(url); df.columns = df.columns.str.strip(); df = df.dropna(subset=['AthleteID', 'Fighter', 'Event'])
+        df['AthleteID'] = df['AthleteID'].astype(str); df['Fighter'] = df['Fighter'].str.strip()
+        return df
+    except Exception as e: st.error(f"Error loading data: {e}"); return pd.DataFrame()
 
 # --- Logic Functions ---
 def initialize_task_state(task_name, athletes_df):
@@ -112,9 +111,9 @@ tz = pytz.timezone(st.session_state.selected_timezone)
 now_in_tz = datetime.now(tz)
 clock_placeholder.markdown(f"<h3 style='text-align: right; color: #A0A0A0;'>{now_in_tz.strftime('%H:%M:%S')}</h3>", unsafe_allow_html=True)
 
+all_athletes_df = load_fightcard_data(FIGHTCARD_SHEET_URL)
 if all_athletes_df.empty: st.stop()
 
-# --- [MODIFIED] --- Apply event filter before any other logic
 if st.session_state.selected_events:
     athletes_to_display_df = all_athletes_df[all_athletes_df['Event'].isin(st.session_state.selected_events)]
 else:
@@ -124,7 +123,7 @@ else:
 if st.session_state.task_locked and st.session_state.task_name_input:
     task_name = st.session_state.task_name_input
     if task_name not in st.session_state.get('tasks', {}):
-        initialize_task_state(task_name, athletes_to_display_df) # Use the filtered dataframe for initialization
+        initialize_task_state(task_name, athletes_to_display_df)
     
     st.header("Athlete Search")
     search_query = st.text_input("Search by Name or ID:", key=f"search_{task_name}").lower()
@@ -146,7 +145,6 @@ if st.session_state.task_locked and st.session_state.task_name_input:
     checked_in_list.sort(key=lambda item: item[1]['checkin_number'])
     
     if not search_query:
-        # Calculate totals from the full list for the task, not the search-filtered one
         totals = {s: len([a for aid, a in st.session_state.tasks[task_name]['athletes'].items() if aid in athletes_to_display_df['AthleteID'].values and a['status'] == s]) for s in ['aguardando', 'na fila', 'finalizado']}
     else:
         totals = {'aguardando': len(waiting_list), 'na fila': len(checked_in_list), 'finalizado': len(finished_list)}
@@ -167,18 +165,34 @@ if st.session_state.task_locked and st.session_state.task_name_input:
         st.header(f"On Queue ({totals['na fila']})")
         for index, (athlete_id, athlete) in enumerate(checked_in_list):
             is_next = index == 0
-            container_border_color = "#00BFFF" if is_next else "#808495"
-            with st.container(border=True):
+            
+            # --- [MODIFIED] --- Conditional rendering for the highlight
+            if is_next:
+                # Use a custom markdown div with our special class
+                st.markdown('<div class="next-in-queue">', unsafe_allow_html=True)
+                
                 num_col, pic_col, name_col = st.columns([1, 1, 2])
-                with num_col: st.markdown(f"<p class='call-number' style='color:{container_border_color};'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
-                with pic_col: st.markdown(f'<img class="athlete-photo" style="border-color:{container_border_color};" src="{athlete["pic"]}">', unsafe_allow_html=True)
+                with num_col: st.markdown(f"<p class='call-number' style='color:#00BFFF;'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
+                with pic_col: st.markdown(f'<img class="athlete-photo" style="border-color:#00BFFF;" src="{athlete["pic"]}">', unsafe_allow_html=True)
                 with name_col:
                     st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
-                    duration = st.session_state.task_duration
-                    eta = now_in_tz + timedelta(minutes=index * duration)
+                    duration = st.session_state.task_duration; eta = now_in_tz + timedelta(minutes=index * duration)
                     st.markdown(f"<p class='eta-text'>ETA: {eta.strftime('%H:%M')}</p>", unsafe_allow_html=True)
-                    if is_next: st.markdown("⭐ **NEXT!**")
+                    st.markdown("⭐ **NEXT!**")
                     st.button("🏁 Check-out", key=f"checkout_{task_name}_{athlete_id}", on_click=update_athlete_status, args=(task_name, athlete_id, 'finalizado'), use_container_width=True, type="primary")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                # For all other cards, use the standard container
+                with st.container(border=True):
+                    num_col, pic_col, name_col = st.columns([1, 1, 2])
+                    with num_col: st.markdown(f"<p class='call-number'>{athlete['checkin_number']}</p>", unsafe_allow_html=True)
+                    with pic_col: st.markdown(f'<img class="athlete-photo" src="{athlete["pic"]}">', unsafe_allow_html=True)
+                    with name_col:
+                        st.markdown(f"<p class='athlete-name'>{athlete['name']}</p>", unsafe_allow_html=True)
+                        duration = st.session_state.task_duration; eta = now_in_tz + timedelta(minutes=index * duration)
+                        st.markdown(f"<p class='eta-text'>ETA: {eta.strftime('%H:%M')}</p>", unsafe_allow_html=True)
+                        st.button("🏁 Check-out", key=f"checkout_{task_name}_{athlete_id}", on_click=update_athlete_status, args=(task_name, athlete_id, 'finalizado'), use_container_width=True, type="primary")
 
     with col3:
         st.header(f"Finished ({totals['finalizado']})")

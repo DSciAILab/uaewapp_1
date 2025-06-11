@@ -69,7 +69,9 @@ with st.sidebar:
 
 # --- Dynamic Title and CSS ---
 selected_task = st.session_state.dash_selected_task
-st.title(f"Live Dashboard: {selected_task}" if selected_task and selected_task != "-" else "Live Dashboard")
+#st.title(f"Live Dashboard: {selected_task}" if selected_task and selected_task != "-" else "Live Dashboard")
+st.title(f"{selected_task}" if selected_task and selected_task != "-" else "Live Dashboard")
+
 
 st.markdown(f"""
 <style>

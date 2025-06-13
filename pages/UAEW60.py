@@ -219,20 +219,26 @@ if st.session_state.user_confirmed:
         st.header("Filtros")
         st.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
         
-        # ### CORREÇÃO DEFINITIVA APLICADA AQUI ###
-        # O resultado do seletor é explicitamente atribuído de volta à variável de sessão.
-        # Isso garante que a seleção do usuário seja sempre registrada corretamente.
         selected_tasks = st.multiselect(
             "Exibir Badges de Tarefas:",
             options=all_tasks_from_config,
-            default=st.session_state.selected_badge_tasks, # Garante que a seleção persista visualmente
+            default=st.session_state.selected_badge_tasks,
             help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
         )
         st.session_state.selected_badge_tasks = selected_tasks
         
         st.divider()
-        st.toggle("Ocultar Comentários", key="hide_comments", help="Oculta a caixa de notas e os botões de ação.")
-    
+
+        # ### CORREÇÃO APLICADA AQUI ###
+        # O estado do toggle agora é gerenciado de forma explícita e robusta,
+        # garantindo que os botões de ação apareçam corretamente.
+        hide_actions = st.toggle(
+            "Ocultar Ações e Comentários", 
+            value=st.session_state.hide_comments, # Lê o valor da sessão para definir o estado visual do toggle
+            help="Oculta a caixa de notas e os botões de ação."
+        )
+        st.session_state.hide_comments = hide_actions # Escreve o estado do toggle de volta para a sessão
+
     df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
         lambda id: pd.Series(get_latest_status_and_user(id, ACTIVE_TASK_NAME, df_attendance))
     )
@@ -277,7 +283,6 @@ if st.session_state.user_confirmed:
             </div>
             """, unsafe_allow_html=True)
             
-            # Este bloco agora funcionará corretamente
             if st.session_state.selected_badge_tasks:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
                 for task_for_badge in st.session_state.selected_badge_tasks:
@@ -289,6 +294,7 @@ if st.session_state.user_confirmed:
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
             
+            # Este bloco agora funcionará corretamente
             if not st.session_state.hide_comments:
                 st.write("")
                 notes_input = st.text_area("Adicionar Nota (opcional):", key=f"notes_{ath_id_d}_{i_l}", height=80, placeholder="Ex: Acompanhado pelo treinador John Doe.")

@@ -199,19 +199,16 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
     timestamp = latest_record.get("Timestamp", "N/A")
 
     # Mapeamento de status brutos da planilha para os novos status lógicos
-    if status_raw == "Done":
+    if status_raw == "Done" or status_raw == STATUS_CLEAR_DOCTOR: # Trata "Done" antigo e o novo "Clear by Doctor" como o mesmo
         status = STATUS_CLEAR_DOCTOR
-    elif status_raw == "Requested" or status_raw == "---" or status_raw == "Pending" or status_raw == "Not Registred":
-        # Todos os status antigos que não mapeiam diretamente para os novos, viram Pending
-        status = STATUS_PENDING
     elif status_raw == STATUS_UNDER_OBSERVATION:
         status = STATUS_UNDER_OBSERVATION
     elif status_raw == STATUS_STABLE_LOW_RISK:
         status = STATUS_STABLE_LOW_RISK
     elif status_raw == STATUS_SERIOUS_AMBULANCE:
         status = STATUS_SERIOUS_AMBULANCE
-    # Se o status_raw já for um dos novos status, ele será mantido.
-    # Ex: se o registro no sheet já for "Clear by Doctor"
+    else: # Inclui "Requested", "---", "Pending", "Not Registred" e qualquer outro não mapeado
+        status = STATUS_PENDING
 
     return status, user, timestamp
 
@@ -219,7 +216,8 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
 st.title("UAEW | Task Control")
 
 # Modificado o default para selected_status para refletir as novas opções ou "Todos"
-default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Todos", "selected_event": "Todos os Eventos", "fighter_search_query": "", "selected_badge_statuses": ALL_LOGICAL_STATUSES}
+# selected_badge_tasks será inicializado após o carregamento de tasks_raw
+default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Todos", "selected_event": "Todos os Eventos", "fighter_search_query": "", "selected_badge_tasks": []}
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
@@ -259,6 +257,10 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         df_athletes = load_athlete_data()
         df_attendance = load_attendance_data()
 
+    # Inicializa o selected_badge_tasks com todas as tarefas, se ainda não estiver definido ou vazio
+    if not st.session_state.get('selected_badge_tasks'):
+        st.session_state.selected_badge_tasks = tasks_raw.copy()
+
     tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
     st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="tsel_w")
     sel_task_actual = st.session_state.selected_task if st.session_state.selected_task != NO_TASK_SELECTED_LABEL else None
@@ -286,13 +288,13 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
     filter_cols[1].text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
     st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
 
-    # Novo multibox para filtrar os badges de status
-    st.session_state.selected_badge_statuses = st.multiselect(
-        "Selecionar Status para Visualizar nos Badges:",
-        options=ALL_LOGICAL_STATUSES,
-        default=st.session_state.selected_badge_statuses,
-        key="badge_status_filter_w",
-        help="Escolha quais status de tarefa você quer ver exibidos como badges abaixo de cada atleta."
+    # Novo multibox para filtrar as TAREFAS a serem exibidas nos badges
+    st.session_state.selected_badge_tasks = st.multiselect(
+        "Selecionar Tarefas para Visualizar nos Badges:",
+        options=tasks_raw, # As opções agora são as tarefas em si
+        default=st.session_state.selected_badge_tasks, # Usa o valor da sessão (inicializado acima)
+        key="badge_task_filter_w",
+        help="Escolha quais tarefas você quer ver exibidas como badges abaixo de cada atleta."
     )
     st.divider()
 
@@ -369,18 +371,24 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
 
             if sel_task_actual:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
-                for task_name in tasks_raw:
-                    status_for_badge, _, _ = get_latest_status_and_user(ath_id_d, task_name, df_attendance)
+                for task_name_in_badge_list in tasks_raw: # Itera sobre todas as tarefas para gerar os badges
+                    # Filtra os badges com base na seleção do multibox: exibe apenas as tarefas selecionadas
+                    if task_name_in_badge_list not in st.session_state.selected_badge_tasks:
+                        continue # Pula esta tarefa se ela não estiver selecionada no multiselect
                     
-                    # Filtra os badges com base na seleção do multibox
-                    if status_for_badge not in st.session_state.selected_badge_statuses:
-                        continue
+                    # Obtém o status, usuário e timestamp para a tarefa atual no loop
+                    status_for_badge, user_for_badge, ts_for_badge = get_latest_status_and_user(ath_id_d, task_name_in_badge_list, df_attendance)
                     
+                    # Usa o mapa de cores para o status da tarefa
                     color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
                     badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
-                    badges_html += f"<span style='{badge_style}'>{html.escape(task_name)}</span>"
+                    
+                    # Adiciona tooltip para exibir detalhes do badge (usuário e timestamp)
+                    tooltip_content = f"Status: {status_for_badge}\\nAtualizado por: {user_for_badge}\\nEm: {ts_for_badge}"
+                    badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(task_name_in_badge_list)}</span>"
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
+
 
         with col_buttons:
             if sel_task_actual:

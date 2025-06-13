@@ -23,8 +23,8 @@ ACTIVE_TASK_NAME = "Bus Attendance"
 
 # Novos status para a tarefa de controle de ônibus
 STATUS_PENDING = "Pending"
-STATUS_CHECKED_IN = "Checked in Bus" # Status para "Check in Bus"
-STATUS_PRIVATE_CAR = "Private Car"   # Status para "Private Car"
+STATUS_CHECKED_IN = "Checked in Bus"
+STATUS_PRIVATE_CAR = "Private Car"
 
 # Lista de todos os status lógicos que o app usará
 ALL_LOGICAL_STATUSES = [
@@ -67,15 +67,18 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
-        df = pd.DataFrame(worksheet.get_all_records())
-        if df.empty: return pd.DataFrame()
-        
+        data = worksheet.get_all_records()
+        if not data: return pd.DataFrame()
+        df = pd.DataFrame(data)
+
+        # FIX: Garante que as colunas essenciais existem para evitar KeyErrors
+        for col in ["ROLE", "INACTIVE", "EVENT", "IMAGE", "MOBILE", "NAME", "ID"]:
+            if col not in df.columns:
+                df[col] = "" if col != "EVENT" else "Z"
+
         df.columns = df.columns.str.strip()
         df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        
-        for col in ["EVENT", "IMAGE", "MOBILE", "NAME"]:
-            if col not in df.columns: df[col] = "" if col != "EVENT" else "Z"
         
         df["EVENT"] = df["EVENT"].fillna("Z")
         df["IMAGE"] = df["IMAGE"].fillna("")
@@ -106,17 +109,31 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab_name)
     data = worksheet.get_all_values()
+    if not data: return []
     df_conf = pd.DataFrame(data[1:], columns=data[0])
     tasks = df_conf["TaskList"].dropna().unique().tolist() if "TaskList" in df_conf.columns else []
     return tasks
 
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
+    # FIX: Esta função foi tornada mais robusta para evitar o KeyError
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-    df_att = pd.DataFrame(worksheet.get_all_records())
-    if df_att.empty: return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"])
+    data = worksheet.get_all_records()
+    
+    expected_cols = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
+
+    if not data:
+        return pd.DataFrame(columns=expected_cols)
+
+    df_att = pd.DataFrame(data)
+    # Garante que todas as colunas esperadas existam no dataframe
+    for col in expected_cols:
+        if col not in df_att.columns:
+            df_att[col] = pd.NA # Adiciona a coluna com valores vazios se não existir
+            
     return df_att
+
 
 def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str):
     try:
@@ -151,6 +168,7 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
     if athlete_records.empty:
         return status, user, timestamp
     
+    # Esta linha agora é segura por causa da correção em `load_attendance_data`
     athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
     latest_record = athlete_records.sort_values(by="TS_dt", ascending=False, na_position='first').iloc[-1]
     
@@ -160,7 +178,7 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
 
     if status_raw in ALL_LOGICAL_STATUSES:
         status = status_raw
-    elif status_raw == "Done": # Backward compatibility
+    elif status_raw == "Done":
         status = STATUS_CHECKED_IN
     else:
         status = STATUS_PENDING
@@ -182,7 +200,6 @@ for k,v in default_ss.items():
 
 # --- User Auth Section ---
 with st.container(border=True):
-    # ... (código de autenticação do usuário permanece o mesmo)
     st.subheader("User")
     col_input_ps, col_user_status_display = st.columns([0.6, 0.4])
     with col_input_ps:
@@ -224,24 +241,18 @@ if st.session_state.user_confirmed:
             key="badge_task_filter_w",
             help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
         )
-    # --- End Sidebar Section ---
     
-    # Aplica a função de status para a tarefa ativa
+    # Esta linha agora é segura
     df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
         lambda id: pd.Series(get_latest_status_and_user(id, ACTIVE_TASK_NAME, df_attendance))
     )
     st.divider()
 
-    # Filtros na área principal
     status_options_radio = ["Todos", STATUS_PENDING, STATUS_CHECKED_IN, STATUS_PRIVATE_CAR]
-    st.session_state.selected_status = st.radio(
-        f"Filtrar por Status:",
-        options=status_options_radio, horizontal=True, key="srad_w"
-    )
+    st.radio("Filtrar por Status:", options=status_options_radio, horizontal=True, key="selected_status")
     st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID...", key="fighter_search_query")
     st.divider()
 
-    # Aplica filtros
     df_filtered = df_athletes.copy()
     if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
     if st.session_state.selected_status != "Todos": df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
@@ -255,46 +266,39 @@ if st.session_state.user_confirmed:
         curr_ath_task_stat = row.get('current_task_status', STATUS_PENDING)
         status_bar_color = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_PENDING])
         
-        # --- Card do Atleta ---
         with st.container(border=True):
-            col_card, _ = st.columns([1, 0.01]) # Coluna vazia para forçar o layout
-            with col_card:
-                mob_r = str(row.get("MOBILE", "")).strip()
-                wa_link_html = ""
-                if mob_r:
-                    phone_digits = "".join(filter(str.isdigit, mob_r))
-                    if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
-                    if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
+            mob_r = str(row.get("MOBILE", "")).strip()
+            wa_link_html = ""
+            if mob_r:
+                phone_digits = "".join(filter(str.isdigit, mob_r))
+                if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
+                if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
-                st.markdown(f"""
-                <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 15px; border-radius: 10px;'>
-                    <div style='display:flex; align-items:center; gap:20px;'>
-                        <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image"), True)}' style='width:100px; height:100px; border-radius:50%; object-fit:cover;'>
-                        <div style='flex-grow: 1;'>
-                            <h4 style='margin:0; font-size:1.5em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
-                            <p style='margin:5px 0 0 0;'>Status: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>
-                            {wa_link_html}
-                        </div>
+            st.markdown(f"""
+            <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 15px; border-radius: 10px;'>
+                <div style='display:flex; align-items:center; gap:20px;'>
+                    <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/120?text=No+Image"), True)}' style='width:100px; height:100px; border-radius:50%; object-fit:cover;'>
+                    <div style='flex-grow: 1;'>
+                        <h4 style='margin:0; font-size:1.5em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
+                        <p style='margin:5px 0 0 0;'>Status: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>
+                        {wa_link_html}
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-                
-                # --- Badges ---
-                if st.session_state.selected_badge_tasks:
-                    badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
-                    for task_for_badge in st.session_state.selected_badge_tasks:
-                        status_for_badge, _, _ = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
-                        color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
-                        badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px;"
-                        badges_html += f"<span style='{badge_style}'>{html.escape(str(task_for_badge))}</span>"
-                    badges_html += "</div>"
-                    st.markdown(badges_html, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
             
-            st.write("") # Espaçamento
+            if st.session_state.selected_badge_tasks:
+                badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
+                for task_for_badge in st.session_state.selected_badge_tasks:
+                    status_for_badge, _, _ = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
+                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
+                    badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px;"
+                    badges_html += f"<span style='{badge_style}'>{html.escape(str(task_for_badge))}</span>"
+                badges_html += "</div>"
+                st.markdown(badges_html, unsafe_allow_html=True)
             
-            # --- Área de Notas e Botões de Ação ---
+            st.write("")
             notes_input = st.text_area("Adicionar Nota (opcional):", key=f"notes_{ath_id_d}_{i_l}", height=80, placeholder="Ex: Acompanhado pelo treinador John Doe.")
-            
             uid_l = st.session_state.current_user_id
             
             if curr_ath_task_stat == STATUS_PENDING:
@@ -312,6 +316,5 @@ if st.session_state.user_confirmed:
                 if st.button("Reverter para Pendente", key=f"revert_{ath_id_d}_{i_l}", use_container_width=True):
                     if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PENDING, f"Revertido de '{curr_ath_task_stat}'", uid_l):
                         time.sleep(1); st.rerun()
-
 else:
     st.warning("🚨 Por favor, faça o login para continuar.", icon="🚨")

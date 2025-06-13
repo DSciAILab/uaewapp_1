@@ -21,28 +21,37 @@ CONFIG_TAB_NAME = "Config"
 # Tarefa fixa para esta versão do App
 ACTIVE_TASK_NAME = "Bus Attendance"
 
-# Novos status para a tarefa de controle de ônibus
+# Status para a tarefa principal (Bus Attendance)
 STATUS_PENDING = "Pending"
 STATUS_CHECKED_IN = "Checked in Bus"
 STATUS_PRIVATE_CAR = "Private Car"
 
-# Lista de todos os status lógicos que o app usará
-ALL_LOGICAL_STATUSES = [
+# Lista de status para os filtros da tarefa principal
+BUS_ATTENDANCE_STATUSES = [
     STATUS_PENDING,
     STATUS_CHECKED_IN,
     STATUS_PRIVATE_CAR
 ]
 
-# Mapa de cores para os novos status
+# CORREÇÃO: Mapa de cores universal para TODAS as tarefas (incluindo as dos badges)
 STATUS_COLOR_MAP = {
-    STATUS_CHECKED_IN: "#28a745",   # Green for Checked In
-    STATUS_PRIVATE_CAR: "#28a745",  # Green for Private Car as well
-    STATUS_PENDING: "#6c757d",       # Gray for pending/not registered
-    "Not Registred": "#6c757d",      # Visually treat as Pending
-    "Done": "#28a745"                # Backward compatibility for old "Done" status
+    # Status do Bus
+    STATUS_CHECKED_IN: "#28a745",   # Green
+    STATUS_PRIVATE_CAR: "#28a745",  # Green
+    
+    # Status genéricos
+    STATUS_PENDING: "#6c757d",       # Gray
+    "Not Registred": "#6c757d",      # Gray
+    "Done": "#28a745",               # Green (para tarefas como Photoshoot, Video, etc.)
+    
+    # Status da tarefa Medical (para os badges)
+    "Clear by Doctor": "#28a745",      # Green
+    "Under Observation": "#ffc107",   # Yellow
+    "Stable Low Risk": "#e0a800",     # Dark Yellow
+    "Serious Ambulance": "#dc3545",   # Red
 }
 
-# --- 2. Google Sheets Connection ---
+# --- 2. Google Sheets Connection (código inalterado) ---
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
@@ -61,7 +70,7 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except gspread.exceptions.WorksheetNotFound:
         st.error(f"Erro: Aba '{tab_name}' não encontrada.", icon="🚨"); st.stop()
 
-# --- 3. Data Loading ---
+# --- 3. Data Loading (código inalterado) ---
 @st.cache_data(ttl=600)
 def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str = ATHLETES_TAB_NAME):
     try:
@@ -71,7 +80,6 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
         if not data: return pd.DataFrame()
         df = pd.DataFrame(data)
 
-        # FIX: Garante que as colunas essenciais existem para evitar KeyErrors
         for col in ["ROLE", "INACTIVE", "EVENT", "IMAGE", "MOBILE", "NAME", "ID"]:
             if col not in df.columns:
                 df[col] = "" if col != "EVENT" else "Z"
@@ -116,7 +124,6 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
 
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
-    # FIX: Esta função foi tornada mais robusta para evitar o KeyError
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
     data = worksheet.get_all_records()
@@ -127,13 +134,11 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         return pd.DataFrame(columns=expected_cols)
 
     df_att = pd.DataFrame(data)
-    # Garante que todas as colunas esperadas existam no dataframe
     for col in expected_cols:
         if col not in df_att.columns:
-            df_att[col] = pd.NA # Adiciona a coluna com valores vazios se não existir
+            df_att[col] = pd.NA
             
     return df_att
-
 
 def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str):
     try:
@@ -152,13 +157,10 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
         return False
 
 # --- Helper Function ---
+# CORREÇÃO: Função generalizada para funcionar com qualquer tarefa (principal ou badge)
 def get_latest_status_and_user(athlete_id, task, attendance_df):
-    status = STATUS_PENDING
-    user = "N/A"
-    timestamp = "N/A"
-
     if attendance_df.empty or task is None:
-        return status, user, timestamp
+        return STATUS_PENDING, "N/A", "N/A"
 
     athlete_records = attendance_df[
         (attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & 
@@ -166,22 +168,15 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
     ].copy()
 
     if athlete_records.empty:
-        return status, user, timestamp
+        return STATUS_PENDING, "N/A", "N/A"
     
-    # Esta linha agora é segura por causa da correção em `load_attendance_data`
     athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
     latest_record = athlete_records.sort_values(by="TS_dt", ascending=False, na_position='first').iloc[-1]
     
-    status_raw = latest_record.get("Status", STATUS_PENDING)
+    # Retorna o status bruto da planilha. A lógica de cores cuidará do resto.
+    status = latest_record.get("Status", STATUS_PENDING)
     user = latest_record.get("User", "N/A")
     timestamp = latest_record.get("Timestamp", "N/A")
-
-    if status_raw in ALL_LOGICAL_STATUSES:
-        status = status_raw
-    elif status_raw == "Done":
-        status = STATUS_CHECKED_IN
-    else:
-        status = STATUS_PENDING
 
     return status, user, timestamp
 
@@ -198,7 +193,7 @@ default_ss = {
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 
-# --- User Auth Section ---
+# --- User Auth Section (código inalterado) ---
 with st.container(border=True):
     st.subheader("User")
     col_input_ps, col_user_status_display = st.columns([0.6, 0.4])
@@ -242,13 +237,12 @@ if st.session_state.user_confirmed:
             help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
         )
     
-    # Esta linha agora é segura
     df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
         lambda id: pd.Series(get_latest_status_and_user(id, ACTIVE_TASK_NAME, df_attendance))
     )
     st.divider()
 
-    status_options_radio = ["Todos", STATUS_PENDING, STATUS_CHECKED_IN, STATUS_PRIVATE_CAR]
+    status_options_radio = ["Todos"] + BUS_ATTENDANCE_STATUSES
     st.radio("Filtrar por Status:", options=status_options_radio, horizontal=True, key="selected_status")
     st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID...", key="fighter_search_query")
     st.divider()
@@ -287,13 +281,15 @@ if st.session_state.user_confirmed:
             </div>
             """, unsafe_allow_html=True)
             
+            # Lógica dos badges que agora funciona corretamente
             if st.session_state.selected_badge_tasks:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
                 for task_for_badge in st.session_state.selected_badge_tasks:
-                    status_for_badge, _, _ = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
-                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
+                    status_for_badge, user_for_badge, ts_for_badge = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
+                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING]) # Usa o mapa universal, com cinza como padrão
                     badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px;"
-                    badges_html += f"<span style='{badge_style}'>{html.escape(str(task_for_badge))}</span>"
+                    tooltip_content = f"Status: {str(status_for_badge)}\\nAtualizado por: {str(user_for_badge)}\\nEm: {str(ts_for_badge)}"
+                    badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(str(task_for_badge))}</span>"
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
             

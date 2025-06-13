@@ -219,15 +219,16 @@ if st.session_state.user_confirmed:
         st.header("Filtros")
         st.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
         
-        # ### CORREÇÃO APLICADA AQUI ###
-        # O `key` do multiselect foi corrigido para "selected_badge_tasks".
-        # Agora o valor selecionado será corretamente armazenado na variável de sessão que o resto do código utiliza.
-        st.multiselect(
+        # ### CORREÇÃO DEFINITIVA APLICADA AQUI ###
+        # O resultado do seletor é explicitamente atribuído de volta à variável de sessão.
+        # Isso garante que a seleção do usuário seja sempre registrada corretamente.
+        selected_tasks = st.multiselect(
             "Exibir Badges de Tarefas:",
             options=all_tasks_from_config,
-            key="selected_badge_tasks", # Corrigido de "badge_task_filter_w"
+            default=st.session_state.selected_badge_tasks, # Garante que a seleção persista visualmente
             help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
         )
+        st.session_state.selected_badge_tasks = selected_tasks
         
         st.divider()
         st.toggle("Ocultar Comentários", key="hide_comments", help="Oculta a caixa de notas e os botões de ação.")

@@ -324,8 +324,8 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
             latest_user = row.get('latest_task_user', 'N/A')
             latest_ts = row.get('latest_task_timestamp', 'N/A')
 
-            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{curr_ath_task_stat}</strong></p>"
-            user_ts_html = f"<p style='margin:2px 0 0 0; font-size:0.8em; color:#bbb;'>Última Atualização por: <strong>{html.escape(latest_user)}</strong> em: <strong>{html.escape(latest_ts)}</strong></p>"
+            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>" # Correção aplicada aqui: str()
+            user_ts_html = f"<p style='margin:2px 0 0 0; font-size:0.8em; color:#bbb;'>Última Atualização por: <strong>{html.escape(str(latest_user))}</strong> em: <strong>{html.escape(str(latest_ts))}</strong></p>" # Correção aplicada aqui: str()
 
             status_bar_color = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_PENDING])
 
@@ -384,8 +384,9 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                     badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
                     
                     # Adiciona tooltip para exibir detalhes do badge (usuário e timestamp)
-                    tooltip_content = f"Status: {status_for_badge}\\nAtualizado por: {user_for_badge}\\nEm: {ts_for_badge}"
-                    badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(task_name_in_badge_list)}</span>"
+                    # Correção aplicada aqui: str() para todos os valores antes de passá-los para o tooltip e escape
+                    tooltip_content = f"Status: {str(status_for_badge)}\\nAtualizado por: {str(user_for_badge)}\\nEm: {str(ts_for_badge)}"
+                    badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(str(task_name_in_badge_list))}</span>"
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
 

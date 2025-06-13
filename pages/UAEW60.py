@@ -259,8 +259,9 @@ if st.session_state.user_confirmed:
         curr_ath_task_stat = row.get('current_task_status', STATUS_PENDING)
         status_bar_color = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_PENDING])
         
-        with st.container(border=True):
-            # ### LAYOUT ALTERADO PARA DUAS COLUNAS ###
+        # ### ALTERAÇÃO APLICADA AQUI ###
+        # O `border=True` foi removido para eliminar a linha externa.
+        with st.container(border=False):
             col_card, col_buttons = st.columns([2.5, 1])
 
             with col_card:
@@ -271,7 +272,6 @@ if st.session_state.user_confirmed:
                     if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
                     if phone_digits: wa_link_html = f"""<p style='margin-top: 8px; font-size:14px;'><a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='color:#25D366; text-decoration:none; font-weight:bold;'> WhatsApp</a></p>"""
 
-                # Exibe o card do atleta
                 st.markdown(f"""
                 <div style='background-color:#2E2E2E; border-left: 5px solid {status_bar_color}; padding: 15px; border-radius: 10px; min-height: 130px;'>
                     <div style='display:flex; align-items:center; gap:20px;'>
@@ -285,7 +285,6 @@ if st.session_state.user_confirmed:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Exibe os badges (se selecionados)
                 if st.session_state.selected_badge_tasks:
                     badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
                     for task_for_badge in st.session_state.selected_badge_tasks:
@@ -297,15 +296,13 @@ if st.session_state.user_confirmed:
                     badges_html += "</div>"
                     st.markdown(badges_html, unsafe_allow_html=True)
                 
-                # Exibe a caixa de notas (se o toggle permitir)
                 notes_input = ""
                 if not st.session_state.hide_comments:
                     st.write("")
                     notes_input = st.text_area("Adicionar Nota (opcional):", key=f"notes_{ath_id_d}_{i_l}", height=80, placeholder="Ex: Acompanhado pelo treinador...")
 
-            # A coluna da direita contém os botões de ação, sempre visíveis
             with col_buttons:
-                st.write("") # Espaçador para alinhar melhor verticalmente
+                st.write("") 
                 uid_l = st.session_state.current_user_id
                 
                 if curr_ath_task_stat == STATUS_PENDING:
@@ -320,5 +317,8 @@ if st.session_state.user_confirmed:
                     if st.button("Reverter para Pendente", key=f"revert_{ath_id_d}_{i_l}", use_container_width=True):
                         if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PENDING, f"Revertido de '{curr_ath_task_stat}'", uid_l):
                             time.sleep(1); st.rerun()
+        # Adiciona um separador visual entre os atletas
+        st.divider()
+
 else:
     st.warning("🚨 Por favor, faça o login para continuar.", icon="🚨")

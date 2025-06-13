@@ -18,37 +18,27 @@ ATTENDANCE_TAB_NAME = "Attendance"
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 CONFIG_TAB_NAME = "Config"
 
-# Tarefa fixa para esta versão do App
 ACTIVE_TASK_NAME = "Bus Attendance"
-
-# Status para a tarefa principal (Bus Attendance)
 STATUS_PENDING = "Pending"
 STATUS_CHECKED_IN = "Checked in Bus"
 STATUS_PRIVATE_CAR = "Private Car"
 
-# Lista de status para os filtros da tarefa principal
 BUS_ATTENDANCE_STATUSES = [
     STATUS_PENDING,
     STATUS_CHECKED_IN,
     STATUS_PRIVATE_CAR
 ]
 
-# CORREÇÃO: Mapa de cores universal para TODAS as tarefas (incluindo as dos badges)
 STATUS_COLOR_MAP = {
-    # Status do Bus
-    STATUS_CHECKED_IN: "#28a745",   # Green
-    STATUS_PRIVATE_CAR: "#28a745",  # Green
-    
-    # Status genéricos
-    STATUS_PENDING: "#6c757d",       # Gray
-    "Not Registred": "#6c757d",      # Gray
-    "Done": "#28a745",               # Green (para tarefas como Photoshoot, Video, etc.)
-    
-    # Status da tarefa Medical (para os badges)
-    "Clear by Doctor": "#28a745",      # Green
-    "Under Observation": "#ffc107",   # Yellow
-    "Stable Low Risk": "#e0a800",     # Dark Yellow
-    "Serious Ambulance": "#dc3545",   # Red
+    STATUS_CHECKED_IN: "#28a745",
+    STATUS_PRIVATE_CAR: "#28a745",
+    STATUS_PENDING: "#6c757d",
+    "Not Registred": "#6c757d",
+    "Done": "#28a745",
+    "Clear by Doctor": "#28a745",
+    "Under Observation": "#ffc107",
+    "Stable Low Risk": "#e0a800",
+    "Serious Ambulance": "#dc3545",
 }
 
 # --- 2. Google Sheets Connection (código inalterado) ---
@@ -156,8 +146,7 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
         st.error(f"Erro ao registrar log: {e}", icon="🚨")
         return False
 
-# --- Helper Function ---
-# CORREÇÃO: Função generalizada para funcionar com qualquer tarefa (principal ou badge)
+# --- Helper Function (código inalterado) ---
 def get_latest_status_and_user(athlete_id, task, attendance_df):
     if attendance_df.empty or task is None:
         return STATUS_PENDING, "N/A", "N/A"
@@ -173,7 +162,6 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
     athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
     latest_record = athlete_records.sort_values(by="TS_dt", ascending=False, na_position='first').iloc[-1]
     
-    # Retorna o status bruto da planilha. A lógica de cores cuidará do resto.
     status = latest_record.get("Status", STATUS_PENDING)
     user = latest_record.get("User", "N/A")
     timestamp = latest_record.get("Timestamp", "N/A")
@@ -188,7 +176,8 @@ default_ss = {
     "user_confirmed": False, "current_user_id": "", "current_user_name": "User", 
     "current_user_image_url": "", "selected_status": "Todos", 
     "selected_event": "Todos os Eventos", "fighter_search_query": "", 
-    "selected_badge_tasks": []
+    "selected_badge_tasks": [],
+    "hide_comments": False
 }
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
@@ -229,13 +218,19 @@ if st.session_state.user_confirmed:
     with st.sidebar:
         st.header("Filtros")
         st.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
+        
+        # ### CORREÇÃO APLICADA AQUI ###
+        # O `key` do multiselect foi corrigido para "selected_badge_tasks".
+        # Agora o valor selecionado será corretamente armazenado na variável de sessão que o resto do código utiliza.
         st.multiselect(
             "Exibir Badges de Tarefas:",
             options=all_tasks_from_config,
-            default=st.session_state.selected_badge_tasks,
-            key="badge_task_filter_w",
+            key="selected_badge_tasks", # Corrigido de "badge_task_filter_w"
             help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
         )
+        
+        st.divider()
+        st.toggle("Ocultar Comentários", key="hide_comments", help="Oculta a caixa de notas e os botões de ação.")
     
     df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
         lambda id: pd.Series(get_latest_status_and_user(id, ACTIVE_TASK_NAME, df_attendance))
@@ -281,36 +276,37 @@ if st.session_state.user_confirmed:
             </div>
             """, unsafe_allow_html=True)
             
-            # Lógica dos badges que agora funciona corretamente
+            # Este bloco agora funcionará corretamente
             if st.session_state.selected_badge_tasks:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-left: 5px;'>"
                 for task_for_badge in st.session_state.selected_badge_tasks:
                     status_for_badge, user_for_badge, ts_for_badge = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
-                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING]) # Usa o mapa universal, com cinza como padrão
+                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
                     badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px;"
                     tooltip_content = f"Status: {str(status_for_badge)}\\nAtualizado por: {str(user_for_badge)}\\nEm: {str(ts_for_badge)}"
                     badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(str(task_for_badge))}</span>"
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
             
-            st.write("")
-            notes_input = st.text_area("Adicionar Nota (opcional):", key=f"notes_{ath_id_d}_{i_l}", height=80, placeholder="Ex: Acompanhado pelo treinador John Doe.")
-            uid_l = st.session_state.current_user_id
-            
-            if curr_ath_task_stat == STATUS_PENDING:
-                b_cols = st.columns(2)
-                with b_cols[0]:
-                    if st.button("Check in Bus", key=f"checkin_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_CHECKED_IN, notes_input, uid_l):
+            if not st.session_state.hide_comments:
+                st.write("")
+                notes_input = st.text_area("Adicionar Nota (opcional):", key=f"notes_{ath_id_d}_{i_l}", height=80, placeholder="Ex: Acompanhado pelo treinador John Doe.")
+                uid_l = st.session_state.current_user_id
+                
+                if curr_ath_task_stat == STATUS_PENDING:
+                    b_cols = st.columns(2)
+                    with b_cols[0]:
+                        if st.button("Check in Bus", key=f"checkin_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                            if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_CHECKED_IN, notes_input, uid_l):
+                                time.sleep(1); st.rerun()
+                    with b_cols[1]:
+                        if st.button("Private Car", key=f"private_{ath_id_d}_{i_l}", use_container_width=True):
+                            if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PRIVATE_CAR, notes_input, uid_l):
+                                time.sleep(1); st.rerun()
+                else:
+                    st.success(f"Status atual: **{curr_ath_task_stat}**")
+                    if st.button("Reverter para Pendente", key=f"revert_{ath_id_d}_{i_l}", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PENDING, f"Revertido de '{curr_ath_task_stat}'", uid_l):
                             time.sleep(1); st.rerun()
-                with b_cols[1]:
-                    if st.button("Private Car", key=f"private_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PRIVATE_CAR, notes_input, uid_l):
-                            time.sleep(1); st.rerun()
-            else:
-                st.success(f"Status atual: **{curr_ath_task_stat}**")
-                if st.button("Reverter para Pendente", key=f"revert_{ath_id_d}_{i_l}", use_container_width=True):
-                    if registrar_log(ath_id_d, ath_name_d, ath_event_d, ACTIVE_TASK_NAME, STATUS_PENDING, f"Revertido de '{curr_ath_task_stat}'", uid_l):
-                        time.sleep(1); st.rerun()
 else:
     st.warning("🚨 Por favor, faça o login para continuar.", icon="🚨")

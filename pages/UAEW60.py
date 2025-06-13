@@ -5,7 +5,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
-# import altair as alt # Removido, pois a seção de estatísticas foi removida
 import time
 
 # --- 1. Page Configuration ---
@@ -18,10 +17,32 @@ USERS_TAB_NAME = "Users"
 ATTENDANCE_TAB_NAME = "Attendance"
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 CONFIG_TAB_NAME = "Config"
-NO_TASK_SELECTED_LABEL = "-- Choose Task --"
-STATUS_PENDING_LIKE = ["Pending", "Not Registred", "Requested"] # 'Requested' adicionado aqui para tratamento como pendente
-STATUS_PRIVATE_SHUTTLE = "Private Shuttle" # Novo status
-STATUS_UAEW_SHUTTLE = "UAEW Shuttle" # Novo status
+
+# Define os status lógicos e suas cores
+STATUS_PENDING = "Pending"
+STATUS_CLEAR_DOCTOR = "Clear by Doctor" # Este será o status "verde" genérico para tarefas concluídas
+STATUS_UNDER_OBSERVATION = "Under Observation"
+STATUS_STABLE_LOW_RISK = "Stable Low Risk"
+STATUS_SERIOUS_AMBULANCE = "Serious Ambulance"
+
+# Lista de status específicos para a tarefa "Medical"
+MEDICAL_STATUSES = [
+    STATUS_CLEAR_DOCTOR,
+    STATUS_UNDER_OBSERVATION,
+    STATUS_STABLE_LOW_RISK,
+    STATUS_SERIOUS_AMBULANCE
+]
+ALL_LOGICAL_STATUSES = [STATUS_PENDING] + MEDICAL_STATUSES
+
+# Mapa de cores para os status (para badges e barra lateral do card)
+STATUS_COLOR_MAP = {
+    STATUS_CLEAR_DOCTOR: "#28a745",       # Green (Usado para "Concluído" em qualquer tarefa)
+    STATUS_UNDER_OBSERVATION: "#ffc107",  # Light Yellow
+    STATUS_STABLE_LOW_RISK: "#e0a800",    # Dark Yellow
+    STATUS_SERIOUS_AMBULANCE: "#dc3545",  # Red
+    STATUS_PENDING: "#6c757d",            # Gray (para pendente/não registrado)
+    "Not Registred": "#6c757d"            # Trata 'Not Registred' como Pending visualmente
+}
 
 # --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
@@ -67,6 +88,7 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
             df["INACTIVE"] = df["INACTIVE"].map({0: False, 1: True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
         df["EVENT"] = df["EVENT"].fillna("Z") if "EVENT" in df.columns else "Z"
+        df["CORNER"] = df["CORNER"].fillna("N/A") if "CORNER" in df.columns else "N/A" # Adiciona coluna Corner
         date_cols = ["DOB", "PASSPORT EXPIRE DATE", "BLOOD TEST"]
         for col in date_cols:
             if col in df.columns: df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
@@ -108,11 +130,8 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
         if not data or len(data) < 1: st.error(f"Aba '{config_tab_name}' vazia/sem cabeçalho.", icon="🚨"); return [],[]
         df_conf = pd.DataFrame(data[1:], columns=data[0])
         tasks = df_conf["TaskList"].dropna().unique().tolist() if "TaskList" in df_conf.columns else []
-        # 'TaskStatus' não será usado diretamente para os status de tarefas neste script,
-        # mas pode ser útil para outras partes do sistema ou para fins de registro.
-        # statuses = df_conf["TaskStatus"].dropna().unique().tolist() if "TaskStatus" in df_conf.columns else []
         if not tasks: st.warning(f"'TaskList' não encontrada/vazia em '{config_tab_name}'.", icon="⚠️")
-        return tasks, [] # Retorna lista de status vazia, pois usaremos status fixos
+        return tasks, []
     except Exception as e: st.error(f"Erro ao carregar config '{config_tab_name}': {e}", icon="🚨"); return [], []
 
 @st.cache_data(ttl=120)
@@ -139,46 +158,70 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
         new_row_data = [str(next_num), ath_event, ath_id, ath_name, task, status, user_ident, ts, notes]
         log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
         st.success(f"'{task}' para {ath_name} registrado como '{status}'.", icon="✍️")
-        load_attendance_data.clear() # Limpa o cache para recarregar dados
-        load_athlete_data.clear() # Limpa o cache para recarregar dados (se necessário, para exibir mudanças)
+        load_attendance_data.clear()
         return True
     except Exception as e:
         st.error(f"Erro ao registrar em '{att_tab_name}': {e}", icon="🚨")
         return False
 
 # --- Helper Function ---
-def get_latest_status(athlete_id, task, attendance_df):
-    if attendance_df.empty or task is None: return "Pending"
-    athlete_records = attendance_df[(attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & (attendance_df["Task"] == task)]
-    if athlete_records.empty: return "Pending"
-    
+def get_latest_status_and_user(athlete_id, task, attendance_df):
+    status = STATUS_PENDING
+    user = "N/A"
+    timestamp = "N/A"
+
+    if attendance_df.empty or task is None:
+        return status, user, timestamp
+
+    athlete_records = attendance_df[
+        (attendance_df[ID_COLUMN_IN_ATTENDANCE].astype(str) == str(athlete_id)) & 
+        (attendance_df["Task"] == task)
+    ].copy()
+
+    if athlete_records.empty:
+        return status, user, timestamp
+
     if "Timestamp" in athlete_records.columns:
-        athlete_records = athlete_records.copy()
         athlete_records['TS_dt'] = pd.to_datetime(athlete_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
         valid_records = athlete_records.dropna(subset=['TS_dt'])
         if not valid_records.empty:
             latest_record = valid_records.sort_values(by="TS_dt", ascending=False).iloc[0]
-        else: # Fallback if no valid timestamps
+        else:
             latest_record = athlete_records.iloc[-1]
-    else: # Fallback if no Timestamp column
+    else:
         latest_record = athlete_records.iloc[-1]
     
-    # Mapeamento de status antigos para os novos ou para "Pending"
-    status_raw = latest_record.get("Status", "Pending")
-    if status_raw == "Done":
-        return STATUS_UAEW_SHUTTLE
-    elif status_raw == "---": # Era "Não se aplica"
-        return STATUS_PRIVATE_SHUTTLE
-    elif status_raw == "Requested": # Status 'Requested' será tratado como 'Pending' na nova lógica
-        return "Pending"
+    status_raw = latest_record.get("Status", STATUS_PENDING)
+    user = latest_record.get("User", "N/A")
+    timestamp = latest_record.get("Timestamp", "N/A")
+
+    if status_raw in ALL_LOGICAL_STATUSES:
+        status = status_raw
+    elif status_raw == "Done": # Compatibilidade com status antigo
+        status = STATUS_CLEAR_DOCTOR
     else:
-        return status_raw # Retorna "Pending", "Not Registred" ou os novos status já registrados
+        status = STATUS_PENDING
+
+    return status, user, timestamp
 
 # --- 6. Main Application Logic ---
 st.title("UAEW | Task Control")
 
-# Modificado o default para selected_status para refletir as novas opções ou "Todos"
-default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Todos", "selected_event": "Todos os Eventos", "fighter_search_query": ""}
+# --- Session State Initialization ---
+default_ss = {
+    "warning_message": None, 
+    "user_confirmed": False, 
+    "current_user_id": "", 
+    "current_user_name": "User", 
+    "current_user_image_url": "", 
+    "show_personal_data": False, 
+    "selected_task": "Medical", # Tarefa padrão
+    "selected_status": "Todos", 
+    "selected_event": "Todos os Eventos", 
+    "selected_corner": "Todos", # Novo filtro
+    "fighter_search_query": "", 
+    "selected_badge_tasks": []
+}
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
@@ -209,80 +252,101 @@ with st.container(border=True):
             st.warning(st.session_state.warning_message, icon="🚨")
 
 if st.session_state.user_confirmed and st.session_state.current_user_id.strip().upper()!=st.session_state.user_id_input.strip().upper() and st.session_state.user_id_input.strip()!="":
-    st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",current_user_image_url="",selected_task=NO_TASK_SELECTED_LABEL);st.rerun()
+    st.session_state.update(user_confirmed=False,warning_message="⚠️ ID/Nome alterado. Confirme.",current_user_image_url="");st.rerun()
 
 # --- Main App Content ---
 if st.session_state.user_confirmed and st.session_state.current_user_name!="User":
     with st.spinner("Carregando dados..."):
-        tasks_raw, _ = load_config_data() # Nao precisamos da lista de status do config
+        tasks_raw, _ = load_config_data()
         df_athletes = load_athlete_data()
         df_attendance = load_attendance_data()
 
-    tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
-    st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="tsel_w")
-    sel_task_actual = st.session_state.selected_task if st.session_state.selected_task != NO_TASK_SELECTED_LABEL else None
+    if not tasks_raw:
+        st.error("Nenhuma tarefa configurada na planilha 'Config'. O App não pode continuar.", icon="🚨")
+        st.stop()
+        
+    # --- Sidebar Section ---
+    with st.sidebar:
+        st.header("Filtros e Configurações")
+        
+        # NOVA SELEÇÃO DE TAREFA
+        # Assegura que a tarefa em sessão seja válida, senão volta para a primeira da lista
+        if st.session_state.selected_task not in tasks_raw:
+            st.session_state.selected_task = tasks_raw[0]
+
+        st.selectbox(
+            "Selecione a Tarefa:",
+            options=tasks_raw,
+            key="selected_task"
+        )
+        sel_task_actual = st.session_state.selected_task
+        
+        # FILTRO DE EVENTO
+        st.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
+
+        # NOVO FILTRO DE CORNER
+        st.selectbox("Filtrar Corner:", options=["Todos"] + sorted(df_athletes["CORNER"].unique()), key="selected_corner")
+        
+        # OUTRAS OPÇÕES
+        st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
+        st.multiselect(
+            "Exibir Badges de Tarefas:",
+            options=tasks_raw,
+            default=st.session_state.selected_badge_tasks,
+            key="badge_task_filter_w",
+            help="Escolha quais tarefas concluídas aparecerão como badges em cada atleta."
+        )
+    # --- End Sidebar Section ---
 
     if sel_task_actual:
-        df_athletes['current_task_status'] = df_athletes['ID'].apply(lambda id: get_latest_status(id, sel_task_actual, df_attendance))
-        
-        # --- REMOÇÃO DA SEÇÃO DE ESTATÍSTICAS DA TAREFA ---
-        # A lógica para 'status_counts', 'chart_data', 'color_scale', 'chart' foi removida.
-        # st.markdown("##### Estatísticas da Tarefa")
-        # ... (código do gráfico removido) ...
-        # st.divider()
-        # --- FIM DA REMOÇÃO ---
-        st.divider() # Mantém o divisor para separação visual
+        df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
+            lambda id: pd.Series(get_latest_status_and_user(id, sel_task_actual, df_attendance))
+        )
+        st.divider()
 
-    # Opções de filtro de status atualizadas
-    status_options = ["Todos", "Pending", STATUS_PRIVATE_SHUTTLE, STATUS_UAEW_SHUTTLE]
-    st.session_state.selected_status = st.radio(
-        "Filtrar por Status:", 
-        options=status_options, 
-        index=status_options.index(st.session_state.selected_status) if st.session_state.selected_status in status_options else 0, 
-        horizontal=True, 
-        key="srad_w", 
-        disabled=(not sel_task_actual)
-    )
-
-    filter_cols = st.columns(2)
-    filter_cols[0].selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
-    filter_cols[1].text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
-    st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
+    # Filtro de Status CONDICIONAL (só para Medical)
+    if sel_task_actual == "Medical":
+        status_options_radio = ["Todos"] + ALL_LOGICAL_STATUSES
+        st.session_state.selected_status = st.radio(
+            f"Filtrar por Status da Tarefa '{sel_task_actual}':",
+            options=status_options_radio, 
+            index=status_options_radio.index(st.session_state.selected_status) if st.session_state.selected_status in status_options_radio else 0, 
+            horizontal=True, 
+            key="srad_w"
+        )
+    else:
+        # Para outras tarefas, o filtro de status é resetado para "Todos"
+        st.session_state.selected_status = "Todos"
+    
+    st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
     st.divider()
 
     df_filtered = df_athletes.copy()
     if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
+    if st.session_state.selected_corner != "Todos": df_filtered = df_filtered[df_filtered["CORNER"] == st.session_state.selected_corner]
+    
     search_term = st.session_state.fighter_search_query.strip().lower()
     if search_term: df_filtered = df_filtered[df_filtered["NAME"].str.lower().str.contains(search_term, na=False) | df_filtered["ID"].astype(str).str.contains(search_term, na=False)]
 
-    if sel_task_actual and st.session_state.selected_status != "Todos":
-        # A filtragem agora usa diretamente o status selecionado
+    if st.session_state.selected_status != "Todos":
         df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
 
-    st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
-    if not sel_task_actual: st.info("Selecione uma tarefa para ver as opções.", icon="ℹ️")
+    st.markdown(f"Exibindo **{len(df_filtered)}** atletas para a tarefa **'{sel_task_actual}'**.")
 
     for i_l, row in df_filtered.iterrows():
         ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
 
-        curr_ath_task_stat = None
-        status_bar_color = "#2E2E2E"
-        status_text_html = ""
-
-        if sel_task_actual:
-            curr_ath_task_stat = row.get('current_task_status', 'Pending')
-            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{curr_ath_task_stat}</strong></p>"
-            
-            # Lógica de cor da barra baseada nos novos status
-            if curr_ath_task_stat == STATUS_UAEW_SHUTTLE: 
-                status_bar_color = "#28a745" # Verde para "Done"
-            elif curr_ath_task_stat == STATUS_PRIVATE_SHUTTLE: 
-                status_bar_color = "#6c757d" # Cinza para "Não se aplica"
-            else: 
-                status_bar_color = "#dc3545" # Vermelho para "Pending" / "Not Registred"
-
+        curr_ath_task_stat = row.get('current_task_status', STATUS_PENDING)
+        latest_user = row.get('latest_task_user', 'N/A')
+        latest_ts = row.get('latest_task_timestamp', 'N/A')
+        status_bar_color = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_PENDING])
+        
+        status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>"
+        user_ts_html = f"<p style='margin:2px 0 0 0; font-size:0.8em; color:#bbb;'>Última Atualização por: <strong>{html.escape(str(latest_user))}</strong> em: <strong>{html.escape(str(latest_ts))}</strong></p>"
+        
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
+            # ... (O código do card do atleta permanece o mesmo)
             mob_r = str(row.get("MOBILE", "")).strip()
             wa_link_html = ""
             if mob_r:
@@ -313,6 +377,7 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
                     <div style='flex-grow: 1;'>
                         <h4 style='margin:0; font-size:1.6em; line-height: 1.2;'>{html.escape(ath_name_d)} <span style='font-size:0.6em; color:#cccccc; font-weight:normal; margin-left: 8px;'>{html.escape(ath_event_d)} (ID: {html.escape(ath_id_d)})</span></h4>
                         {status_text_html}
+                        {user_ts_html}
                         {wa_link_html}
                     </div>
                 </div>
@@ -320,64 +385,53 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
             </div>
             """, unsafe_allow_html=True)
 
-            if sel_task_actual:
+            # Lógica dos Badges
+            if st.session_state.selected_badge_tasks:
                 badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px;'>"
-                # Mapa de cores para os novos status
-                status_color_map = {
-                    STATUS_UAEW_SHUTTLE: "#28a745", # Verde
-                    STATUS_PRIVATE_SHUTTLE: "#6c757d", # Cinza
-                    "Pending": "#dc3545", # Vermelho
-                    "Not Registred": "#dc3545" # Vermelho
-                    # "Requested" não precisa de cor explícita aqui, pois será mapeado para "Pending"
-                }
-                for task_name in tasks_raw:
-                    status_for_badge = get_latest_status(ath_id_d, task_name, df_attendance)
-                    color = status_color_map.get(status_for_badge, status_color_map["Pending"]) # Fallback para Pending
+                for task_for_badge in st.session_state.selected_badge_tasks:
+                    status_for_badge, user_for_badge, ts_for_badge = get_latest_status_and_user(ath_id_d, task_for_badge, df_attendance)
+                    color = STATUS_COLOR_MAP.get(status_for_badge, STATUS_COLOR_MAP[STATUS_PENDING])
                     badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
-                    badges_html += f"<span style='{badge_style}'>{html.escape(task_name)}</span>"
+                    tooltip_content = f"Status: {str(status_for_badge)}\\nAtualizado por: {str(user_for_badge)}\\nEm: {str(ts_for_badge)}"
+                    badges_html += f"<span style='{badge_style}' title='{html.escape(tooltip_content, quote=True)}'>{html.escape(str(task_for_badge))}</span>"
                 badges_html += "</div>"
                 st.markdown(badges_html, unsafe_allow_html=True)
 
+
         with col_buttons:
-            if sel_task_actual:
-                uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-                st.write(" "); st.write(" ") 
+            uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
+            st.write(" "); st.write(" ") 
 
-                # Lógica de botões atualizada para os 2 status + Pendente
-                if curr_ath_task_stat == STATUS_UAEW_SHUTTLE:
-                    # Se o status atual é "UAEW Shuttle" (equivalente a "Done")
-                    if st.button(f"Mover para '{STATUS_PRIVATE_SHUTTLE}'", key=f"to_private_b_{ath_id_d}_{i_l}", type="secondary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_PRIVATE_SHUTTLE, "", uid_l):
-                            time.sleep(1.5)
-                            st.rerun()
-                    if st.button("Marcar como Pendente", key=f"to_pending_from_uaew_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Pending", "", uid_l):
-                            time.sleep(1.5)
-                            st.rerun()
-
-                elif curr_ath_task_stat == STATUS_PRIVATE_SHUTTLE:
-                    # Se o status atual é "Private Shuttle" (equivalente a "Não se aplica")
-                    if st.button(f"Mover para '{STATUS_UAEW_SHUTTLE}'", key=f"to_uaew_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_UAEW_SHUTTLE, "", uid_l):
-                            time.sleep(1.5)
-                            st.rerun()
-                    if st.button("Marcar como Pendente", key=f"to_pending_from_private_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, "Pending", "", uid_l):
-                            time.sleep(1.5)
+            # LÓGICA DE BOTÕES CONDICIONAL
+            # Botões para a tarefa "Medical"
+            if sel_task_actual == "Medical":
+                for target_status in MEDICAL_STATUSES:
+                    if target_status != curr_ath_task_stat:
+                        button_type = "primary" if target_status == STATUS_CLEAR_DOCTOR else "secondary"
+                        if st.button(f"Mover para '{target_status}'", key=f"move_{target_status.replace(' ', '_').lower()}_{ath_id_d}_{i_l}", type=button_type, use_container_width=True):
+                            if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, target_status, "", uid_l):
+                                time.sleep(1)
+                                st.rerun()
+                if curr_ath_task_stat != STATUS_PENDING:
+                    if st.button("Reverter para Pendente", key=f"revert_pending_{ath_id_d}_{i_l}", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_PENDING, "Revertido", uid_l):
+                            time.sleep(1)
                             st.rerun()
 
-                elif curr_ath_task_stat in STATUS_PENDING_LIKE:
-                    # Se o status atual é "Pending" ou "Not Registred" (ou "Requested" antigo)
-                    if st.button(f"Marcar como '{STATUS_UAEW_SHUTTLE}'", key=f"mark_uaew_b_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_UAEW_SHUTTLE, "", uid_l):
-                            time.sleep(1.5)
+            # Botões para QUALQUER OUTRA tarefa (Shuttle, etc.)
+            else:
+                if curr_ath_task_stat != STATUS_CLEAR_DOCTOR:
+                    if st.button(f"Confirmar '{sel_task_actual}'", key=f"confirm_task_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                        # Registra como "Clear by Doctor" para obter a cor verde
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_CLEAR_DOCTOR, "", uid_l):
+                            time.sleep(1)
                             st.rerun()
-                    if st.button(f"Marcar como '{STATUS_PRIVATE_SHUTTLE}'", key=f"mark_private_b_{ath_id_d}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_PRIVATE_SHUTTLE, "", uid_l):
-                            time.sleep(1.5)
+                else: # Se a tarefa já está "concluída" (verde)
+                    st.success("Tarefa Concluída!")
+                    if st.button("Reverter para Pendente", key=f"revert_task_{ath_id_d}_{i_l}", use_container_width=True):
+                        if registrar_log(ath_id_d, ath_name_d, ath_event_d, sel_task_actual, STATUS_PENDING, "Revertido", uid_l):
+                            time.sleep(1)
                             st.rerun()
-                # Não há mais o status "Requested" como um estado distinto de botões.
-                # Ele foi absorvido por STATUS_PENDING_LIKE e a lógica de get_latest_status.
         st.divider()
 
 else:

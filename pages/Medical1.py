@@ -216,8 +216,20 @@ def get_latest_status_and_user(athlete_id, task, attendance_df):
 st.title("UAEW | Task Control")
 
 # Modificado o default para selected_status para refletir as novas opções ou "Todos"
-# selected_badge_tasks será inicializado após o carregamento de tasks_raw
-default_ss = {"warning_message": None, "user_confirmed": False, "current_user_id": "", "current_user_name": "User", "current_user_image_url": "", "show_personal_data": False, "selected_task": NO_TASK_SELECTED_LABEL, "selected_status": "Todos", "selected_event": "Todos os Eventos", "fighter_search_query": "", "selected_badge_tasks": []}
+# selected_badge_tasks começará vazio conforme solicitado
+default_ss = {
+    "warning_message": None, 
+    "user_confirmed": False, 
+    "current_user_id": "", 
+    "current_user_name": "User", 
+    "current_user_image_url": "", 
+    "show_personal_data": False, 
+    "selected_task": NO_TASK_SELECTED_LABEL, 
+    "selected_status": "Todos", 
+    "selected_event": "Todos os Eventos", 
+    "fighter_search_query": "", 
+    "selected_badge_tasks": [] # Começa vazia
+}
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 if 'user_id_input' not in st.session_state: st.session_state['user_id_input']=st.session_state['current_user_id']
@@ -257,9 +269,8 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         df_athletes = load_athlete_data()
         df_attendance = load_attendance_data()
 
-    # Inicializa o selected_badge_tasks com todas as tarefas, se ainda não estiver definido ou vazio
-    if not st.session_state.get('selected_badge_tasks'):
-        st.session_state.selected_badge_tasks = tasks_raw.copy()
+    # REMOVIDO: Inicialização do selected_badge_tasks com todas as tarefas
+    # st.session_state.selected_badge_tasks agora inicia vazia por padrão em default_ss
 
     tasks_for_select = [NO_TASK_SELECTED_LABEL] + tasks_raw
     st.session_state.selected_task = st.selectbox("Selecione a Tarefa:", tasks_for_select, index=tasks_for_select.index(st.session_state.selected_task) if st.session_state.selected_task in tasks_for_select else 0, key="tsel_w")
@@ -283,20 +294,29 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
         disabled=(not sel_task_actual)
     )
 
-    filter_cols = st.columns(2)
-    filter_cols[0].selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
-    filter_cols[1].text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
-    st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
+    # --- Sidebar Section ---
+    with st.sidebar:
+        st.header("Filtros e Configurações")
+        
+        # Mover "Filtrar Evento" para a sidebar
+        st.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
+        
+        # Mover "Mostrar Dados Pessoais" para a sidebar
+        st.toggle("Mostrar Dados Pessoais", key="show_personal_data")
 
-    # Novo multibox para filtrar as TAREFAS a serem exibidas nos badges
-    st.session_state.selected_badge_tasks = st.multiselect(
-        "Selecionar Tarefas para Visualizar nos Badges:",
-        options=tasks_raw, # As opções agora são as tarefas em si
-        default=st.session_state.selected_badge_tasks, # Usa o valor da sessão (inicializado acima)
-        key="badge_task_filter_w",
-        help="Escolha quais tarefas você quer ver exibidas como badges abaixo de cada atleta."
-    )
-    st.divider()
+        # Mover "Selecionar Tarefas para Visualizar nos Badges" para a sidebar
+        st.multiselect(
+            "Selecionar Tarefas para Visualizar nos Badges:",
+            options=tasks_raw, # As opções são as tarefas em si
+            default=st.session_state.selected_badge_tasks, # Usa o valor da sessão (inicializado para vazio no default_ss)
+            key="badge_task_filter_w",
+            help="Escolha quais tarefas você quer ver exibidas como badges abaixo de cada atleta."
+        )
+    # --- End Sidebar Section ---
+    
+    # "Pesquisar Lutador" permanece na área principal
+    st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
+    st.divider() # Adicionado um divisor aqui após os filtros da área principal
 
     df_filtered = df_athletes.copy()
     if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
@@ -324,8 +344,8 @@ if st.session_state.user_confirmed and st.session_state.current_user_name!="User
             latest_user = row.get('latest_task_user', 'N/A')
             latest_ts = row.get('latest_task_timestamp', 'N/A')
 
-            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>" # Correção aplicada aqui: str()
-            user_ts_html = f"<p style='margin:2px 0 0 0; font-size:0.8em; color:#bbb;'>Última Atualização por: <strong>{html.escape(str(latest_user))}</strong> em: <strong>{html.escape(str(latest_ts))}</strong></p>" # Correção aplicada aqui: str()
+            status_text_html = f"<p style='margin:5px 0 0 0; font-size:1em;'>Status da Tarefa: <strong>{html.escape(str(curr_ath_task_stat))}</strong></p>"
+            user_ts_html = f"<p style='margin:2px 0 0 0; font-size:0.8em; color:#bbb;'>Última Atualização por: <strong>{html.escape(str(latest_user))}</strong> em: <strong>{html.escape(str(latest_ts))}</strong></p>"
 
             status_bar_color = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_PENDING])
 

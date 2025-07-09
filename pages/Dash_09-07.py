@@ -24,6 +24,7 @@ ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
 ATTENDANCE_TIMESTAMP_COL = "Timestamp"
+ATTENDANCE_EVENT_COL = "Event"
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
@@ -90,10 +91,10 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
     try:
         df_att = pd.DataFrame(worksheet.get_all_records())
         if df_att.empty: return pd.DataFrame()
-        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL]
+        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL]
         for col in cols_to_process:
             if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
-            else: df_att[col] = None
+            else: df_att[col] = ""
         return df_att
     except Exception as e: st.error(f"Error loading Attendance: {e}"); return pd.DataFrame()
 
@@ -109,14 +110,18 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
     except Exception as e: st.error(f"Error loading TaskList from Config: {e}"); return []
 
 # --- Funções de Lógica e Processamento ---
-
-def get_task_status(athlete_id, task_name, df_attendance):
-    if df_attendance.empty or pd.isna(athlete_id) or str(athlete_id).strip()=="" or not task_name:
+def get_task_status(athlete_id, task_name, event_name, df_attendance):
+    if df_attendance.empty or pd.isna(athlete_id) or str(athlete_id).strip() == "" or not task_name or not event_name:
         return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
+
     relevant_records = df_attendance[
         (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) &
-        (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == str(task_name).strip())]
+        (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == str(task_name).strip()) &
+        (df_attendance[ATTENDANCE_EVENT_COL].astype(str).str.strip() == str(event_name).strip())
+    ]
+    
     if relevant_records.empty: return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
+    
     latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]
     if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
         try:
@@ -128,12 +133,10 @@ def get_task_status(athlete_id, task_name, df_attendance):
     return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
 
 # --- Geração da Interface (HTML & CSS) ---
-
+# ... (As funções generate_mirrored_html_dashboard e get_dashboard_style não precisam de alterações)
 def generate_mirrored_html_dashboard(df_processed, task_list):
     num_tasks = len(task_list)
     html = "<div class='dashboard-grid'>"
-    
-    # Define os headers da grid com base na existência de tarefas
     if num_tasks > 0:
         html += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
         html += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
@@ -150,16 +153,14 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
     html += "<div class='grid-item grid-header photo-header'>Photo</div>"
     html += "<div class='grid-item grid-header photo-header'>Photo</div>"
     html += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
-
     if num_tasks > 0:
         for task in task_list:
             emoji = TASK_EMOJI_MAP.get(task, task[0])
             html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
 
-    # Itera sobre as lutas para construir as linhas
     for _, row in df_processed.iterrows():
         for task in reversed(task_list):
-            status = row.get(f'{task} (Azul)', get_task_status(None, task, pd.DataFrame()))
+            status = row.get(f'{task} (Azul)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
         html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
@@ -168,9 +169,8 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
         html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
         for task in task_list:
-            status = row.get(f'{task} (Vermelho)', get_task_status(None, task, pd.DataFrame()))
+            status = row.get(f'{task} (Vermelho)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
-            
     html += "</div>"
     return html
 
@@ -250,11 +250,11 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
     </style>
     """
 
+
 # --- Aplicação Principal do Streamlit ---
 
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
 
-# --- Carregamento Inicial dos Dados ---
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
     df_att = load_attendance_data()
@@ -262,27 +262,20 @@ with st.spinner("Loading data..."):
 
 # --- Controles da Barra Lateral (Sidebar) ---
 st.sidebar.title("Dashboard Controls")
-if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
-    st.cache_data.clear()
-    st.toast("Data refreshed!", icon="🎉")
-    st.rerun()
+if st.sidebar.button("🔄 Refresh Now", use_container_width=True): st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
 
+# --- ESTA É A SEÇÃO QUE CRIA O SELETOR DE EVENTOS ---
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) if not df_fc.empty else []
 sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
+# --------------------------------------------------------
 
-# ### NOVO: Seletor de Tarefas na Sidebar ###
 st.sidebar.markdown("---")
 st.sidebar.subheader("Filtro de Tarefas")
-selected_tasks = st.sidebar.multiselect(
-    "Selecione as tarefas para monitorar:",
-    options=all_tsks,
-    default=all_tsks,
-    help="Escolha quais colunas de status de tarefas serão exibidas no dashboard."
-)
+selected_tasks = st.sidebar.multiselect("Selecione as tarefas para monitorar:", options=all_tsks, default=all_tsks)
 
-# --- Continuação dos Controles da Sidebar ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Configurações de Exibição")
+# ... (restante da sidebar sem alterações) ...
 is_wide_mode = st.sidebar.toggle(
     "Modo Tela Cheia (Wide)",
     value=(st.session_state.layout_mode == "wide"),
@@ -297,14 +290,11 @@ if 'table_font_size' not in st.session_state: st.session_state.table_font_size =
 st.session_state.table_font_size = st.sidebar.slider(
     "Tamanho Geral da Fonte (px)", min_value=10, max_value=30, value=st.session_state.table_font_size, step=1
 )
-
 st.sidebar.subheader("Ajustes Finos de Layout")
 if 'fighter_width' not in st.session_state: st.session_state.fighter_width = 25
 if 'division_width' not in st.session_state: st.session_state.division_width = 10
 if 'division_font_size' not in st.session_state: st.session_state.division_font_size = 16
-
 disable_sliders = len(selected_tasks) == 0
-
 st.session_state.fighter_width = st.sidebar.slider(
     "Largura Nome do Lutador (%)", min_value=10, max_value=40, value=st.session_state.fighter_width, step=1,
     disabled=disable_sliders
@@ -318,24 +308,19 @@ st.session_state.division_font_size = st.sidebar.slider(
 )
 st.sidebar.markdown("---")
 
-# --- Lógica Principal do Dashboard ---
 
+# --- Lógica Principal do Dashboard ---
 if df_fc.empty:
-    st.warning("Could not load Fightcard data or no events available. Please check the spreadsheet.")
+    st.warning("Could not load Fightcard data. Please check the spreadsheet.")
     st.stop()
 
-# ### MODIFICADO ###: Passa o número de tarefas SELECIONADAS para o estilo
-st.markdown(get_dashboard_style(
-    st.session_state.table_font_size,
-    len(selected_tasks),
-    st.session_state.fighter_width,
-    st.session_state.division_width,
-    st.session_state.division_font_size,
-), unsafe_allow_html=True)
+st.markdown(get_dashboard_style(st.session_state.table_font_size, len(selected_tasks), st.session_state.fighter_width, st.session_state.division_width, st.session_state.division_font_size), unsafe_allow_html=True)
 
+# --- ESTA É A SEÇÃO QUE FILTRA OS DADOS PELO EVENTO SELECIONADO ---
 df_fc_disp = df_fc.copy()
 if sel_ev_opt != "All Events":
     df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
+# -----------------------------------------------------------------
 
 if df_fc_disp.empty:
     st.info(f"No fights found for event '{sel_ev_opt}'.")
@@ -353,21 +338,18 @@ for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).grou
             name, id, pic = series.get(FC_FIGHTER_COL, "N/A"), series.get(FC_ATHLETE_ID_COL, ""), series.get(FC_PICTURE_COL, "")
             row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
             row_d[f"Lutador {prefix}"] = f"{name}"
-            # ### MODIFICADO ###: Itera sobre as tarefas SELECIONADAS
-            for task in selected_tasks: 
-                row_d[f"{task} ({prefix})"] = get_task_status(id, task, df_att)
+            for task in selected_tasks:
+                row_d[f"{task} ({prefix})"] = get_task_status(id, task, ev, df_att)
         else:
             row_d[f"Foto {prefix}"], row_d[f"Lutador {prefix}"] = "", "N/A"
-            # ### MODIFICADO ###: Itera sobre as tarefas SELECIONADAS
-            for task in selected_tasks: 
-                row_d[f"{task} ({prefix})"] = get_task_status(None, task, df_att)
+            for task in selected_tasks:
+                row_d[f"{task} ({prefix})"] = get_task_status(None, task, ev, df_att)
                 
     row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A")) if isinstance(bl_s, pd.Series) else (rd_s.get(FC_DIVISION_COL, "N/A") if isinstance(rd_s, pd.Series) else "N/A")
     dash_data_list.append(row_d)
 
 if dash_data_list:
     df_dash_processed = pd.DataFrame(dash_data_list)
-    # ### MODIFICADO ###: Passa a lista de tarefas SELECIONADAS para a geração do HTML
     html_grid = generate_mirrored_html_dashboard(df_dash_processed, selected_tasks)
     st.markdown(html_grid, unsafe_allow_html=True)
 else:

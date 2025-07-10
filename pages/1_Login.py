@@ -1,19 +1,22 @@
 import streamlit as st
-from google.oauth2.service_account import Credentials
-import gspread
+from utils import get_valid_user_info, display_user_sidebar
 
-# ... (cole aqui as funções get_gspread_client, load_users_data, get_valid_user_info) ...
-
+# Página de Login não precisa da sidebar de usuário
 st.set_page_config(page_title="UAEW Login", layout="centered")
+
 st.title("UAEW | Controle de Acesso")
 st.markdown("Por favor, faça o login para continuar.")
 
 if 'user_confirmed' not in st.session_state:
     st.session_state['user_confirmed'] = False
 
+# Se o usuário já estiver logado e tentar acessar a página de login, redirecione-o
+if st.session_state.user_confirmed:
+    st.switch_page("pages/2_Dashboard.py")
+
 user_id_input = st.text_input("Digite seu PS ou Nome de Usuário", key="login_user_input")
 
-if st.button("Login", type="primary"):
+if st.button("Login", type="primary", use_container_width=True):
     if user_id_input:
         user_info = get_valid_user_info(user_id_input)
         if user_info:

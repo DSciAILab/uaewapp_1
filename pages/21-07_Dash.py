@@ -72,17 +72,36 @@ def load_fightcard_data():
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
-        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce")
-        df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
+
+        # Limpeza e conversão de tipos
         df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
+        df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
         df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip().fillna("")
+        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce") # Converte para número, erros viram NaN
+
+        # Garante que a coluna AthleteID exista e seja tratada como string
         if FC_ATHLETE_ID_COL in df.columns:
             df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip().fillna("")
         else:
             st.error(f"CRITICAL: Column '{FC_ATHLETE_ID_COL}' not found in Fightcard.")
             df[FC_ATHLETE_ID_COL] = ""
-        return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL, FC_ATHLETE_ID_COL])
-    except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
+
+        # --- INÍCIO DA CORREÇÃO ---
+        # Removemos o FC_ORDER_COL do dropna.
+        # Agora, só descartamos uma linha se o nome do lutador OU seu ID estiverem faltando.
+        # Isso impede que um lutador com FightOrder em branco seja removido.
+        df.dropna(subset=[FC_FIGHTER_COL, FC_ATHLETE_ID_COL], inplace=True)
+        # --- FIM DA CORREÇÃO ---
+
+        # Preenche qualquer FightOrder NaN com um número alto (ex: 999) para que apareçam no final
+        df[FC_ORDER_COL] = df[FC_ORDER_COL].fillna(999)
+
+        return df
+
+    except Exception as e:
+        st.error(f"Error loading Fightcard: {e}")
+        return pd.DataFrame()
+
 
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
@@ -159,7 +178,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 
     for _, row in df_processed.iterrows():
         for task in reversed(task_list):
-            status = row.get(f'{task} (Azul)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
+            status = row.get(f'{task} (Azul)', get_task_status(None, task, row.get('Event'), pd.DataFrame()))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
         html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
@@ -168,7 +187,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
         html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
         for task in task_list:
-            status = row.get(f'{task} (Vermelho)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
+            status = row.get(f'{task} (Vermelho)', get_task_status(None, task, row.get('Event'), pd.DataFrame()))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
     html += "</div>"
     return html
@@ -187,183 +206,4 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
         if task_pc < 0: task_pc = 0
         grid_template_columns = " ".join(
             [f"{task_pc}%"] * num_tasks +
-            [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"] +
-            [f"{task_pc}%"] * num_tasks
-        )
-    else:
-        fighter_width_no_tasks = 35
-        division_width_no_tasks = 18
-        photo_pc_no_tasks = 6
-        grid_template_columns = f"{fighter_width_no_tasks}% {photo_pc_no_tasks}% {division_width_no_tasks}% {photo_pc_no_tasks}% {fighter_width_no_tasks}%"
-
-    return f"""
-    <style>
-        div[data-testid="stToolbar"], div[data-testid="stDecoration"],
-        div[data-testid="stStatusWidget"], #MainMenu, header {{
-            visibility: hidden; height: 0%; position: fixed;
-        }}
-        .block-container {{ padding-top: 1rem !important; padding-bottom: 0rem !important; }}
-        .dashboard-grid {{
-            display: grid;
-            grid-template-columns: {grid_template_columns};
-            gap: 1px;
-            background-color: #4a4a50;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            margin-top: 1rem;
-        }}
-        .grid-item {{
-            background-color: #2a2a2e; color: #e1e1e1;
-            padding: {cell_padding}px 8px; display: flex; align-items: center; justify-content: center;
-            min-height: {img_size + (cell_padding * 2)}px; word-break: break-word;
-        }}
-        .grid-item:hover {{ background-color: #38383c; }}
-        .grid-header {{
-            background-color: #1c1c1f; font-weight: 600; font-size: 1rem; min-height: auto;
-        }}
-        .blue-corner-header {{ background-color: #0d2e4e !important; }}
-        .red-corner-header {{ background-color: #5a1d1d !important; }}
-        .center-col-header {{ background-color: #111 !important; }}
-        .fighter-name {{
-            font-weight: 700; font-size: {fighter_font_size}px !important;
-        }}
-        .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
-        .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
-        .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
-        .status-done {{ background-color: #4A6D2F; }}
-        .status-requested {{ background-color: #FF8C00; }}
-        .status-pending {{ background-color: #dc3545; }}
-        .status-neutral, .status-neutral:hover {{ background-color: transparent !important; }}
-        .status-cell {{ cursor: help; }}
-        .fighter-img {{
-            width: {img_size}px; height: {img_size}px;
-            border-radius: 50%; object-fit: cover; border: 2px solid #666;
-        }}
-        .fight-info-number, .fight-info-event, .fight-info-division {{
-            font-size: {division_font_size_px}px !important;
-        }}
-        .fight-info-number {{ font-weight: bold; color: #fff; }}
-        .fight-info-event {{ font-style: italic; color: #ccc; }}
-        .fight-info-division {{ font-style: normal; color: #ddd; }}
-    </style>
-    """
-
-
-# --- Aplicação Principal do Streamlit ---
-
-st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
-
-with st.spinner("Loading data..."):
-    df_fc = load_fightcard_data()
-    df_att = load_attendance_data()
-    all_tsks = get_task_list()
-
-# --- Controles da Barra Lateral (Sidebar) ---
-st.sidebar.title("Dashboard Controls")
-if st.sidebar.button("🔄 Refresh Now", use_container_width=True): st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
-
-avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) if not df_fc.empty else []
-sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Filtro de Tarefas")
-selected_tasks = st.sidebar.multiselect("Selecione as tarefas para monitorar:", options=all_tsks, default=all_tsks)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Configurações de Exibição")
-is_wide_mode = st.sidebar.toggle(
-    "Modo Tela Cheia (Wide)",
-    value=(st.session_state.layout_mode == "wide"),
-    key="layout_toggle"
-)
-new_layout = "wide" if is_wide_mode else "centered"
-if new_layout != st.session_state.layout_mode:
-    st.session_state.layout_mode = new_layout
-    st.rerun()
-
-if 'table_font_size' not in st.session_state: st.session_state.table_font_size = 18
-st.session_state.table_font_size = st.sidebar.slider(
-    "Tamanho Geral da Fonte (px)", min_value=10, max_value=30, value=st.session_state.table_font_size, step=1
-)
-st.sidebar.subheader("Ajustes Finos de Layout")
-if 'fighter_width' not in st.session_state: st.session_state.fighter_width = 25
-if 'division_width' not in st.session_state: st.session_state.division_width = 10
-if 'division_font_size' not in st.session_state: st.session_state.division_font_size = 16
-disable_sliders = len(selected_tasks) == 0
-st.session_state.fighter_width = st.sidebar.slider(
-    "Largura Nome do Lutador (%)", min_value=10, max_value=40, value=st.session_state.fighter_width, step=1,
-    disabled=disable_sliders
-)
-st.session_state.division_width = st.sidebar.slider(
-    "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1,
-    disabled=disable_sliders
-)
-st.session_state.division_font_size = st.sidebar.slider(
-    "Fonte Info da Luta (px)", min_value=10, max_value=30, value=st.session_state.division_font_size, step=1
-)
-st.sidebar.markdown("---")
-
-
-# --- Lógica Principal do Dashboard ---
-if df_fc.empty:
-    st.warning("Could not load Fightcard data. Please check the spreadsheet.")
-    st.stop()
-
-st.markdown(get_dashboard_style(st.session_state.table_font_size, len(selected_tasks), st.session_state.fighter_width, st.session_state.division_width, st.session_state.division_font_size), unsafe_allow_html=True)
-
-df_fc_disp = df_fc.copy()
-if sel_ev_opt != "All Events":
-    df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
-
-if df_fc_disp.empty:
-    st.info(f"No fights found for event '{sel_ev_opt}'.")
-    st.stop()
-
-dash_data_list = []
-for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
-    ev, f_ord = order
-    
-    # --- INÍCIO DA CORREÇÃO ---
-    # Lógica robusta para extrair dados do lutador.
-    # Filtra e pega a primeira linha (.iloc[0]) para evitar erros com dados duplicados.
-    
-    blue_df = group[group[FC_CORNER_COL] == "blue"]
-    bl_s = blue_df.iloc[0] if not blue_df.empty else pd.Series()
-    if len(blue_df) > 1:
-        st.warning(f"Atenção: Múltiplas entradas para o canto Azul na luta {f_ord} (Evento: {ev}). Usando a primeira.")
-
-    red_df = group[group[FC_CORNER_COL] == "red"]
-    rd_s = red_df.iloc[0] if not red_df.empty else pd.Series()
-    if len(red_df) > 1:
-        st.warning(f"Atenção: Múltiplas entradas para o canto Vermelho na luta {f_ord} (Evento: {ev}). Usando a primeira.")
-    # --- FIM DA CORREÇÃO ---
-
-    row_d = {"Event": ev, "Fight #": int(f_ord) if pd.notna(f_ord) else ""}
-    
-    for prefix, series in [("Azul", bl_s), ("Vermelho", rd_s)]:
-        if isinstance(series, pd.Series) and not series.empty:
-            name = series.get(FC_FIGHTER_COL, "N/A")
-            id = series.get(FC_ATHLETE_ID_COL, "")
-            pic = series.get(FC_PICTURE_COL, "")
-            row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
-            row_d[f"Lutador {prefix}"] = f"{name}"
-            for task in selected_tasks:
-                row_d[f"{task} ({prefix})"] = get_task_status(id, task, ev, df_att)
-        else:
-            row_d[f"Foto {prefix}"] = ""
-            row_d[f"Lutador {prefix}"] = "N/A"
-            for task in selected_tasks:
-                row_d[f"{task} ({prefix})"] = get_task_status(None, task, ev, df_att)
-                
-    row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A"))
-    dash_data_list.append(row_d)
-
-if dash_data_list:
-    df_dash_processed = pd.DataFrame(dash_data_list)
-    html_grid = generate_mirrored_html_dashboard(df_dash_processed, selected_tasks)
-    st.markdown(html_grid, unsafe_allow_html=True)
-else:
-    st.info(f"No fights processed for '{sel_ev_opt}'.")
-
-st.markdown(f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>", unsafe_allow_html=True, help="This page auto-refreshes every 60 seconds.")
+            [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_

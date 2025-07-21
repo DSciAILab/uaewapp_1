@@ -57,32 +57,54 @@ TASK_EMOJI_MAP = {
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        if "gcp_service_account" not in st.secrets: st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨"); st.stop()
+        if "gcp_service_account" not in st.secrets:
+            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨")
+            st.stop()
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         return gspread.authorize(creds)
-    except Exception as e: st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨"); st.stop()
+    except Exception as e:
+        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨")
+        st.stop()
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    if not gspread_client: st.error("CRITICAL: Gspread client not initialized.", icon="🚨"); st.stop()
-    try: return gspread_client.open(sheet_name).worksheet(tab_name)
-    except Exception as e: st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨"); st.stop()
+    if not gspread_client:
+        st.error("CRITICAL: Gspread client not initialized.", icon="🚨")
+        st.stop()
+    try:
+        return gspread_client.open(sheet_name).worksheet(tab_name)
+    except Exception as e:
+        st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨")
+        st.stop()
 
 @st.cache_data
 def load_fightcard_data():
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
-        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce")
-        df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
-        df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
-        df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip().fillna("")
+
+        # Garante que a coluna AthleteID exista e a limpa
         if FC_ATHLETE_ID_COL in df.columns:
-            df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip().fillna("")
+            df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
         else:
             st.error(f"CRITICAL: Column '{FC_ATHLETE_ID_COL}' not found in Fightcard.")
-            df[FC_ATHLETE_ID_COL] = ""
-        return df.dropna(subset=[FC_FIGHTER_COL, FC_ORDER_COL, FC_ATHLETE_ID_COL])
-    except Exception as e: st.error(f"Error loading Fightcard: {e}"); return pd.DataFrame()
+            df[FC_ATHLETE_ID_COL] = "" # Adiciona coluna vazia para evitar erros
+
+        # Limpa outras colunas essenciais
+        df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
+
+        # Filtra linhas onde o nome do lutador ou o ID estão vazios
+        df = df[df[FC_FIGHTER_COL].notna() & (df[FC_FIGHTER_COL] != '')]
+        df = df[df[FC_ATHLETE_ID_COL].notna() & (df[FC_ATHLETE_ID_COL] != '')]
+
+        # Processa as colunas restantes após a limpeza
+        df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
+        df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip().fillna("")
+        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce").fillna(999)
+
+        return df
+    except Exception as e:
+        st.error(f"Error loading Fightcard: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=120)
 def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
@@ -133,7 +155,6 @@ def get_task_status(athlete_id, task_name, event_name, df_attendance):
     return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
 
 # --- Geração da Interface (HTML & CSS) ---
-# ... (As funções generate_mirrored_html_dashboard e get_dashboard_style não precisam de alterações)
 def generate_mirrored_html_dashboard(df_processed, task_list):
     num_tasks = len(task_list)
     html = "<div class='dashboard-grid'>"
@@ -160,7 +181,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
 
     for _, row in df_processed.iterrows():
         for task in reversed(task_list):
-            status = row.get(f'{task} (Azul)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
+            status = row.get(f'{task} (Azul)', STATUS_INFO.get("Pending"))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
         html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
@@ -169,7 +190,7 @@ def generate_mirrored_html_dashboard(df_processed, task_list):
         html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
         html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
         for task in task_list:
-            status = row.get(f'{task} (Vermelho)', get_task_status(None, task, row.get('Event'), pd.DataFrame())) # Passando o evento da linha
+            status = row.get(f'{task} (Vermelho)', STATUS_INFO.get("Pending"))
             html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
     html += "</div>"
     return html
@@ -250,7 +271,6 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
     </style>
     """
 
-
 # --- Aplicação Principal do Streamlit ---
 
 st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
@@ -264,10 +284,8 @@ with st.spinner("Loading data..."):
 st.sidebar.title("Dashboard Controls")
 if st.sidebar.button("🔄 Refresh Now", use_container_width=True): st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
 
-# --- ESTA É A SEÇÃO QUE CRIA O SELETOR DE EVENTOS ---
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) if not df_fc.empty else []
 sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
-# --------------------------------------------------------
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Filtro de Tarefas")
@@ -275,7 +293,6 @@ selected_tasks = st.sidebar.multiselect("Selecione as tarefas para monitorar:", 
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Configurações de Exibição")
-# ... (restante da sidebar sem alterações) ...
 is_wide_mode = st.sidebar.toggle(
     "Modo Tela Cheia (Wide)",
     value=(st.session_state.layout_mode == "wide"),
@@ -311,16 +328,14 @@ st.sidebar.markdown("---")
 
 # --- Lógica Principal do Dashboard ---
 if df_fc.empty:
-    st.warning("Could not load Fightcard data. Please check the spreadsheet.")
+    st.warning("Could not load Fightcard data. Please check the spreadsheet or filters.")
     st.stop()
 
 st.markdown(get_dashboard_style(st.session_state.table_font_size, len(selected_tasks), st.session_state.fighter_width, st.session_state.division_width, st.session_state.division_font_size), unsafe_allow_html=True)
 
-# --- ESTA É A SEÇÃO QUE FILTRA OS DADOS PELO EVENTO SELECIONADO ---
 df_fc_disp = df_fc.copy()
 if sel_ev_opt != "All Events":
     df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
-# -----------------------------------------------------------------
 
 if df_fc_disp.empty:
     st.info(f"No fights found for event '{sel_ev_opt}'.")
@@ -329,23 +344,41 @@ if df_fc_disp.empty:
 dash_data_list = []
 for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
     ev, f_ord = order
-    bl_s = group[group[FC_CORNER_COL] == "blue"].squeeze(axis=0)
-    rd_s = group[group[FC_CORNER_COL] == "red"].squeeze(axis=0)
-    row_d = {"Event": ev, "Fight #": int(f_ord) if pd.notna(f_ord) else ""}
+    
+    # Extração segura e explícita dos dados de cada canto
+    blue_df = group[group[FC_CORNER_COL] == "blue"]
+    if not blue_df.empty:
+        bl_s = blue_df.iloc[0]
+        if len(blue_df) > 1: st.warning(f"Atenção: Múltiplas entradas para o canto Azul na luta {f_ord} (Evento: {ev}). Usando a primeira.")
+    else:
+        bl_s = pd.Series()
+
+    red_df = group[group[FC_CORNER_COL] == "red"]
+    if not red_df.empty:
+        rd_s = red_df.iloc[0]
+        if len(red_df) > 1: st.warning(f"Atenção: Múltiplas entradas para o canto Vermelho na luta {f_ord} (Evento: {ev}). Usando a primeira.")
+    else:
+        rd_s = pd.Series()
+
+    fight_number_display = int(f_ord) if f_ord != 999 else "N/A"
+    row_d = {"Event": ev, "Fight #": fight_number_display}
     
     for prefix, series in [("Azul", bl_s), ("Vermelho", rd_s)]:
         if isinstance(series, pd.Series) and not series.empty:
-            name, id, pic = series.get(FC_FIGHTER_COL, "N/A"), series.get(FC_ATHLETE_ID_COL, ""), series.get(FC_PICTURE_COL, "")
+            name = series.get(FC_FIGHTER_COL, "N/A")
+            athlete_id = series.get(FC_ATHLETE_ID_COL, "")
+            pic = series.get(FC_PICTURE_COL, "")
             row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
             row_d[f"Lutador {prefix}"] = f"{name}"
             for task in selected_tasks:
-                row_d[f"{task} ({prefix})"] = get_task_status(id, task, ev, df_att)
+                row_d[f"{task} ({prefix})"] = get_task_status(athlete_id, task, ev, df_att)
         else:
-            row_d[f"Foto {prefix}"], row_d[f"Lutador {prefix}"] = "", "N/A"
+            row_d[f"Foto {prefix}"] = ""
+            row_d[f"Lutador {prefix}"] = "N/A"
             for task in selected_tasks:
                 row_d[f"{task} ({prefix})"] = get_task_status(None, task, ev, df_att)
                 
-    row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A")) if isinstance(bl_s, pd.Series) else (rd_s.get(FC_DIVISION_COL, "N/A") if isinstance(rd_s, pd.Series) else "N/A")
+    row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A"))
     dash_data_list.append(row_d)
 
 if dash_data_list:

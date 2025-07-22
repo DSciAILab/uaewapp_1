@@ -13,7 +13,7 @@ st.set_page_config(page_title="UAEW | Transfer & Check-In", layout="wide")
 MAIN_SHEET_NAME = "UAEW_App"
 ATHLETES_TAB_NAME = "df"
 USERS_TAB_NAME = "Users"
-DF_TRANSFERS_TAB_NAME = "df [Transfers]" # ATUALIZADO: A única aba de dados agora.
+DF_TRANSFERS_TAB_NAME = "df [Transfers]"
 
 # --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
@@ -49,7 +49,7 @@ def load_athlete_data():
     except Exception as e: st.error(f"Erro ao carregar atletas: {e}", icon="🚨"); return pd.DataFrame()
 
 @st.cache_data(ttl=120)
-def load_transfer_checkin_data(): # Função renomeada para clareza
+def load_transfer_checkin_data():
     try: 
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, DF_TRANSFERS_TAB_NAME)
@@ -88,7 +88,7 @@ def save_checkin_record(data: dict):
         if existing_row_index != -1:
             row_to_update = existing_row_index + 2
             cell_range = f'B{row_to_update}:M{row_to_update}'
-            update_values = [[str(data.get(h, "")) for h in headers if h != 'check_in_id']] # Garante que tudo seja string
+            update_values = [[str(data.get(h, "")) for h in headers if h != 'check_in_id']]
             ws.update(cell_range, update_values, value_input_option="USER_ENTERED")
             st.success(f"Check-in de {data['athlete_name']} atualizado!");
         else:
@@ -102,10 +102,9 @@ def save_checkin_record(data: dict):
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
 
-
 # --- Main Application Logic ---
 st.title("UAEW | Transfer & Check-In")
-default_ss = { "user_confirmed": False, "current_user_name": "User", "show_personal_data": False, "selected_event": "Todos os Eventos", "fighter_search_query": "", "current_bus_number": "" }
+default_ss = { "user_confirmed": False, "current_user_name": "User", "selected_event": "Todos os Eventos", "fighter_search_query": "" }
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 
@@ -116,8 +115,6 @@ if st.session_state.user_confirmed:
     
     df_athletes = load_athlete_data()
     df_checkin = load_transfer_checkin_data()
-
-    st.text_input("Ônibus Atual:", placeholder="Digite o número ou nome do ônibus aqui...", key="current_bus_number")
 
     c1, c2, c3 = st.columns([0.4, 0.4, 0.2])
     with c1: 
@@ -150,8 +147,9 @@ if st.session_state.user_confirmed:
             match = df_checkin[(df_checkin['athlete_id'].astype(str) == ath_id) & (df_checkin['event'] == ath_event)]
             if not match.empty:
                 current_checkin = match.iloc[0]
-
-        cols = st.columns([1, 1, 1, 1, 2])
+        
+        # ATUALIZADO: Layout de colunas para incluir o campo de ônibus
+        cols = st.columns([1, 1, 1, 1, 1, 2])
         with cols[0]:
             st.checkbox("Passport", key=f"passport_{ath_id}", value=current_checkin is not None and current_checkin.get('passport') == 'TRUE')
             st.checkbox("Nails", key=f"nails_{ath_id}", value=current_checkin is not None and current_checkin.get('nails') == 'TRUE')
@@ -165,10 +163,15 @@ if st.session_state.user_confirmed:
             transfer_type_val = current_checkin['transfer_type'] if current_checkin is not None and current_checkin.get('transfer_type') else "Bus"
             st.selectbox("Transporte", ["Bus", "Own Transport"], key=f"transfer_type_{ath_id}", index=["Bus", "Own Transport"].index(transfer_type_val))
         with cols[4]:
+            # ATUALIZADO: Caixa de texto para o número do ônibus
+            bus_number_val = str(current_checkin.get('bus_number', '')) if current_checkin is not None else ""
+            st.text_input("Ônibus", key=f"bus_number_{ath_id}", value=bus_number_val)
+        with cols[5]:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Salvar Status", key=f"save_{ath_id}", use_container_width=True):
+                # ATUALIZADO: Lógica de salvamento para pegar o valor do campo de texto individual
                 transfer_type = st.session_state[f"transfer_type_{ath_id}"]
-                bus_number_to_save = st.session_state.get("current_bus_number", "") if transfer_type == "Bus" else ""
+                bus_number_to_save = st.session_state[f"bus_number_{ath_id}"] if transfer_type == "Bus" else ""
                 
                 checkin_data = {
                     'athlete_id': ath_id, 'athlete_name': ath_name, 'event': ath_event,

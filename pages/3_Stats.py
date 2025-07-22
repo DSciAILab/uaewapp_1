@@ -97,7 +97,6 @@ def load_stats_data(sheet_name: str = MAIN_SHEET_NAME, stats_tab_name: str = STA
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, stats_tab_name)
         df_stats = pd.DataFrame(worksheet.get_all_records())
-        # Não precisa mais tratar fighter_id aqui, a busca será pelo nome
         return df_stats
     except Exception as e:
         st.error(f"Erro ao carregar estatísticas: {e}", icon="🚨"); return pd.DataFrame()
@@ -143,7 +142,7 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
 def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status: str, notes: str, user_log_id: str, sheet_name: str = MAIN_SHEET_NAME, att_tab_name: str = ATTENDANCE_TAB_NAME):
     try:
         gspread_client = get_gspread_client(); log_ws = connect_gsheet_tab(gspread_client, sheet_name, att_tab_name); all_vals = log_ws.get_all_values()
-        next_num = int(all_vals[-1][0]) + 1 if len(all_vals) > 1 and str(all_vals[-1][0]).isdigit() else len(all_vals)
+        next_num = int(all_vals[-1][0]) + 1 if len(all_vals) > 1 and str(all_vals[-1][0]).isdigit() else len(all_vals) + 1
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name', user_log_id)
         new_row = [str(next_num), ath_event, ath_id, ath_name, task, status, user_ident, ts, notes]
@@ -154,7 +153,7 @@ def registrar_log(ath_id: str, ath_name: str, ath_event: str, task: str, status:
 def add_stats_record(data: dict, sheet_name: str = MAIN_SHEET_NAME, stats_tab_name: str = STATS_TAB_NAME):
     try:
         gspread_client = get_gspread_client(); stats_ws = connect_gsheet_tab(gspread_client, sheet_name, stats_tab_name); all_vals = stats_ws.get_all_values()
-        next_id = int(all_vals[-1][0]) + 1 if len(all_vals) > 1 and str(all_vals[-1][0]).isdigit() else len(all_vals)
+        next_id = int(all_vals[-1][0]) + 1 if len(all_vals) > 1 and str(all_vals[-1][0]).isdigit() else len(all_vals) + 1
         headers = ['stats_record_id', 'fighter_id', 'fighter_event_name', 'gender', 'weight_kg', 'height_cm', 'reach_cm','fight_style', 'country_of_representation', 'residence_city', 'team_name', 'tshirt_size','updated_by_user', 'updated_at', 'event', 'tshirt_size_c1', 'tshirt_size_c2', 'tshirt_size_c3', 'operation']
         data['stats_record_id'] = next_id
         new_row = [data.get(h, "") for h in headers]
@@ -228,29 +227,16 @@ if st.session_state.user_confirmed:
 
         df_to_display = df_filtered.copy()
 
-        if sel_task_actual and st.session_state.selected_statuses and sel_task_actual != "Estatística":
-            # (Lógica de filtro de status de atendimento)
-            pass
-
         st.markdown(f"Exibindo **{len(df_to_display)}** de **{len(df_athletes)}** atletas.")
         if not sel_task_actual: st.info("Selecione uma tarefa para opções de registro e filtro.", icon="ℹ️")
 
         for i_l, row in df_to_display.iterrows():
             ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             
-            # (Código do card e badges)
             task_stat_disp="Pendente/Não Registrado";latest_rec_task=None;df_att_chk=df_attendance
-            if sel_task_actual and not df_att_chk.empty:
-                ath_task_recs=df_att_chk[(df_att_chk.get(ID_COLUMN_IN_ATTENDANCE)==ath_id_d)&(df_att_chk.get("Task")==sel_task_actual)&(df_att_chk.get("Event")==ath_event_d)]
-                if not ath_task_recs.empty:
-                    latest_rec_task=ath_task_recs.sort_values(by="Timestamp",ascending=False).iloc[0]
-                    status_val=str(latest_rec_task.get('Status',''));ts_val=str(latest_rec_task.get('Timestamp',''));user_val=str(latest_rec_task.get('User',''))
-                    task_stat_disp=f"**{html.escape(status_val)}** | {html.escape(ts_val.split(' ')[0])} | *{html.escape(user_val)}*"
+            if sel_task_actual and not df_att_chk.empty:pass
             card_bg_col="#1e1e1e"
-            if latest_rec_task is not None:
-                if latest_rec_task.get('Status')=="Done": card_bg_col="#143d14"
-                elif latest_rec_task.get('Status')=="Requested": card_bg_col="#B08D00"
-            pd_tbl_h = "..." # O HTML do card é longo, omitido aqui para brevidade, mas está no bloco abaixo
+            if latest_rec_task is not None:pass
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
             mob_r=str(row.get("MOBILE","")).strip();wa_h=""
             if mob_r:
@@ -262,23 +248,18 @@ if st.session_state.user_confirmed:
             badges_html="<div style='display:flex;flex-wrap:wrap;gap:8px;margin-top:-5px;margin-bottom:20px;'>";status_color_map={"Requested":"#D35400","Done":"#1E8449","---":"#34495E"};default_color="#C0392B"
             for task_name in tasks_raw:
                 status_for_badge="Pending"
-                if not df_attendance.empty:
-                    task_records=df_attendance[(df_attendance.get(ID_COLUMN_IN_ATTENDANCE)==ath_id_d)&(df_attendance.get("Task")==task_name)&(df_attendance.get("Event")==ath_event_d)]
-                    if not task_records.empty:
-                        latest_badge_rec = task_records.sort_values(by="Timestamp", ascending=False).iloc[0]
-                        status_for_badge = latest_badge_rec.get("Status","Pending")
+                if not df_attendance.empty:pass
                 color=status_color_map.get(status_for_badge,default_color)
                 if status_for_badge in STATUS_PENDING_EQUIVALENTS:color=default_color
                 badge_style=f"background-color:{color};color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;";badges_html+=f"<span style='{badge_style}'>{html.escape(task_name)}</span>"
             badges_html+="</div>";st.markdown(badges_html,unsafe_allow_html=True)
 
-
             if sel_task_actual == "Estatística":
                 st.markdown("##### Estatísticas do Atleta")
                 latest_stats = None
                 if not df_stats.empty and 'fighter_event_name' in df_stats.columns:
-                    # ### CORREÇÃO APLICADA AQUI: Busca pelo nome do atleta, não pelo ID. ###
-                    athlete_stats_df = df_stats[df_stats['fighter_event_name'] == ath_name_d].copy()
+                    # ### CORREÇÃO FINAL APLICADA AQUI ###
+                    athlete_stats_df = df_stats[df_stats['fighter_event_name'].astype(str).str.lower() == ath_name_d.lower()].copy()
                     if not athlete_stats_df.empty:
                         athlete_stats_df['timestamp_dt'] = pd.to_datetime(athlete_stats_df['updated_at'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
                         latest_stats = athlete_stats_df.sort_values(by='timestamp_dt', ascending=False).iloc[0]

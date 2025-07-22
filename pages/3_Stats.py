@@ -107,6 +107,9 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         expected_cols = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
         for col in expected_cols:
             if col not in df_att.columns: df_att[col] = None
+        # Garante que a coluna de ID seja string para comparações seguras
+        if ID_COLUMN_IN_ATTENDANCE in df_att.columns:
+            df_att[ID_COLUMN_IN_ATTENDANCE] = df_att[ID_COLUMN_IN_ATTENDANCE].astype(str)
         return df_att
     except Exception as e: st.error(f"Erro ao carregar presença: {e}", icon="🚨"); return pd.DataFrame()
 
@@ -195,24 +198,25 @@ if st.session_state.user_confirmed:
             latest_attendance_rec = None
 
             if not df_attendance.empty:
+                # CORREÇÃO: Busca o status pelo ID do atleta, não pelo nome.
                 stats_records = df_attendance[
-                    (df_attendance["Name"].astype(str).str.lower() == ath_name_d.lower()) & 
+                    (df_attendance[ID_COLUMN_IN_ATTENDANCE] == ath_id_d) & 
                     (df_attendance["Task"] == "Estatística") & 
                     (df_attendance["Event"] == ath_event_d)
                 ]
                 if not stats_records.empty:
                     latest_attendance_rec = stats_records.sort_values(by="Timestamp", ascending=False).iloc[0]
                     status = latest_attendance_rec.get("Status", "")
-                    timestamp = latest_attendance_rec.get("Timestamp", "").split(' ')[0]
-                    user = latest_attendance_rec.get("User", "")
                     
-                    if status:
+                    if status: # Apenas atualiza se houver um status
+                        timestamp = latest_attendance_rec.get("Timestamp", "").split(' ')[0]
+                        user = latest_attendance_rec.get("User", "")
                         task_stat_disp = f"**{html.escape(status)}** | {html.escape(timestamp)} | *{html.escape(user)}*"
                     
                     if status == "Done":
-                        card_bg_col = "#143d14"  # Green
-                    elif status == "Requested": # (Caso queira adicionar outros status)
-                        card_bg_col = "#B08D00"  # Yellow/Gold
+                        card_bg_col = "#143d14"
+                    elif status == "Requested":
+                        card_bg_col = "#B08D00"
 
             # --- CARD DO ATLETA ---
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""

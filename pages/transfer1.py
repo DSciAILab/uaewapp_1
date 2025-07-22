@@ -42,11 +42,9 @@ def load_athlete_data():
         df.columns = df.columns.str.strip()
         df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        
         for col_check in ["IMAGE", "NAME", "EVENT", "FIGHT NUMBER", "CORNER"]:
             if col_check not in df.columns: df[col_check] = ""
             df[col_check] = df[col_check].fillna("")
-            
         return df
     except Exception as e: st.error(f"Erro ao carregar atletas: {e}", icon="🚨"); return pd.DataFrame()
 
@@ -85,8 +83,11 @@ def save_checkin_record(data: dict):
             if not match.empty:
                 existing_row_index = match.index[0]
 
-        # ATUALIZADO: Adicionada a nova coluna de status
-        headers = ['check_in_id', 'athlete_id', 'athlete_name', 'event', 'bus_number', 'passport', 'nails', 'cups', 'uniform', 'corners', 'transfer_type', 'updated_by', 'updated_at', 'check_in_status']
+        # ATUALIZADO: Nova lista de cabeçalhos
+        headers = ['check_in_id', 'athlete_id', 'athlete_name', 'event', 'bus_number', 
+                   'passport_status', 'nails_status', 'cups_status', 'uniform_status', 'mouthguard_status',
+                   'corner_1_status', 'corner_2_status', 'corner_3_status', 'notes',
+                   'transfer_type', 'updated_by', 'updated_at', 'check_in_status']
         
         if existing_row_index != -1:
             row_to_update = existing_row_index + 2
@@ -105,14 +106,13 @@ def save_checkin_record(data: dict):
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
 
-
 # --- Main Application Logic ---
 st.title("UAEW | Transfer & Check-In")
 default_ss = { "user_confirmed": False, "current_user_name": "User", "selected_event": "Todos os Eventos", "fighter_search_query": "", "selected_corner": "Todos os Corners" }
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
 
-st.session_state['user_confirmed'] = True # Simplificado para desenvolvimento
+st.session_state['user_confirmed'] = True # Simplificado
 
 if st.session_state.user_confirmed:
     st.header("Check-In e Atribuição de Atletas")
@@ -124,23 +124,15 @@ if st.session_state.user_confirmed:
     with c1: 
         event_list = ["Todos os Eventos"] + sorted([e for e in df_athletes["EVENT"].unique() if e and e != "Z"]) if not df_athletes.empty else []
         st.selectbox("Filtrar Evento:", options=event_list, key="selected_event")
-    with c2:
-        st.selectbox("Filtrar Corner:", ["Todos os Corners", "Red", "Blue"], key="selected_corner")
-    with c3: 
-        st.text_input("Pesquisar Lutador:", placeholder="Digite nome ou ID...", key="fighter_search_query")
-    with c4: 
-        st.markdown("<br>", True)
-        st.button("🔄 Atualizar", on_click=lambda:(load_athlete_data.clear(), load_transfer_checkin_data.clear(), st.toast("Dados atualizados!")))
+    with c2: st.selectbox("Filtrar Corner:", ["Todos os Corners", "Red", "Blue"], key="selected_corner")
+    with c3: st.text_input("Pesquisar Lutador:", placeholder="Digite nome ou ID...", key="fighter_search_query")
+    with c4: st.markdown("<br>", True); st.button("🔄 Atualizar", on_click=lambda:(load_athlete_data.clear(), load_transfer_checkin_data.clear(), st.toast("Dados atualizados!")))
 
     st.markdown("---")
 
     df_filtered = df_athletes.copy()
-    if st.session_state.selected_event != "Todos os Eventos": 
-        df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
-    
-    if st.session_state.selected_corner != "Todos os Corners":
-        df_filtered = df_filtered[df_filtered['CORNER'].str.lower() == st.session_state.selected_corner.lower()]
-        
+    if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
+    if st.session_state.selected_corner != "Todos os Corners": df_filtered = df_filtered[df_filtered['CORNER'].str.lower() == st.session_state.selected_corner.lower()]
     if st.session_state.fighter_search_query:
         term = st.session_state.fighter_search_query.strip().lower()
         df_filtered = df_filtered[df_filtered.apply(lambda r: term in str(r['NAME']).lower() or term in str(r['ID']), axis=1)]
@@ -152,75 +144,99 @@ if st.session_state.user_confirmed:
     st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
 
     for i, row in df_filtered.iterrows():
-        ath_id = str(row["ID"])
-        ath_name = str(row["NAME"])
-        ath_event = str(row["EVENT"])
-        ath_fight_number = str(row.get("FIGHT NUMBER", ""))
-        ath_corner_color = str(row.get("CORNER", ""))
+        ath_id, ath_name, ath_event = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
+        ath_fight_number, ath_corner_color = str(row.get("FIGHT NUMBER", "")), str(row.get("CORNER", ""))
         
         current_checkin = None
         if not df_checkin.empty and 'athlete_id' in df_checkin.columns and 'event' in df_checkin.columns:
             match = df_checkin[(df_checkin['athlete_id'].astype(str) == ath_id) & (df_checkin['event'] == ath_event)]
-            if not match.empty:
-                current_checkin = match.iloc[0]
+            if not match.empty: current_checkin = match.iloc[0]
 
-        # ATUALIZADO: Lógica de cor e status baseada na nova coluna
         checkin_status = current_checkin.get('check_in_status', 'Pending') if current_checkin is not None else 'Pending'
-        card_bg_col = "#1e1e1e" # Cinza (Pendente)
-        if checkin_status == 'Checked-In':
-            card_bg_col = "#B08D00" # Amarelo
-        elif checkin_status == 'Boarded':
-            card_bg_col = "#143d14" # Verde
+        card_bg_col = "#1e1e1e"
+        if checkin_status == 'Checked-In': card_bg_col = "#B08D00"
+        elif checkin_status == 'Boarded': card_bg_col = "#143d14"
 
         corner_tag_html = ""
-        if ath_corner_color.lower() == 'red':
-            corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
-        elif ath_corner_color.lower() == 'blue':
-            corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
-
+        if ath_corner_color.lower() == 'red': corner_tag_html = "<span style='background-color: #d9534f; ...'>RED</span>"
+        elif ath_corner_color.lower() == 'blue': corner_tag_html = "<span style='background-color: #428bca; ...'>BLUE</span>"
         info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
         if ath_fight_number: info_line += f" | Luta: {html.escape(ath_fight_number)}"
 
         st.markdown(f"""
         <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
             <img src='{html.escape(row.get("IMAGE",""))}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
-            <div>
-                <h5 style='margin:0; display:flex; align-items:center;'>{html.escape(ath_name)}{corner_tag_html}</h5>
-                <small style='color:#ccc;'>{info_line}</small>
-            </div>
+            <div><h5 style='margin:0; display:flex; align-items:center;'>{html.escape(ath_name)}{corner_tag_html}</h5><small style='color:#ccc;'>{info_line}</small></div>
         </div>""", unsafe_allow_html=True)
         
-        cols = st.columns([1, 1, 1, 1, 1, 2])
         is_boarded = (checkin_status == 'Boarded')
+        
+        # --- WIDGETS DE CHECK-IN ---
+        cols = st.columns(3)
+        # Funções helper para os dropdowns
+        def get_options_index(options, value):
+            try: return options.index(value)
+            except (ValueError, TypeError): return 0
 
+        # Opções dos dropdowns
+        verified_options = ["--", "Verified", "Don't have"]
+        officials_check_options = ["--", "Cutted", "Officials Check"]
+        uniform_check_options = ["--", "Verified", "Officials Check"]
+        corner_options = ["--", "Accredited", "Wristband Sent"]
+        
+        # Coluna 1
         with cols[0]:
-            st.checkbox("Passport", key=f"passport_{ath_id}", value=current_checkin is not None and current_checkin.get('passport') == 'TRUE', disabled=is_boarded)
-            st.checkbox("Nails", key=f"nails_{ath_id}", value=current_checkin is not None and current_checkin.get('nails') == 'TRUE', disabled=is_boarded)
+            passport_val = current_checkin.get('passport_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Passport", verified_options, key=f"passport_{ath_id}", index=get_options_index(verified_options, passport_val), disabled=is_boarded)
+            
+            cups_val = current_checkin.get('cups_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Cups", verified_options, key=f"cups_{ath_id}", index=get_options_index(verified_options, cups_val), disabled=is_boarded)
+
+            mouthguard_val = current_checkin.get('mouthguard_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Mouthguard", verified_options, key=f"mouthguard_{ath_id}", index=get_options_index(verified_options, mouthguard_val), disabled=is_boarded)
+        
+        # Coluna 2
         with cols[1]:
-            st.checkbox("Cups", key=f"cups_{ath_id}", value=current_checkin is not None and current_checkin.get('cups') == 'TRUE', disabled=is_boarded)
-            st.checkbox("Uniform", key=f"uniform_{ath_id}", value=current_checkin is not None and current_checkin.get('uniform') == 'TRUE', disabled=is_boarded)
+            nails_val = current_checkin.get('nails_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Nails", officials_check_options, key=f"nails_{ath_id}", index=get_options_index(officials_check_options, nails_val), disabled=is_boarded)
+
+            uniform_val = current_checkin.get('uniform_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Uniform", uniform_check_options, key=f"uniform_{ath_id}", index=get_options_index(uniform_check_options, uniform_val), disabled=is_boarded)
+            
+            c1_val = current_checkin.get('corner_1_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Corner 1", corner_options, key=f"c1_{ath_id}", index=get_options_index(corner_options, c1_val), disabled=is_boarded)
+
+        # Coluna 3
         with cols[2]:
-            corners_val = int(current_checkin['corners']) if current_checkin is not None and str(current_checkin.get('corners')).isdigit() else 1
-            st.selectbox("Corners", [1, 2, 3], key=f"corners_{ath_id}", index=corners_val - 1, disabled=is_boarded)
-        with cols[3]:
-            transfer_type_val = current_checkin['transfer_type'] if current_checkin is not None and current_checkin.get('transfer_type') else "Bus"
+            c2_val = current_checkin.get('corner_2_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Corner 2", corner_options, key=f"c2_{ath_id}", index=get_options_index(corner_options, c2_val), disabled=is_boarded)
+            
+            c3_val = current_checkin.get('corner_3_status', '--') if current_checkin is not None else '--'
+            st.selectbox("Corner 3", corner_options, key=f"c3_{ath_id}", index=get_options_index(corner_options, c3_val), disabled=is_boarded)
+            
+            transfer_type_val = current_checkin.get('transfer_type', 'Bus') if current_checkin is not None else 'Bus'
             st.selectbox("Transporte", ["Bus", "Own Transport"], key=f"transfer_type_{ath_id}", index=["Bus", "Own Transport"].index(transfer_type_val), disabled=is_boarded)
-        with cols[4]:
+
+        # Linha inferior para Ônibus, Notas e Botão
+        cols_bottom = st.columns([1, 2, 1])
+        with cols_bottom[0]:
             bus_number_val = str(current_checkin.get('bus_number', '')) if current_checkin is not None else ""
             st.text_input("Ônibus", key=f"bus_number_{ath_id}", value=bus_number_val, disabled=is_boarded)
-        with cols[5]:
+        with cols_bottom[1]:
+            notes_val = str(current_checkin.get('notes', '')) if current_checkin is not None else ""
+            st.text_area("Notes", key=f"notes_{ath_id}", value=notes_val, height=100, disabled=is_boarded)
+        with cols_bottom[2]:
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            # ATUALIZADO: Lógica condicional para os botões
             if checkin_status == 'Boarded':
                 st.success("Boarding Completo!")
             elif checkin_status == 'Checked-In':
                 if st.button("Boarding", key=f"board_{ath_id}", use_container_width=True):
-                    # Pega os dados existentes e apenas atualiza o status
                     data_to_board = current_checkin.to_dict()
-                    data_to_board['updated_by'] = st.session_state.get('current_user_name', 'System')
-                    data_to_board['updated_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                    data_to_board['check_in_status'] = "Boarded"
+                    data_to_board.update({
+                        'updated_by': st.session_state.get('current_user_name', 'System'),
+                        'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        'check_in_status': "Boarded"
+                    })
                     save_checkin_record(data_to_board)
                     st.rerun()
             else: # Status é 'Pending'
@@ -231,12 +247,15 @@ if st.session_state.user_confirmed:
                     checkin_data = {
                         'athlete_id': ath_id, 'athlete_name': ath_name, 'event': ath_event,
                         'bus_number': bus_number_to_save,
-                        'passport': st.session_state[f"passport_{ath_id}"], 'nails': st.session_state[f"nails_{ath_id}"],
-                        'cups': st.session_state[f"cups_{ath_id}"], 'uniform': st.session_state[f"uniform_{ath_id}"],
-                        'corners': st.session_state[f"corners_{ath_id}"], 'transfer_type': transfer_type,
+                        'passport_status': st.session_state[f"passport_{ath_id}"], 'nails_status': st.session_state[f"nails_{ath_id}"],
+                        'cups_status': st.session_state[f"cups_{ath_id}"], 'uniform_status': st.session_state[f"uniform_{ath_id}"],
+                        'mouthguard_status': st.session_state[f"mouthguard_{ath_id}"],
+                        'corner_1_status': st.session_state[f"c1_{ath_id}"], 'corner_2_status': st.session_state[f"c2_{ath_id}"], 'corner_3_status': st.session_state[f"c3_{ath_id}"],
+                        'notes': st.session_state[f"notes_{ath_id}"],
+                        'transfer_type': transfer_type,
                         'updated_by': st.session_state.get('current_user_name', 'System'),
                         'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        'check_in_status': "Checked-In" # Define o primeiro status
+                        'check_in_status': "Checked-In"
                     }
                     save_checkin_record(checkin_data)
                     st.rerun()

@@ -219,9 +219,44 @@ if st.session_state.user_confirmed:
         for i_l, row in df_to_display.iterrows():
             ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             
-            # --- Card e Badges ---
-            pass # (Código do Card e Badges omitido para brevidade, mas está aqui)
+            # --- CARD E BADGES RESTAURADOS ---
+            task_stat_disp="Pendente/Não Registrado";latest_rec_task=None
+            df_att_chk = df_attendance.copy()
+            if sel_task_actual and not df_att_chk.empty:
+                ath_task_recs=df_att_chk[(df_att_chk.get(ID_COLUMN_IN_ATTENDANCE).astype(str) == ath_id_d) & (df_att_chk.get("Task")==sel_task_actual) & (df_att_chk.get("Event")==ath_event_d)]
+                if not ath_task_recs.empty:
+                    latest_rec_task=ath_task_recs.sort_values(by="Timestamp",ascending=False).iloc[0]
+                    status_val=str(latest_rec_task.get('Status',''));ts_val=str(latest_rec_task.get('Timestamp',''));user_val=str(latest_rec_task.get('User',''))
+                    task_stat_disp=f"**{html.escape(status_val)}** | {html.escape(ts_val.split(' ')[0])} | *{html.escape(user_val)}*"
             
+            card_bg_col="#1e1e1e"
+            if latest_rec_task is not None:
+                if latest_rec_task.get('Status')=="Done": card_bg_col="#143d14"
+                elif latest_rec_task.get('Status')=="Requested": card_bg_col="#B08D00"
+            
+            pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
+            mob_r=str(row.get("MOBILE","")).strip();wa_h=""
+            if mob_r:
+                phone_digits="".join(filter(str.isdigit,mob_r));
+                if phone_digits.startswith('00'):phone_digits=phone_digits[2:]
+                if phone_digits:wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(phone_digits,True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
+            
+            pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
+            st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
+            
+            badges_html="<div style='display:flex;flex-wrap:wrap;gap:8px;margin-top:-5px;margin-bottom:20px;'>";status_color_map={"Requested":"#D35400","Done":"#1E8449","---":"#34495E"};default_color="#C0392B"
+            for task_name in tasks_raw:
+                status_for_badge="Pending"
+                if not df_attendance.empty:
+                    task_records=df_attendance[(df_attendance.get(ID_COLUMN_IN_ATTENDANCE).astype(str)==ath_id_d)&(df_attendance.get("Task")==task_name)&(df_attendance.get("Event")==ath_event_d)]
+                    if not task_records.empty:
+                        latest_badge_rec = task_records.sort_values(by="Timestamp", ascending=False).iloc[0]
+                        status_for_badge = latest_badge_rec.get("Status","Pending")
+                color=status_color_map.get(status_for_badge,default_color)
+                if status_for_badge in STATUS_PENDING_EQUIVALENTS:color=default_color
+                badge_style=f"background-color:{color};color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;";badges_html+=f"<span style='{badge_style}'>{html.escape(task_name)}</span>"
+            badges_html+="</div>";st.markdown(badges_html,unsafe_allow_html=True)
+
             if sel_task_actual == "Estatística":
                 st.markdown("##### Estatísticas do Atleta")
                 latest_stats = None
@@ -248,10 +283,8 @@ if st.session_state.user_confirmed:
                             try: st.session_state[key] = float(value) if field in ['weight_kg', 'height_cm', 'reach_cm'] else str(value)
                             except (ValueError, TypeError): st.session_state[key] = str(value)
 
-                # --- Botões de Ação ---
                 btn_cols = st.columns([0.4, 0.3, 0.3])
                 with btn_cols[1]:
-                    # NOVO BOTÃO: Confirmar Dados Atuais
                     if not is_editing and latest_stats is not None:
                         if st.button("✔️ Confirmar Dados", key=f"confirm_stats_{ath_id_d}", use_container_width=True):
                             data_to_confirm = latest_stats.to_dict()
@@ -267,7 +300,6 @@ if st.session_state.user_confirmed:
                         st.session_state[edit_mode_key] = not st.session_state[edit_mode_key]
                         st.rerun()
                 
-                # --- Campos de Input ---
                 c1, c2, c3 = st.columns(3); cols = [c1, c2, c3]; i = 0
                 field_labels = {'weight_kg': "Peso (kg)", 'height_cm': "Altura (cm)", 'reach_cm': "Envergadura (cm)", 'fight_style': "Estilo de Luta", 'country_of_representation': "País (Representação)", 'residence_city': "Cidade de Residência", 'team_name': "Nome da Equipe", 'tshirt_size': "Camiseta (Atleta)", 'tshirt_size_c1': "Camiseta (C1)", 'tshirt_size_c2': "Camiseta (C2)", 'tshirt_size_c3': "Camiseta (C3)"}
                 for field in editable_fields:

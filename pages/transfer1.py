@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
+import time # ADICIONADO para a pausa estratégica
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Transfer & Check-In", layout="wide")
@@ -101,9 +102,12 @@ def save_checkin_record(data: dict):
             ws.append_row(new_row, value_input_option="USER_ENTERED")
             st.success(f"Check-in de {data['athlete_name']} salvo com sucesso!");
         
+        # ATUALIZADO: Pausa de 1 segundo para garantir a consistência dos dados
+        time.sleep(1)
         load_transfer_checkin_data.clear()
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
+
 
 # --- Main Application Logic ---
 st.title("UAEW | Transfer & Check-In")
@@ -156,18 +160,12 @@ if st.session_state.user_confirmed:
         if checkin_status == 'Checked-In': card_bg_col = "#B08D00"
         elif checkin_status == 'Boarded': card_bg_col = "#143d14"
 
-        # ATUALIZADO: Novas tags com estilo aprimorado
-        fight_number_html = ""
-        if ath_fight_number:
-            fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-right: 10px;'>LUTA {html.escape(ath_fight_number)}</span>"
-        
+        fight_number_html = f"<span style='background-color: #4A4A4A; ...'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
         corner_tag_html = ""
-        if ath_corner_color.lower() == 'red':
-            corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>RED</span>"
-        elif ath_corner_color.lower() == 'blue':
-            corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
-
+        if ath_corner_color.lower() == 'red': corner_tag_html = "<span style='background-color: #d9534f; ...'>RED</span>"
+        elif ath_corner_color.lower() == 'blue': corner_tag_html = "<span style='background-color: #428bca; ...'>BLUE</span>"
         info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
+        if ath_fight_number: info_line += f" | Luta: {html.escape(ath_fight_number)}"
 
         st.markdown(f"""
         <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
@@ -178,7 +176,6 @@ if st.session_state.user_confirmed:
             </div>
         </div>""", unsafe_allow_html=True)
         
-        # ATUALIZADO: Nova variável para controlar o bloqueio dos campos
         is_locked = checkin_status in ['Checked-In', 'Boarded']
         
         cols = st.columns(3)
@@ -194,30 +191,22 @@ if st.session_state.user_confirmed:
         with cols[0]:
             passport_val = current_checkin.get('passport_status', '--') if current_checkin is not None else '--'
             st.selectbox("Passport", verified_options, key=f"passport_{ath_id}", index=get_options_index(verified_options, passport_val), disabled=is_locked)
-            
             cups_val = current_checkin.get('cups_status', '--') if current_checkin is not None else '--'
             st.selectbox("Cups", verified_options, key=f"cups_{ath_id}", index=get_options_index(verified_options, cups_val), disabled=is_locked)
-
             mouthguard_val = current_checkin.get('mouthguard_status', '--') if current_checkin is not None else '--'
             st.selectbox("Mouthguard", verified_options, key=f"mouthguard_{ath_id}", index=get_options_index(verified_options, mouthguard_val), disabled=is_locked)
-        
         with cols[1]:
             nails_val = current_checkin.get('nails_status', '--') if current_checkin is not None else '--'
             st.selectbox("Nails", officials_check_options, key=f"nails_{ath_id}", index=get_options_index(officials_check_options, nails_val), disabled=is_locked)
-
             uniform_val = current_checkin.get('uniform_status', '--') if current_checkin is not None else '--'
             st.selectbox("Uniform", uniform_check_options, key=f"uniform_{ath_id}", index=get_options_index(uniform_check_options, uniform_val), disabled=is_locked)
-            
             c1_val = current_checkin.get('corner_1_status', '--') if current_checkin is not None else '--'
             st.selectbox("Corner 1", corner_options, key=f"c1_{ath_id}", index=get_options_index(corner_options, c1_val), disabled=is_locked)
-
         with cols[2]:
             c2_val = current_checkin.get('corner_2_status', '--') if current_checkin is not None else '--'
             st.selectbox("Corner 2", corner_options, key=f"c2_{ath_id}", index=get_options_index(corner_options, c2_val), disabled=is_locked)
-            
             c3_val = current_checkin.get('corner_3_status', '--') if current_checkin is not None else '--'
             st.selectbox("Corner 3", corner_options, key=f"c3_{ath_id}", index=get_options_index(corner_options, c3_val), disabled=is_locked)
-            
             transfer_type_val = current_checkin.get('transfer_type', 'Bus') if current_checkin is not None else 'Bus'
             st.selectbox("Transporte", ["Bus", "Own Transport"], key=f"transfer_type_{ath_id}", index=["Bus", "Own Transport"].index(transfer_type_val), disabled=is_locked)
 
@@ -240,13 +229,12 @@ if st.session_state.user_confirmed:
                         'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                         'check_in_status': "Boarded"
                     })
-                    save_checkin_record(data_to_board)
-                    st.rerun()
+                    if save_checkin_record(data_to_board):
+                        st.rerun()
             else: # Status é 'Pending'
                 if st.button("Salvar Status", key=f"save_{ath_id}", use_container_width=True):
                     transfer_type = st.session_state[f"transfer_type_{ath_id}"]
                     bus_number_to_save = st.session_state[f"bus_number_{ath_id}"] if transfer_type == "Bus" else ""
-                    
                     checkin_data = {
                         'athlete_id': ath_id, 'athlete_name': ath_name, 'event': ath_event, 'bus_number': bus_number_to_save,
                         'passport_status': st.session_state[f"passport_{ath_id}"], 'nails_status': st.session_state[f"nails_{ath_id}"],
@@ -258,8 +246,8 @@ if st.session_state.user_confirmed:
                         'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                         'check_in_status': "Checked-In"
                     }
-                    save_checkin_record(checkin_data)
-                    st.rerun()
+                    if save_checkin_record(checkin_data):
+                        st.rerun()
 
         st.markdown("<hr>", unsafe_allow_html=True)
 else:

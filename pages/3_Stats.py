@@ -189,14 +189,32 @@ if st.session_state.user_confirmed:
         for i_l, row in df_filtered.iterrows():
             ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             
-            stats_status_rec = None
+            # --- LÓGICA DE STATUS E COR DO CARD (CORRIGIDA) ---
+            task_stat_disp = "Pendente"
+            card_bg_col = "#1e1e1e" # Default
+            latest_attendance_rec = None
+
             if not df_attendance.empty:
-                stats_records = df_attendance[(df_attendance["Name"].astype(str).str.lower() == ath_name_d.lower()) & (df_attendance["Task"] == "Estatística") & (df_attendance["Event"] == ath_event_d)]
+                stats_records = df_attendance[
+                    (df_attendance["Name"].astype(str).str.lower() == ath_name_d.lower()) & 
+                    (df_attendance["Task"] == "Estatística") & 
+                    (df_attendance["Event"] == ath_event_d)
+                ]
                 if not stats_records.empty:
-                    stats_status_rec = stats_records.sort_values(by="Timestamp", ascending=False).iloc[0]
-            
-            card_bg_col = "#143d14" if stats_status_rec is not None and stats_status_rec.get("Status") == "Done" else "#1e1e1e"
-            
+                    latest_attendance_rec = stats_records.sort_values(by="Timestamp", ascending=False).iloc[0]
+                    status = latest_attendance_rec.get("Status", "")
+                    timestamp = latest_attendance_rec.get("Timestamp", "").split(' ')[0]
+                    user = latest_attendance_rec.get("User", "")
+                    
+                    if status:
+                        task_stat_disp = f"**{html.escape(status)}** | {html.escape(timestamp)} | *{html.escape(user)}*"
+                    
+                    if status == "Done":
+                        card_bg_col = "#143d14"  # Green
+                    elif status == "Requested": # (Caso queira adicionar outros status)
+                        card_bg_col = "#B08D00"  # Yellow/Gold
+
+            # --- CARD DO ATLETA ---
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
             mob_r=str(row.get("MOBILE","")).strip();wa_h=""
             if mob_r:
@@ -205,8 +223,9 @@ if st.session_state.user_confirmed:
                 if phone_digits:wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(phone_digits,True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
             
             pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
-            st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p></div></div>{pd_tbl_h}</div></div>""",True)
-
+            st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
+            
+            # --- MÓDULO DE ESTATÍSTICAS ---
             st.markdown("##### Estatísticas do Atleta")
             latest_stats = None
             if not df_stats.empty and 'fighter_event_name' in df_stats.columns:

@@ -42,10 +42,12 @@ def load_athlete_data():
         df.columns = df.columns.str.strip()
         df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        # ATUALIZADO: Adiciona as novas colunas para garantir que existam
-        for col_check in ["IMAGE", "NAME", "EVENT", "FIGHT_NUMBER", "CORNER_COLOR"]:
+        
+        # ATUALIZADO: Garante que as colunas exatas existam no DataFrame
+        for col_check in ["IMAGE", "NAME", "EVENT", "FIGHT NUMBER", "CORNER"]:
             if col_check not in df.columns: df[col_check] = ""
             df[col_check] = df[col_check].fillna("")
+            
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
     except Exception as e: st.error(f"Erro ao carregar atletas: {e}", icon="🚨"); return pd.DataFrame()
 
@@ -57,7 +59,6 @@ def load_transfer_checkin_data():
         return pd.DataFrame(worksheet.get_all_records())
     except Exception as e: st.error(f"Erro ao carregar dados de check-in/transfer: {e}", icon="🚨"); return pd.DataFrame()
 
-# (As outras funções de carregamento e salvamento permanecem as mesmas)
 @st.cache_data(ttl=300)
 def load_users_data():
     try: gspread_client = get_gspread_client(); worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, USERS_TAB_NAME); return worksheet.get_all_records() or []
@@ -72,6 +73,7 @@ def get_valid_user_info(user_input: str):
         if ps_sheet == proc_input or name_sheet == proc_input: return record
     return None
 
+# --- 4. Data Writing Functions ---
 def save_checkin_record(data: dict):
     try:
         gspread_client = get_gspread_client(); ws = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, DF_TRANSFERS_TAB_NAME)
@@ -102,7 +104,6 @@ def save_checkin_record(data: dict):
         load_transfer_checkin_data.clear()
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
-
 
 # --- Main Application Logic ---
 st.title("UAEW | Transfer & Check-In")
@@ -139,17 +140,16 @@ if st.session_state.user_confirmed:
         ath_id = str(row["ID"])
         ath_name = str(row["NAME"])
         ath_event = str(row["EVENT"])
-        ath_fight_number = str(row.get("FIGHT_NUMBER", ""))
-        ath_corner_color = str(row.get("CORNER_COLOR", ""))
+        # ATUALIZADO: Usando os nomes corretos das colunas
+        ath_fight_number = str(row.get("FIGHT NUMBER", ""))
+        ath_corner_color = str(row.get("CORNER", ""))
         
-        # ATUALIZADO: Lógica para criar a tag de cor do corner
         corner_tag_html = ""
         if ath_corner_color.lower() == 'red':
             corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
         elif ath_corner_color.lower() == 'blue':
             corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
 
-        # ATUALIZADO: Lógica para criar a linha de informações com o número da luta
         info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
         if ath_fight_number:
             info_line += f" | Luta: {html.escape(ath_fight_number)}"

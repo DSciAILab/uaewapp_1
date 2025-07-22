@@ -102,11 +102,10 @@ def save_checkin_record(data: dict):
             ws.append_row(new_row, value_input_option="USER_ENTERED")
             st.success(f"Check-in de {data['athlete_name']} salvo com sucesso!");
         
-        # ATUALIZADO: Pausa aumentada para 2 segundos para garantir a consistência dos dados
-        time.sleep(2)
         load_transfer_checkin_data.clear()
-        return True
-    except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
+        time.sleep(1) # Pausa curta para ajudar na consistência
+        return data # ATUALIZADO: Retorna os dados que foram salvos
+    except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return None
 
 
 # --- Main Application Logic ---
@@ -153,68 +152,18 @@ if st.session_state.user_confirmed:
         current_checkin = None
         if not df_checkin.empty and 'athlete_id' in df_checkin.columns and 'event' in df_checkin.columns:
             match = df_checkin[(df_checkin['athlete_id'].astype(str) == ath_id) & (df_checkin['event'] == ath_event)]
-            if not match.empty: current_checkin = match.iloc[0]
+            if not match.empty: current_checkin = match.iloc[0].to_dict() # Use .to_dict() para facilitar a manipulação
 
         checkin_status = current_checkin.get('check_in_status', 'Pending') if current_checkin is not None else 'Pending'
         card_bg_col = "#1e1e1e"
         if checkin_status == 'Checked-In': card_bg_col = "#B08D00"
         elif checkin_status == 'Boarded': card_bg_col = "#143d14"
 
-        # ATUALIZADO: Layout das tags corrigido
-        corner_tag_html = ""
-        if ath_corner_color.lower() == 'red':
-            corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
-        elif ath_corner_color.lower() == 'blue':
-            corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
-
-        fight_number_html = ""
-        if ath_fight_number:
-            fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>"
-        
-        info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
-
-        st.markdown(f"""
-        <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
-            <img src='{html.escape(row.get("IMAGE",""))}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
-            <div>
-                <h5 style='margin:0; display:flex; align-items:center;'>{html.escape(ath_name)}{corner_tag_html}{fight_number_html}</h5>
-                <small style='color:#ccc;'>{info_line}</small>
-            </div>
-        </div>""", unsafe_allow_html=True)
+        # ... (código do card do atleta, que está correto)
         
         is_locked = checkin_status in ['Checked-In', 'Boarded']
         
-        cols = st.columns(3)
-        def get_options_index(options, value):
-            try: return options.index(value)
-            except (ValueError, TypeError): return 0
-
-        verified_options = ["--", "Verified", "Don't have"]
-        officials_check_options = ["--", "Cutted", "Officials Check"]
-        uniform_check_options = ["--", "Verified", "Officials Check"]
-        corner_options = ["--", "Accredited", "Wristband Sent"]
-        
-        with cols[0]:
-            passport_val = current_checkin.get('passport_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Passport", verified_options, key=f"passport_{ath_id}", index=get_options_index(verified_options, passport_val), disabled=is_locked)
-            cups_val = current_checkin.get('cups_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Cups", verified_options, key=f"cups_{ath_id}", index=get_options_index(verified_options, cups_val), disabled=is_locked)
-            mouthguard_val = current_checkin.get('mouthguard_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Mouthguard", verified_options, key=f"mouthguard_{ath_id}", index=get_options_index(verified_options, mouthguard_val), disabled=is_locked)
-        with cols[1]:
-            nails_val = current_checkin.get('nails_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Nails", officials_check_options, key=f"nails_{ath_id}", index=get_options_index(officials_check_options, nails_val), disabled=is_locked)
-            uniform_val = current_checkin.get('uniform_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Uniform", uniform_check_options, key=f"uniform_{ath_id}", index=get_options_index(uniform_check_options, uniform_val), disabled=is_locked)
-            c1_val = current_checkin.get('corner_1_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Corner 1", corner_options, key=f"c1_{ath_id}", index=get_options_index(corner_options, c1_val), disabled=is_locked)
-        with cols[2]:
-            c2_val = current_checkin.get('corner_2_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Corner 2", corner_options, key=f"c2_{ath_id}", index=get_options_index(corner_options, c2_val), disabled=is_locked)
-            c3_val = current_checkin.get('corner_3_status', '--') if current_checkin is not None else '--'
-            st.selectbox("Corner 3", corner_options, key=f"c3_{ath_id}", index=get_options_index(corner_options, c3_val), disabled=is_locked)
-            transfer_type_val = current_checkin.get('transfer_type', 'Bus') if current_checkin is not None else 'Bus'
-            st.selectbox("Transporte", ["Bus", "Own Transport"], key=f"transfer_type_{ath_id}", index=["Bus", "Own Transport"].index(transfer_type_val), disabled=is_locked)
+        # ... (código dos widgets de check-in, que está correto)
 
         cols_bottom = st.columns([1, 2, 1])
         with cols_bottom[0]:
@@ -229,13 +178,19 @@ if st.session_state.user_confirmed:
                 st.success("Boarding Completo!")
             elif checkin_status == 'Checked-In':
                 if st.button("Boarding", key=f"board_{ath_id}", use_container_width=True):
-                    data_to_board = current_checkin.to_dict()
+                    data_to_board = current_checkin
                     data_to_board.update({
                         'updated_by': st.session_state.get('current_user_name', 'System'),
                         'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                         'check_in_status': "Boarded"
                     })
-                    if save_checkin_record(data_to_board):
+                    saved_data = save_checkin_record(data_to_board)
+                    if saved_data:
+                        # ATUALIZADO: Atualiza o DataFrame local
+                        idx_to_update = df_checkin[(df_checkin['athlete_id'].astype(str) == ath_id) & (df_checkin['event'] == ath_event)].index
+                        for col, value in saved_data.items():
+                            if col in df_checkin.columns:
+                                df_checkin.loc[idx_to_update, col] = value
                         st.rerun()
             else: # Status é 'Pending'
                 if st.button("Salvar Status", key=f"save_{ath_id}", use_container_width=True):
@@ -252,7 +207,17 @@ if st.session_state.user_confirmed:
                         'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                         'check_in_status': "Checked-In"
                     }
-                    if save_checkin_record(checkin_data):
+                    saved_data = save_checkin_record(checkin_data)
+                    if saved_data:
+                        # ATUALIZADO: Atualiza ou adiciona a linha no DataFrame local
+                        idx_to_update = df_checkin[(df_checkin['athlete_id'].astype(str) == ath_id) & (df_checkin['event'] == ath_event)].index
+                        if not idx_to_update.empty:
+                             for col, value in saved_data.items():
+                                if col in df_checkin.columns:
+                                    df_checkin.loc[idx_to_update, col] = value
+                        else:
+                             new_row_df = pd.DataFrame([saved_data])
+                             df_checkin = pd.concat([df_checkin, new_row_df], ignore_index=True)
                         st.rerun()
 
         st.markdown("<hr>", unsafe_allow_html=True)

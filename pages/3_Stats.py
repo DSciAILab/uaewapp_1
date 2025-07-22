@@ -107,7 +107,6 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         expected_cols = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
         for col in expected_cols:
             if col not in df_att.columns: df_att[col] = None
-        # Garante que a coluna de ID seja string para comparações seguras
         if ID_COLUMN_IN_ATTENDANCE in df_att.columns:
             df_att[ID_COLUMN_IN_ATTENDANCE] = df_att[ID_COLUMN_IN_ATTENDANCE].astype(str)
         return df_att
@@ -192,13 +191,9 @@ if st.session_state.user_confirmed:
         for i_l, row in df_filtered.iterrows():
             ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
             
-            # --- LÓGICA DE STATUS E COR DO CARD (CORRIGIDA) ---
             task_stat_disp = "Pendente"
-            card_bg_col = "#1e1e1e" # Default
-            latest_attendance_rec = None
-
+            card_bg_col = "#1e1e1e"
             if not df_attendance.empty:
-                # CORREÇÃO: Busca o status pelo ID do atleta, não pelo nome.
                 stats_records = df_attendance[
                     (df_attendance[ID_COLUMN_IN_ATTENDANCE] == ath_id_d) & 
                     (df_attendance["Task"] == "Estatística") & 
@@ -207,29 +202,24 @@ if st.session_state.user_confirmed:
                 if not stats_records.empty:
                     latest_attendance_rec = stats_records.sort_values(by="Timestamp", ascending=False).iloc[0]
                     status = latest_attendance_rec.get("Status", "")
-                    
-                    if status: # Apenas atualiza se houver um status
-                        timestamp = latest_attendance_rec.get("Timestamp", "").split(' ')[0]
-                        user = latest_attendance_rec.get("User", "")
+                    if status:
+                        # --- CORREÇÃO APLICADA AQUI ---
+                        timestamp_val = str(latest_attendance_rec.get("Timestamp", ""))
+                        timestamp = timestamp_val.split(' ')[0] if ' ' in timestamp_val else timestamp_val
+                        user = str(latest_attendance_rec.get("User", ""))
                         task_stat_disp = f"**{html.escape(status)}** | {html.escape(timestamp)} | *{html.escape(user)}*"
-                    
-                    if status == "Done":
-                        card_bg_col = "#143d14"
-                    elif status == "Requested":
-                        card_bg_col = "#B08D00"
+                    if status == "Done": card_bg_col = "#143d14"
+                    elif status == "Requested": card_bg_col = "#B08D00"
 
-            # --- CARD DO ATLETA ---
             pass_img_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte Img:</b></td><td><a href='{html.escape(str(row.get('PASSPORT IMAGE','')),True)}' target='_blank' style='color:#00BFFF;'>Ver Imagem</a></td></tr>" if pd.notna(row.get("PASSPORT IMAGE"))and row.get("PASSPORT IMAGE")else ""
             mob_r=str(row.get("MOBILE","")).strip();wa_h=""
             if mob_r:
                 phone_digits="".join(filter(str.isdigit,mob_r));
                 if phone_digits.startswith('00'):phone_digits=phone_digits[2:]
                 if phone_digits:wa_h=f"<tr><td style='padding-right:10px;white-space:nowrap;'><b>WhatsApp:</b></td><td><a href='https://wa.me/{html.escape(phone_digits,True)}' target='_blank' style='color:#00BFFF;'>Msg</a></td></tr>"
-            
             pd_tbl_h=f"""<div style='flex-basis:350px;flex-grow:1;'><table style='font-size:14px;color:white;border-collapse:collapse;width:100%;'><tr><td style='padding-right:10px;white-space:nowrap;'><b>Gênero:</b></td><td>{html.escape(str(row.get("GENDER","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nascimento:</b></td><td>{html.escape(str(row.get("DOB","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Nacionalidade:</b></td><td>{html.escape(str(row.get("NATIONALITY","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Passaporte:</b></td><td>{html.escape(str(row.get("PASSPORT","")))}</td></tr><tr><td style='padding-right:10px;white-space:nowrap;'><b>Expira em:</b></td><td>{html.escape(str(row.get("PASSPORT EXPIRE DATE","")))}</td></tr>{pass_img_h}{wa_h}</table></div>"""if st.session_state.show_personal_data else"<div style='flex-basis:300px;flex-grow:1;font-style:italic;color:#ccc;font-size:13px;text-align:center;'>Dados pessoais ocultos.</div>"
             st.markdown(f"""<div style='background-color:{card_bg_col};padding:20px;border-radius:10px;margin-bottom:15px;box-shadow:2px 2px 5px rgba(0,0,0,0.3);'><div style='display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;'><div style='display:flex;align-items:center;gap:15px;flex-basis:300px;flex-grow:1;'><img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/80?text=No+Image")if pd.notna(row.get("IMAGE"))and row.get("IMAGE")else"https://via.placeholder.com/80?text=No+Image",True)}' style='width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid white;'><div><h4 style='margin:0;text-align:center;font-size:1.5em;'>{html.escape(ath_name_d)}</h4><p style='margin:0;font-size:14px;color:#cccccc;text-align:center;'>{html.escape(ath_event_d)}</p><p style='margin:0;font-size:13px;color:#cccccc;text-align:center;'>ID: {html.escape(ath_id_d)}</p><p style='margin:0;font-size:13px;color:#a0f0a0;text-align:center;'>{task_stat_disp}</p></div></div>{pd_tbl_h}</div></div>""",True)
             
-            # --- MÓDULO DE ESTATÍSTICAS ---
             st.markdown("##### Estatísticas do Atleta")
             latest_stats = None
             if not df_stats.empty and 'fighter_event_name' in df_stats.columns:

@@ -42,7 +42,8 @@ def load_athlete_data():
         df.columns = df.columns.str.strip()
         df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        for col_check in ["IMAGE", "PASSPORT IMAGE", "MOBILE", "GENDER", "NAME", "EVENT"]:
+        # ATUALIZADO: Adiciona as novas colunas para garantir que existam
+        for col_check in ["IMAGE", "NAME", "EVENT", "FIGHT_NUMBER", "CORNER_COLOR"]:
             if col_check not in df.columns: df[col_check] = ""
             df[col_check] = df[col_check].fillna("")
         return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
@@ -56,6 +57,7 @@ def load_transfer_checkin_data():
         return pd.DataFrame(worksheet.get_all_records())
     except Exception as e: st.error(f"Erro ao carregar dados de check-in/transfer: {e}", icon="🚨"); return pd.DataFrame()
 
+# (As outras funções de carregamento e salvamento permanecem as mesmas)
 @st.cache_data(ttl=300)
 def load_users_data():
     try: gspread_client = get_gspread_client(); worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, USERS_TAB_NAME); return worksheet.get_all_records() or []
@@ -70,7 +72,6 @@ def get_valid_user_info(user_input: str):
         if ps_sheet == proc_input or name_sheet == proc_input: return record
     return None
 
-# --- 4. Data Writing Functions ---
 def save_checkin_record(data: dict):
     try:
         gspread_client = get_gspread_client(); ws = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, DF_TRANSFERS_TAB_NAME)
@@ -101,6 +102,7 @@ def save_checkin_record(data: dict):
         load_transfer_checkin_data.clear()
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
+
 
 # --- Main Application Logic ---
 st.title("UAEW | Transfer & Check-In")
@@ -134,12 +136,31 @@ if st.session_state.user_confirmed:
     st.markdown(f"Exibindo **{len(df_filtered)}** atletas.")
 
     for i, row in df_filtered.iterrows():
-        ath_id, ath_name, ath_event = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
+        ath_id = str(row["ID"])
+        ath_name = str(row["NAME"])
+        ath_event = str(row["EVENT"])
+        ath_fight_number = str(row.get("FIGHT_NUMBER", ""))
+        ath_corner_color = str(row.get("CORNER_COLOR", ""))
         
+        # ATUALIZADO: Lógica para criar a tag de cor do corner
+        corner_tag_html = ""
+        if ath_corner_color.lower() == 'red':
+            corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
+        elif ath_corner_color.lower() == 'blue':
+            corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
+
+        # ATUALIZADO: Lógica para criar a linha de informações com o número da luta
+        info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
+        if ath_fight_number:
+            info_line += f" | Luta: {html.escape(ath_fight_number)}"
+
         st.markdown(f"""
         <div style='background-color:#1e1e1e;padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
             <img src='{html.escape(row.get("IMAGE",""))}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
-            <div><h5 style='margin:0;'>{html.escape(ath_name)}</h5><small style='color:#ccc;'>ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}</small></div>
+            <div>
+                <h5 style='margin:0; display:flex; align-items:center;'>{html.escape(ath_name)}{corner_tag_html}</h5>
+                <small style='color:#ccc;'>{info_line}</small>
+            </div>
         </div>""", unsafe_allow_html=True)
 
         current_checkin = None
@@ -148,7 +169,6 @@ if st.session_state.user_confirmed:
             if not match.empty:
                 current_checkin = match.iloc[0]
         
-        # ATUALIZADO: Layout de colunas para incluir o campo de ônibus
         cols = st.columns([1, 1, 1, 1, 1, 2])
         with cols[0]:
             st.checkbox("Passport", key=f"passport_{ath_id}", value=current_checkin is not None and current_checkin.get('passport') == 'TRUE')
@@ -163,13 +183,11 @@ if st.session_state.user_confirmed:
             transfer_type_val = current_checkin['transfer_type'] if current_checkin is not None and current_checkin.get('transfer_type') else "Bus"
             st.selectbox("Transporte", ["Bus", "Own Transport"], key=f"transfer_type_{ath_id}", index=["Bus", "Own Transport"].index(transfer_type_val))
         with cols[4]:
-            # ATUALIZADO: Caixa de texto para o número do ônibus
             bus_number_val = str(current_checkin.get('bus_number', '')) if current_checkin is not None else ""
             st.text_input("Ônibus", key=f"bus_number_{ath_id}", value=bus_number_val)
         with cols[5]:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Salvar Status", key=f"save_{ath_id}", use_container_width=True):
-                # ATUALIZADO: Lógica de salvamento para pegar o valor do campo de texto individual
                 transfer_type = st.session_state[f"transfer_type_{ath_id}"]
                 bus_number_to_save = st.session_state[f"bus_number_{ath_id}"] if transfer_type == "Bus" else ""
                 

@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
-import time # ADICIONADO para a pausa estratégica
+import time
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Transfer & Check-In", layout="wide")
@@ -102,8 +102,8 @@ def save_checkin_record(data: dict):
             ws.append_row(new_row, value_input_option="USER_ENTERED")
             st.success(f"Check-in de {data['athlete_name']} salvo com sucesso!");
         
-        # ATUALIZADO: Pausa de 1 segundo para garantir a consistência dos dados
-        time.sleep(1)
+        # ATUALIZADO: Pausa aumentada para 2 segundos para garantir a consistência dos dados
+        time.sleep(2)
         load_transfer_checkin_data.clear()
         return True
     except Exception as e: st.error(f"Erro ao salvar check-in: {e}", icon="🚨"); return False
@@ -160,18 +160,24 @@ if st.session_state.user_confirmed:
         if checkin_status == 'Checked-In': card_bg_col = "#B08D00"
         elif checkin_status == 'Boarded': card_bg_col = "#143d14"
 
-        fight_number_html = f"<span style='background-color: #4A4A4A; ...'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
+        # ATUALIZADO: Layout das tags corrigido
         corner_tag_html = ""
-        if ath_corner_color.lower() == 'red': corner_tag_html = "<span style='background-color: #d9534f; ...'>RED</span>"
-        elif ath_corner_color.lower() == 'blue': corner_tag_html = "<span style='background-color: #428bca; ...'>BLUE</span>"
+        if ath_corner_color.lower() == 'red':
+            corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
+        elif ath_corner_color.lower() == 'blue':
+            corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
+
+        fight_number_html = ""
+        if ath_fight_number:
+            fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>"
+        
         info_line = f"ID: {html.escape(ath_id)} | Evento: {html.escape(ath_event)}"
-        if ath_fight_number: info_line += f" | Luta: {html.escape(ath_fight_number)}"
 
         st.markdown(f"""
         <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
             <img src='{html.escape(row.get("IMAGE",""))}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
             <div>
-                <h5 style='margin:0; display:flex; align-items:center;'>{fight_number_html}{html.escape(ath_name)}{corner_tag_html}</h5>
+                <h5 style='margin:0; display:flex; align-items:center;'>{html.escape(ath_name)}{corner_tag_html}{fight_number_html}</h5>
                 <small style='color:#ccc;'>{info_line}</small>
             </div>
         </div>""", unsafe_allow_html=True)

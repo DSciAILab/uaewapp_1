@@ -689,9 +689,15 @@ def reports_page():
                 
                 # Sort by timestamp (most recent first)
                 if "Timestamp" in task_records.columns:
-                    task_records["TS_dt"] = pd.to_datetime(task_records["Timestamp"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+                    # Convert to string and handle NaN values before parsing
+                    task_records["Timestamp_str"] = task_records["Timestamp"].astype(str).fillna('')
+                    task_records["TS_dt"] = pd.to_datetime(
+                        task_records["Timestamp_str"], 
+                        format="%d/%m/%Y %H:%M:%S", 
+                        errors="coerce"
+                    )
                     task_records = task_records.sort_values("TS_dt", ascending=False)
-                    task_records = task_records.drop(columns=["TS_dt"])
+                    task_records = task_records.drop(columns=["TS_dt", "Timestamp_str"])
                 
                 # Display relevant columns
                 display_cols = ["#", "Name", "Event", "Status", "User", "Timestamp", "Notes"]
@@ -739,9 +745,15 @@ def reports_page():
             if not user_records.empty:
                 # Sort by timestamp (most recent first)
                 if "Timestamp" in user_records.columns:
-                    user_records["TS_dt"] = pd.to_datetime(user_records["Timestamp"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+                    # Convert to string and handle NaN values before parsing
+                    user_records["Timestamp_str"] = user_records["Timestamp"].astype(str).fillna('')
+                    user_records["TS_dt"] = pd.to_datetime(
+                        user_records["Timestamp_str"], 
+                        format="%d/%m/%Y %H:%M:%S", 
+                        errors="coerce"
+                    )
                     user_records = user_records.sort_values("TS_dt", ascending=False)
-                    user_records = user_records.drop(columns=["TS_dt"])
+                    user_records = user_records.drop(columns=["TS_dt", "Timestamp_str"])
                 
                 # Display relevant columns
                 display_cols = ["#", "Name", "Event", "Task", "Status", "Timestamp", "Notes"]
@@ -789,9 +801,15 @@ def reports_page():
             if not event_records.empty:
                 # Sort by timestamp (most recent first)
                 if "Timestamp" in event_records.columns:
-                    event_records["TS_dt"] = pd.to_datetime(event_records["Timestamp"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+                    # Convert to string and handle NaN values before parsing
+                    event_records["Timestamp_str"] = event_records["Timestamp"].astype(str).fillna('')
+                    event_records["TS_dt"] = pd.to_datetime(
+                        event_records["Timestamp_str"], 
+                        format="%d/%m/%Y %H:%M:%S", 
+                        errors="coerce"
+                    )
                     event_records = event_records.sort_values("TS_dt", ascending=False)
-                    event_records = event_records.drop(columns=["TS_dt"])
+                    event_records = event_records.drop(columns=["TS_dt", "Timestamp_str"])
                 
                 # Display relevant columns
                 display_cols = ["#", "Name", "Task", "Status", "User", "Timestamp", "Notes"]
@@ -833,22 +851,3 @@ def reports_page():
             )
         else:
             st.warning("Não há dados para exportar.")
-
-# --- Main Application ---
-if __name__ == "__main__":
-    # Initialize session state
-    if "page" not in st.session_state:
-        st.session_state.page = "home"
-    
-    # Set page configuration
-    st.set_page_config(page_title="UAEW | Task Control", layout="wide")
-    
-    # Display the appropriate page
-    if st.session_state.page == "home":
-        home_page()
-    elif st.session_state.page == "task_control":
-        task_control_page()
-    elif st.session_state.page == "athletes_management":
-        athletes_management_page()
-    elif st.session_state.page == "reports":
-        reports_page()

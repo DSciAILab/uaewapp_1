@@ -204,9 +204,11 @@ def home_page():
         with col1:
             st.metric("Total de Atletas", len(df_athletes))
         with col2:
-            if not df_attendance.empty:
+            if not df_attendance.empty and 'Timestamp' in df_attendance.columns:
                 today = datetime.now().strftime("%d/%m/%Y")
-                today_records = df_attendance[df_attendance['Timestamp'].str.startswith(today)]
+                # Convert to string and handle NaN values
+                df_attendance['Timestamp_str'] = df_attendance['Timestamp'].astype(str).fillna('')
+                today_records = df_attendance[df_attendance['Timestamp_str'].str.startswith(today)]
                 st.metric("Registros Hoje", len(today_records))
             else:
                 st.metric("Registros Hoje", 0)
@@ -232,7 +234,7 @@ def home_page():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
-
+            
 def task_control_page():
     st.title("UAEW | Task Control")
     

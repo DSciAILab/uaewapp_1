@@ -14,7 +14,7 @@ from auth import check_authentication, display_user_sidebar
 check_authentication()
 
 # --- 1. Page Configuration ---
-st.set_page_config(page_title="UAEW | Blood Test", layout="wide")
+st.set_page_config(page_title="Blood Test", layout="wide")
 
 # --- CSS for Responsive Cards ---
 st.markdown("""

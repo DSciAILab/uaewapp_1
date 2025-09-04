@@ -7,6 +7,7 @@ from google.oauth2.service_account import Credentials
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App" 
 USERS_TAB_NAME = "Users"
+CONFIG_TAB_NAME = "Config"
 
 # --- 2. Google Sheets Connection ---
 @st.cache_resource(ttl=3600)
@@ -56,3 +57,24 @@ def get_valid_user_info(user_input: str, sheet_name: str = MAIN_SHEET_NAME, user
         ps_sheet = str(record.get("PS", "")).strip(); name_sheet = str(record.get("USER", "")).strip().upper()
         if ps_sheet == val_id_input or ("PS" + ps_sheet) == proc_input or name_sheet == proc_input or ps_sheet == proc_input: return record
     return None
+
+@st.cache_data(ttl=600)
+def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = CONFIG_TAB_NAME):
+    try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab_name)
+        data = worksheet.get_all_values()
+        if not data or len(data) < 1: 
+            st.error(f"Aba '{config_tab_name}' vazia/sem cabeçalho.", icon="🚨")
+            return [],[]
+        df_conf = pd.DataFrame(data[1:], columns=data[0])
+        tasks = df_conf["TaskList"].dropna().unique().tolist() if "TaskList" in df_conf.columns else []
+        statuses = df_conf["TaskStatus"].dropna().unique().tolist() if "TaskStatus" in df_conf.columns else []
+        if not tasks: 
+            st.warning(f"'TaskList' não encontrada/vazia em '{config_tab_name}'.", icon="⚠️")
+        if not statuses: 
+            st.warning(f"'TaskStatus' não encontrada/vazia em '{config_tab_name}'.", icon="⚠️")
+        return tasks, statuses
+    except Exception as e: 
+        st.error(f"Erro ao carregar config '{config_tab_name}': {e}", icon="🚨")
+        return [], []

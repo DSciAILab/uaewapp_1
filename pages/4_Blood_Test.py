@@ -69,6 +69,10 @@ st.markdown("""
         .card-body {
             padding-top: 8px;
         }
+        .mobile-button-row div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            gap: 10px;
+        }
     }
 
     /* --- Custom Button Styles --- */
@@ -396,10 +400,10 @@ for i_l, row in df_filtered.iterrows():
 
     with col_buttons:
         uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-        st.write(" "); st.write(" ") # Espaçamento vertical
 
         if curr_ath_task_stat == STATUS_REQUESTED:
             # Se a tarefa foi solicitada, mostrar opções de Concluir e Cancelar
+            st.markdown("<div class='mobile-button-row' style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
                 st.markdown("<div class='green-button'>", unsafe_allow_html=True)
@@ -413,11 +417,14 @@ for i_l, row in df_filtered.iterrows():
                     if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_BASE, "Solicitação cancelada", uid_l):
                         time.sleep(1); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
             # Se estiver Pendente ou Concluído, mostrar botão para (re)solicitar
+            st.markdown("<div style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_label = "📝 Request Again" if curr_ath_task_stat == STATUS_DONE else "📝 Request"
             btn_type = "secondary" if curr_ath_task_stat == STATUS_DONE else "primary"
             if st.button(btn_label, key=f"request_{ath_id_d}_{i_l}", type=btn_type, use_container_width=True):
                 if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_REQUESTED, "", uid_l):
                     time.sleep(1); st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
     st.divider()

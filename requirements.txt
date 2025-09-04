@@ -1,7 +1,7 @@
 streamlit
 pandas
-gspread==5.7.2
-google-auth==2.20.0
+gspread
+google-auth
 streamlit-autorefresh
 streamlit-drawable-canvas
 

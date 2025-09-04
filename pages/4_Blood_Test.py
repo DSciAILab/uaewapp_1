@@ -15,6 +15,64 @@ check_authentication()
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Blood Test", layout="wide")
 
+# --- CSS for Responsive Cards ---
+st.markdown("""
+<style>
+    /* --- General Card Styles --- */
+    .card-container {
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .card-img {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+    .card-info {
+        width: 100%;
+    }
+    .card-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 5px;
+    }
+    .fighter-name {
+        font-size: 1.25rem;
+        font-weight: bold;
+        margin: 0;
+        color: white;
+    }
+    .fight-details, .contact-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    /* --- Mobile Styles --- */
+    @media (max-width: 768px) {
+        .card-container {
+            align-items: flex-start;
+        }
+        .card-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .card-body {
+            padding-top: 8px;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App"
 ATHLETES_TAB_NAME = "df"
@@ -232,7 +290,7 @@ if not df_filtered.empty:
     requested_count = (df_filtered['current_task_status'] == STATUS_REQUESTED).sum()
     pending_count = (df_filtered['current_task_status'] == STATUS_BASE).sum()
 
-    summary_html = f"""
+    summary_html = f'''
     <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 10px; margin-top: 10px;">
         <span style="font-weight: bold;">Exibindo {len(df_filtered)} de {len(df_athletes)} atletas:</span>
         <span style="background-color: {STATUS_COLOR_MAP[STATUS_DONE]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">
@@ -244,7 +302,7 @@ if not df_filtered.empty:
         <span style="background-color: #6c757d; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">
             Pending/Cancelled: {pending_count}
         </span>
-    </div>"""
+    </div>'''
     st.markdown(summary_html, unsafe_allow_html=True)
 
 st.divider()
@@ -264,29 +322,29 @@ for i_l, row in df_filtered.iterrows():
         phone_digits = "".join(filter(str.isdigit, mobile_number))
         if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
         if phone_digits:
-            whatsapp_tag_html = f"""<a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='text-decoration: none;'>
-                                   <span style='background-color: #25D366; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>📞 WhatsApp</span>
-                               </a>"""
+            whatsapp_tag_html = f'''<a href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank' style='text-decoration: none;'>
+                                   <span style='background-color: #25D366; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>📞 WhatsApp</span>
+                               </a>'''
 
     # Cria o label/tag para o Passaporte
     passport_tag_html = ""
     if passport_image_url and passport_image_url.startswith("http"):
-        passport_tag_html = f"""<a href='{html.escape(passport_image_url, True)}' target='_blank' style='text-decoration: none;'>
-                                 <span style='background-color: #007BFF; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>🛂 Passaporte</span>
-                             </a>"""
+        passport_tag_html = f'''<a href='{html.escape(passport_image_url, True)}' target='_blank' style='text-decoration: none;'>
+                                 <span style='background-color: #007BFF; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>🛂 Passaporte</span>
+                             </a>'''
 
     curr_ath_task_stat = row.get('current_task_status', STATUS_BASE)
 
     # Define a cor de fundo do card com base no status
     card_bg_col = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_BASE])
 
-    fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
+    fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
     #fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
     corner_tag_html = ""
     if ath_corner_color.lower() == 'red':
-        corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"
+        corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>RED</span>"
     elif ath_corner_color.lower() == 'blue':
-        corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
+        corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>BLUE</span>"
     
     info_line = f"ID: {html.escape(ath_id_d)} | Evento: {html.escape(ath_event_d)}"
     if room_number:
@@ -295,15 +353,21 @@ for i_l, row in df_filtered.iterrows():
 
     col_card, col_buttons = st.columns([2.5, 1])
     with col_card:
-        st.markdown(f"""
-        <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
-            <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
-            <div>
-                <h5 style='margin:0; display:flex; align-items:center; flex-wrap: wrap; gap: 5px;'>{html.escape(ath_name_d)}{corner_tag_html}{fight_number_html}{whatsapp_tag_html}{passport_tag_html}</h5>
-                <small style='color:#ccc; line-height: 1.4;'>{info_line}<br>{status_line}</small>
+        st.markdown(f'''
+        <div class='card-container' style='background-color:{card_bg_col};'>
+            <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' class='card-img'>
+            <div class='card-info'>
+                <div class='card-header'>
+                    <span class='fighter-name'>{html.escape(ath_name_d)}</span>
+                    <span class='fight-details'>{corner_tag_html}{fight_number_html}</span>
+                    <span class='contact-details'>{whatsapp_tag_html}{passport_tag_html}</span>
+                </div>
+                <div class='card-body'>
+                    <small style='color:#ccc; line-height: 1.4;'>{info_line}<br>{status_line}</small>
+                </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        ''', unsafe_allow_html=True)
 
     with col_buttons:
         uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)

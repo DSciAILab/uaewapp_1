@@ -3,15 +3,15 @@ import streamlit as st
 import pandas as pd
 import datetime
 
-# --- Importações do Projeto ---
+# --- Project Imports ---
 from utils import get_gspread_client, connect_gsheet_tab
 from auth import check_authentication, display_user_sidebar
 
-# --- Autenticação ---
+# --- Authentication ---
 check_authentication()
 
 # --- 1. Page Configuration ---
-st.set_page_config(page_title="UAEW | Lista de Chegadas", layout="wide")
+st.set_page_config(page_title="UAEW | Arrival List", layout="wide")
 
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App"
@@ -48,7 +48,7 @@ def load_arrival_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DA
             df.dropna(subset=['NAME'], inplace=True)
             df = df[df['NAME'].astype(str).str.strip() != ''].copy()
         else:
-            st.error("A coluna 'NAME' é essencial e não foi encontrada na planilha.")
+            st.error("The 'NAME' column is essential and was not found in the sheet.")
             return pd.DataFrame()
 
         return df
@@ -64,39 +64,39 @@ def highlight_today(row):
     return [''] * len(row)
 
 # --- Main Application ---
-st.title("Lista de Chegadas")
+st.title("Arrival List")
 display_user_sidebar()
 
-with st.spinner("Carregando dados..."):
+with st.spinner("Loading data..."):
     df_arrivals = load_arrival_data()
 
-# Filtra apenas registros ativos e remove a coluna INACTIVE
+# Filter only active records and remove the INACTIVE column
 if 'INACTIVE' in df_arrivals.columns:
-    # Considera False, "FALSE", "false", 0, etc.
+    # Consider False, "FALSE", "false", 0, etc.
     df_arrivals = df_arrivals[df_arrivals['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])]
     df_arrivals.drop(columns=['INACTIVE'], inplace=True)
 
 st.divider()
 
 if df_arrivals.empty:
-    st.info("Nenhum registro de chegada encontrado com nome preenchido.")
+    st.info("No arrival records found with a filled name.")
 else:
     filtro = st.segmented_control(
-        "Filtrar chegadas:",
-        options=["Todos", "Só Lutadores", "Carros com pedido"]
+        "Filter arrivals:",
+        options=["All", "Only Fighters", "Cars with request"]
     )
 
     df_filtrado = df_arrivals.copy()
-    if filtro == "Só Lutadores":
+    if filtro == "Only Fighters":
         df_filtrado = df_filtrado[df_filtrado['ROLE'].str.upper() == "1 - FIGHTER"]
-    elif filtro == "Carros com pedido":
+    elif filtro == "Cars with request":
         df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
 
-    # Toggle para modo cards ou tabela
-    modo_cards = st.toggle("Visualizar em cards", value=True)
+    # Toggle for cards or table view
+    modo_cards = st.toggle("View as cards", value=True)
 
-    # Caixa de busca para ambas visualizações
-    search = st.text_input("Pesquisar em qualquer coluna:")
+    # Search box for both views
+    search = st.text_input("Search in any column:")
     df_search = df_filtrado.copy()
     if search:
         mask = pd.Series(False, index=df_search.index)
@@ -105,24 +105,50 @@ else:
         df_search = df_search[mask]
 
     if modo_cards:
-        # Agrupa por ArrivalDate e exibe cards
+        # Group by ArrivalDate and show cards
         today_str = datetime.datetime.now().strftime('%d/%m')
+        # Colors for corners
+        corner_colors = {
+            "RED": "#e74c3c",
+            "BLUE": "#3498db",
+            "GREEN": "#27ae60",
+            "YELLOW": "#f1c40f",
+            "BLACK": "#23272f",
+            "WHITE": "#f8f9fa"
+        }
         for arrival_date, group in df_search.groupby('ArrivalDate'):
             total_chegadas = len(group)
-            st.subheader(f"Chegadas em {arrival_date} ({total_chegadas})")
+            st.subheader(f"Arrivals on {arrival_date} ({total_chegadas})")
             card_color = "#ffe066" if arrival_date == today_str else "#23272f"
             text_color = "#23272f" if arrival_date == today_str else "#f8f9fa"
             for idx, row in group.iterrows():
+                # Corner label
+                corner = str(row['CORNER']).upper()
+                corner_label_color = corner_colors.get(corner, "#888")
+                # Status label
+                status = str(row['transfer_arrival_status']).strip().upper()
+                if status == "PLANNED":
+                    status_label = '<span style="background-color:#ffe066;color:#23272f;padding:2px 8px;border-radius:8px;font-weight:bold;">Planned</span>'
+                elif status == "DONE":
+                    status_label = '<span style="background-color:#27ae60;color:#fff;padding:2px 8px;border-radius:8px;font-weight:bold;">Done</span>'
+                else:
+                    status_label = f'<span style="background-color:#888;color:#fff;padding:2px 8px;border-radius:8px;">{row["transfer_arrival_status"]}</span>'
                 st.markdown(
                     f"""
                     <div style="background-color: {card_color}; border-radius: 12px; padding: 16px; margin-bottom: 12px; color: {text_color}; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-                        <strong>Nome:</strong> {row['NAME']}<br>
-                        <strong>Voo:</strong> {row['ArrivalFlight']}<br>
-                        <strong>Hora:</strong> {row['ArrivalTime']}<br>
-                        <strong>Aeroporto:</strong> {row['ArrivalAirport']}<br>
-                        <strong>Canto:</strong> {row['CORNER']}<br>
-                        <strong>Carro:</strong> {row['transfer_arrival_car']}<br>
-                        <strong>Status Transfer:</strong> {row['transfer_arrival_status']}<br>
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 20px; font-weight: bold;">{row['NAME']}</span>
+                            <span style="background-color: {corner_label_color}; color: #fff; font-size: 14px; font-weight: bold; border-radius: 8px; padding: 2px 10px; margin-left: 12px;">{corner}</span>
+                        </div>
+                        <div style="display: flex; gap: 18px; margin-bottom: 8px;">
+                            <span><strong>Flight:</strong> {row['ArrivalFlight']}</span>
+                            <span><strong>Time:</strong> {row['ArrivalTime']}</span>
+                            <span><strong>Airport:</strong> {row['ArrivalAirport']}</span>
+                        </div>
+                        <div style="display: flex; gap: 18px;">
+                            <span><strong>Car:</strong> {row['transfer_arrival_car']}</span>
+                            {status_label}
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True

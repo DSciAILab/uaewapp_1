@@ -20,8 +20,11 @@ st.markdown("""
 <style>
     /* --- General Card Styles --- */
     .card-container {
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 10px;
         display: flex;
-        align-items: center;
+        align-items: flex-start; /* Align items to the top */
         gap: 15px;
     }
     .card-img {
@@ -63,15 +66,12 @@ st.markdown("""
         gap: 8px;
     }
 
-    .card-actions {
-        display: flex;
-        gap: 10px;
-        margin-top: 15px;
-        padding-top: 15px;
-        border-top: 1px solid #444;
-    }
-    .card-actions .stButton {
-        flex-grow: 1;
+    /* --- Mobile Styles --- */
+    @media (max-width: 768px) {
+        .mobile-button-row div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            gap: 10px;
+        }
     }
 
     /* --- Custom Button Styles --- */
@@ -267,15 +267,11 @@ for i_l, row in df_filtered.iterrows():
     card_bg_col = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_BASE])
 
     # --- HTML Components ---
-    corner_color_map = {'red': '#d9534f', 'blue': '#428bca'}
-    label_color = corner_color_map.get(ath_corner_color.lower(), '#4A4A4A')
-    info_parts = []
-    if ath_event_d != 'Z': info_parts.append(html.escape(ath_event_d))
-    if ath_fight_number: info_parts.append(f"LUTA {html.escape(ath_fight_number)}")
-    if ath_corner_color: info_parts.append(html.escape(ath_corner_color.upper()))
-    fight_info_text = " | ".join(info_parts)
-    fight_info_label_html = f"<span style='background-color: {label_color}; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>{fight_info_text}</span>" if fight_info_text else ""
-
+    id_label_html = f"<span class='grey-label'>ID: {html.escape(ath_id_d)}</span>"
+    event_label_html = f"<span class='grey-label'>{html.escape(ath_event_d)}</span>" if ath_event_d != 'Z' else ""
+    fight_number_html = f"<span class='grey-label'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
+    corner_tag_html = f"<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>RED</span>" if ath_corner_color.lower() == 'red' else (f"<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>BLUE</span>" if ath_corner_color.lower() == 'blue' else "")
+    
     whatsapp_tag_html = ""
     if mobile_number:
         phone_digits = "".join(filter(str.isdigit, mobile_number))
@@ -304,42 +300,45 @@ for i_l, row in df_filtered.iterrows():
             if status_for_badge in STATUS_PENDING_EQUIVALENTS: color = default_color
             badges_html += f"<span style='background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;'>{html.escape(task_name)}</span>"
 
-    st.markdown(f'''
-    <div style="background-color:{card_bg_col}; padding: 15px; border-radius: 10px; margin-bottom: 10px;">
-        <div class="card-container">
-            <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' class='card-img'>
-            <div class='card-info'>
-                <div class='info-line'><span class='fighter-name'>{html.escape(ath_name_d)} | {html.escape(ath_id_d)}</span></div>
-                <div class='info-line'>{fight_info_label_html}</div>
-                <div class='info-line'>{whatsapp_tag_html}{passport_tag_html}</div>
-                <div class='info-line'>{blood_test_status_html}</div>
-                <div class='info-line'>{arrival_status_html}</div>
-                <hr style='border-color: #444; margin: 5px 0; width: 100%;'>
-                <div class='task-badges'>{badges_html}</div>
-            </div>
+    # --- Card Assembly ---
+    card_html = f"""<div class='card-container' style='background-color:{card_bg_col};'>
+        <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' class='card-img'>
+        <div class='card-info'>
+            <div class='info-line'><span class='fighter-name'>{html.escape(ath_name_d)}</span>{id_label_html}</div>
+            <div class='info-line'>{event_label_html}{fight_number_html}{corner_tag_html}</div>
+            <div class='info-line'>{whatsapp_tag_html}{passport_tag_html}</div>
+            <div class='info-line'>{blood_test_status_html}</div>
+            <div class='info-line'>{arrival_status_html}</div>
+            <hr style='border-color: #444; margin: 5px 0; width: 100%;'>
+            <div class='task-badges'>{badges_html}</div>
         </div>
-    ''', unsafe_allow_html=True)
+    </div>"""
 
-    uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
-    
-    st.markdown('<div class="card-actions">', unsafe_allow_html=True)
-    if curr_ath_task_stat == STATUS_REQUESTED:
-        st.markdown('<div class="green-button">', unsafe_allow_html=True)
-        if st.button("✅ Done", key=f"done_{ath_id_d}_{i_l}", use_container_width=True):
-            if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_DONE, "", uid_l): time.sleep(1); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="red-button">', unsafe_allow_html=True)
-        if st.button("❌ Cancel", key=f"cancel_{ath_id_d}_{i_l}", use_container_width=True):
-            if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_BASE, "Solicitação cancelada", uid_l): time.sleep(1); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        btn_label = "📝 Request Again" if curr_ath_task_stat == STATUS_DONE else "📝 Request"
-        btn_type = "secondary" if curr_ath_task_stat == STATUS_DONE else "primary"
-        if st.button(btn_label, key=f"request_{ath_id_d}_{i_l}", type=btn_type, use_container_width=True):
-            if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_REQUESTED, "", uid_l): time.sleep(1); st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    col_card, col_buttons = st.columns([2.5, 1])
+    with col_card:
+        st.markdown(card_html, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    with col_buttons:
+        uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
+        if curr_ath_task_stat == STATUS_REQUESTED:
+            st.markdown("<div class='mobile-button-row' style='padding-top: 20px'>", unsafe_allow_html=True)
+            btn_c1, btn_c2 = st.columns(2)
+            with btn_c1:
+                st.markdown("<div class='green-button'>", unsafe_allow_html=True)
+                if st.button("✅ Done", key=f"done_{ath_id_d}_{i_l}", use_container_width=True):
+                    if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_DONE, "", uid_l): time.sleep(1); st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+            with btn_c2:
+                st.markdown("<div class='red-button'>", unsafe_allow_html=True)
+                if st.button("❌ Cancel", key=f"cancel_{ath_id_d}_{i_l}", use_container_width=True):
+                    if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_BASE, "Solicitação cancelada", uid_l): time.sleep(1); st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='padding-top: 20px'>", unsafe_allow_html=True)
+            btn_label = "📝 Request Again" if curr_ath_task_stat == STATUS_DONE else "📝 Request"
+            btn_type = "secondary" if curr_ath_task_stat == STATUS_DONE else "primary"
+            if st.button(btn_label, key=f"request_{ath_id_d}_{i_l}", type=btn_type, use_container_width=True):
+                if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_REQUESTED, "", uid_l): time.sleep(1); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
     st.divider()

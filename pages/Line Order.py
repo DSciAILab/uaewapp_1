@@ -10,21 +10,25 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Task Control", layout="wide")
 
 # --- Dynamic CSS ---
-# --- [CORRECTED] --- Added .main-columns-wrapper for definitive top alignment.
 st.markdown("""
 <style>
-/* This new class wraps the three main columns and forces them to the top */
 .main-columns-wrapper {
     display: flex;
-    align-items: flex-start; /* Aligns all columns to the top */
+    align-items: flex-start;
 }
 .athlete-photo-circle { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
 .finished-photo-circle { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); }
-/* This rule centers content *within* a card, not the main columns */
 .card-content-wrapper {
     display: flex;
     align-items: center;
-    min-height: 80px; /* Give cards a consistent minimum height */
+    min-height: 80px;
+}
+.card-actions {
+    display: flex;
+    gap: 5px;
+}
+.card-actions .stButton {
+    flex-grow: 1;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -135,7 +139,6 @@ if task_name:
     merged_df = pd.merge(athletes_to_display_df, live_queue_df_task, on='AthleteID', how='left')
     merged_df['Status'] = merged_df['Status'].fillna('aguardando')
 
-    # --- [CORRECTED] --- Wrap the columns in the custom div
     st.markdown('<div class="main-columns-wrapper">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([0.6, 1, 0.6])
     
@@ -168,12 +171,14 @@ if task_name:
                     st.markdown(f'<img src="{row["Picture"]}" class="athlete-photo-circle">', unsafe_allow_html=True)
                 with name_col:
                     st.write(f"**{row['Fighter']}**")
-                    if st.button("🏁 Check-out", key=f"checkout_{task_name}_{row['AthleteID']}", type="primary", use_container_width=True):
+                    st.markdown('<div class="card-actions">', unsafe_allow_html=True)
+                    if st.button("🏁 Check-out", key=f"checkout_{task_name}_{row['AthleteID']}", type="primary"):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'finalizado')
                         st.rerun()
-                    if st.button("↩️ Remove from Queue", key=f"remove_{task_name}_{row['AthleteID']}", use_container_width=True):
+                    if st.button("↩️ Remove", key=f"remove_{task_name}_{row['AthleteID']}"):
                         update_athlete_status_on_sheet(task_name, row['AthleteID'], 'aguardando')
                         st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
@@ -189,6 +194,6 @@ if task_name:
                     st.write(f"~~{row['Fighter']}~~")
                 st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True) # Close the wrapper div
+    st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("Select or create a task in the sidebar to begin.")

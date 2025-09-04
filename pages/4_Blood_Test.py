@@ -53,20 +53,29 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
         if not data: return pd.DataFrame()
         df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame()
-        if "ROLE" not in df.columns or "INACTIVE" not in df.columns:
+
+        # Normaliza os nomes das colunas para minúsculas e com underscores
+        # Isso torna o código mais robusto a variações nos nomes das colunas na planilha
+        # Ex: "Hotel Room Number" ou "hotel_room_number" se tornam "hotel_room_number"
+        df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
+
+        if "role" not in df.columns or "inactive" not in df.columns:
             st.error(f"Colunas 'ROLE'/'INACTIVE' não encontradas em '{athletes_tab_name}'.", icon="🚨"); return pd.DataFrame()
-        df.columns = df.columns.str.strip()
-        if df["INACTIVE"].dtype == 'object':
-            df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
-        elif pd.api.types.is_numeric_dtype(df["INACTIVE"]):
-            df["INACTIVE"] = df["INACTIVE"].map({0: False, 1: True}).fillna(True)
-        df = df[(df["ROLE"] == "1 - Fighter") & (df["INACTIVE"] == False)].copy()
-        df["EVENT"] = df["EVENT"].fillna("Z") if "EVENT" in df.columns else "Z"
-        for col_check in ["IMAGE", "MOBILE", "FIGHT NUMBER", "CORNER", "PASSPORT IMAGE"]:
-            df[col_check] = df[col_check].fillna("") if col_check in df.columns else ""
-        if "NAME" not in df.columns:
+
+        if df["inactive"].dtype == 'object':
+            df["inactive"] = df["inactive"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+        elif pd.api.types.is_numeric_dtype(df["inactive"]):
+            df["inactive"] = df["inactive"].map({0: False, 1: True}).fillna(True)
+        df = df[(df["role"] == "1 - Fighter") & (df["inactive"] == False)].copy()
+        df["event"] = df["event"].fillna("Z") if "event" in df.columns else "Z"
+        for col_check in ["image", "mobile", "fight_number", "corner", "passport_image", "room"]:
+            if col_check not in df.columns:
+                df[col_check] = "" # Cria a coluna se não existir
+            else:
+                df[col_check] = df[col_check].fillna("") # Preenche valores nulos se existir
+        if "name" not in df.columns:
             st.error(f"'NAME' não encontrada em '{athletes_tab_name}'.", icon="🚨"); return pd.DataFrame()
-        return df.sort_values(by=["EVENT", "NAME"]).reset_index(drop=True)
+        return df.sort_values(by=["event", "name"]).reset_index(drop=True)
     except Exception as e:
         st.error(f"Erro ao carregar atletas (gspread): {e}", icon="🚨"); return pd.DataFrame()
 
@@ -146,7 +155,8 @@ display_user_sidebar()
 default_ss = {
     "selected_status": "Todos", 
     "selected_event": "Todos os Eventos", 
-    "fighter_search_query": ""
+    "fighter_search_query": "",
+    "sort_by_fight_order": False
 }
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
@@ -155,44 +165,103 @@ with st.spinner("Carregando dados..."):
     df_athletes = load_athlete_data()
     df_attendance = load_attendance_data()
 
-df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['ID'].apply(
-    lambda id: pd.Series(get_latest_status_info(id, FIXED_TASK, df_attendance))
-)
-st.divider()
+if not df_athletes.empty:
+    df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['id'].apply(
+        lambda id: pd.Series(get_latest_status_info(id, FIXED_TASK, df_attendance))
+    )
 
-# --- Filtros ---
-status_options_radio = ["Todos"] + ALL_LOGICAL_STATUSES
-st.session_state.selected_status = st.radio(
-    f"Filtrar Atletas por Status da Tarefa '{FIXED_TASK}':",
-    options=status_options_radio, 
-    index=status_options_radio.index(st.session_state.selected_status) if st.session_state.selected_status in status_options_radio else 0, 
-    horizontal=True, 
-    key="srad_w"
-)
+with st.expander("⚙️ Filtros e Ordenação", expanded=False):
+    # --- Filtro de Status ---
+    # Mapeamento de status para rótulos amigáveis para o filtro
+    STATUS_FILTER_LABELS = {
+        "Todos": "Todos",
+        STATUS_BASE: "Pendente / Cancelado",
+        STATUS_REQUESTED: "Requisitado",
+        STATUS_DONE: "Concluído"
+    }
+    # A ordem das opções no rádio
+    status_filter_options = ["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE]
 
-st.sidebar.header("Filtros Adicionais")
-st.sidebar.selectbox("Filtrar Evento:", options=["Todos os Eventos"] + sorted([evt for evt in df_athletes["EVENT"].unique() if evt != "Z"]), key="selected_event")
-st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
-st.divider()
+    st.session_state.selected_status = st.radio(
+        f"Filtrar Atletas por Status:",
+        options=status_filter_options, 
+        format_func=lambda x: STATUS_FILTER_LABELS.get(x, x),
+        index=status_filter_options.index(st.session_state.selected_status) if st.session_state.selected_status in status_filter_options else 0, 
+        horizontal=True, 
+        key="srad_w"
+    )
+
+    col_filter1, col_filter2 = st.columns(2)
+    with col_filter1:
+        # Seletor de Evento Condicional
+        event_list = sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else []
+        if len(event_list) == 1:
+            st.session_state.selected_event = event_list[0]
+            st.info(f"Exibindo evento: **{st.session_state.selected_event}**")
+        elif len(event_list) > 1:
+            event_options = ["Todos os Eventos"] + event_list
+            st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
+        else:
+            st.session_state.selected_event = "Todos os Eventos"
+            st.warning("Nenhum evento encontrado.")
+        
+        # Pesquisa
+        st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
+    
+    with col_filter2:
+        # Botão de Ordenação
+        st.toggle(
+            "Ordenar por Ordem de Luta",
+            key="sort_by_fight_order",
+            help="Ative para ordenar por número da luta (canto azul primeiro). Desative para ordenar por nome."
+        )
 
 # --- Lógica de Filtragem ---
 df_filtered = df_athletes.copy()
-if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["EVENT"] == st.session_state.selected_event]
-search_term = st.session_state.fighter_search_query.strip().lower()
-if search_term: df_filtered = df_filtered[df_filtered["NAME"].str.lower().str.contains(search_term, na=False) | df_filtered["ID"].astype(str).str.contains(search_term, na=False)]
+if not df_filtered.empty:
+    if st.session_state.selected_event != "Todos os Eventos": df_filtered = df_filtered[df_filtered["event"] == st.session_state.selected_event]
+    search_term = st.session_state.fighter_search_query.strip().lower()
+    if search_term: df_filtered = df_filtered[df_filtered["name"].str.lower().str.contains(search_term, na=False) | df_filtered["id"].astype(str).str.contains(search_term, na=False)]
+    if st.session_state.selected_status != "Todos": df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
 
-if st.session_state.selected_status != "Todos":
-    df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
+    if st.session_state.get('sort_by_fight_order', False):
+        df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered['fight_number'], errors='coerce').fillna(999)
+        df_filtered['CORNER_SORT'] = df_filtered['corner'].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
+        df_filtered = df_filtered.sort_values(by=['FIGHT_NUMBER_NUM', 'CORNER_SORT'], ascending=[True, True])
+    else:
+        df_filtered = df_filtered.sort_values(by='name', ascending=True)
 
-st.markdown(f"Exibindo **{len(df_filtered)}** de **{len(df_athletes)}** atletas.")
+# --- Linha de Resumo de Status ---
+if not df_filtered.empty:
+    done_count = (df_filtered['current_task_status'] == STATUS_DONE).sum()
+    requested_count = (df_filtered['current_task_status'] == STATUS_REQUESTED).sum()
+    pending_count = (df_filtered['current_task_status'] == STATUS_BASE).sum()
+
+    summary_html = f"""
+    <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 10px; margin-top: 10px;">
+        <span style="font-weight: bold;">Exibindo {len(df_filtered)} de {len(df_athletes)} atletas:</span>
+        <span style="background-color: {STATUS_COLOR_MAP[STATUS_DONE]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">
+            Done: {done_count}
+        </span>
+        <span style="background-color: {STATUS_COLOR_MAP[STATUS_REQUESTED]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">
+            Requested: {requested_count}
+        </span>
+        <span style="background-color: #6c757d; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">
+            Pending/Cancelled: {pending_count}
+        </span>
+    </div>"""
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+st.divider()
 
 # --- Exibição dos Cards ---
 for i_l, row in df_filtered.iterrows():
-    ath_id_d, ath_name_d, ath_event_d = str(row["ID"]), str(row["NAME"]), str(row["EVENT"])
-    ath_fight_number = str(row.get("FIGHT NUMBER", ""))
-    ath_corner_color = str(row.get("CORNER", ""))
-    mobile_number = str(row.get("MOBILE", ""))
-    passport_image_url = str(row.get("PASSPORT IMAGE", ""))
+    ath_id_d, ath_name_d, ath_event_d = str(row.get("id", "")), str(row.get("name", "")), str(row.get("event", ""))
+    ath_fight_number = str(row.get("fight_number", ""))
+    ath_corner_color = str(row.get("corner", ""))
+    mobile_number = str(row.get("mobile", ""))
+    passport_image_url = str(row.get("passport_image", ""))
+    room_number = str(row.get("room", ""))
 
     # Cria o label/tag para o WhatsApp
     whatsapp_tag_html = ""
@@ -224,13 +293,15 @@ for i_l, row in df_filtered.iterrows():
         corner_tag_html = "<span style='background-color: #428bca; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>BLUE</span>"
     
     info_line = f"ID: {html.escape(ath_id_d)} | Evento: {html.escape(ath_event_d)}"
+    if room_number:
+        info_line += f" | Arrival Status: <b>{html.escape(room_number)}</b>"
     status_line = f"Blood Test: <b>{html.escape(curr_ath_task_stat)}</b>"
 
     col_card, col_buttons = st.columns([2.5, 1])
     with col_card:
         st.markdown(f"""
         <div style='background-color:{card_bg_col};padding:15px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:15px;'>
-            <img src='{html.escape(row.get("IMAGE","https://via.placeholder.com/60?text=NA"), True)}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
+            <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' style='width:60px;height:60px;border-radius:50%;object-fit:cover;'>
             <div>
                 <h5 style='margin:0; display:flex; align-items:center; flex-wrap: wrap; gap: 5px;'>{html.escape(ath_name_d)}{corner_tag_html}{fight_number_html}{whatsapp_tag_html}{passport_tag_html}</h5>
                 <small style='color:#ccc; line-height: 1.4;'>{info_line}<br>{status_line}</small>

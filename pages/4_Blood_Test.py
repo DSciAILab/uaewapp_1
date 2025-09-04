@@ -70,6 +70,31 @@ st.markdown("""
             padding-top: 8px;
         }
     }
+
+    /* --- Custom Button Styles --- */
+    div.stButton > button {
+        width: 100%;
+    }
+    .green-button button {
+        background-color: #28a745; /* Verde Success */
+        color: white !important;
+        border: 1px solid #28a745;
+    }
+    .green-button button:hover {
+        background-color: #218838;
+        color: white !important;
+        border: 1px solid #218838;
+    }
+    .red-button button {
+        background-color: #dc3545; /* Vermelho Danger */
+        color: white !important;
+        border: 1px solid #dc3545;
+    }
+    .red-button button:hover {
+        background-color: #c82333;
+        color: white !important;
+        border: 1px solid #c82333;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -377,16 +402,20 @@ for i_l, row in df_filtered.iterrows():
             # Se a tarefa foi solicitada, mostrar opções de Concluir e Cancelar
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
-                if st.button("Concluir", key=f"done_{ath_id_d}_{i_l}", type="primary", use_container_width=True):
+                st.markdown("<div class='green-button'>", unsafe_allow_html=True)
+                if st.button("✅ Done", key=f"done_{ath_id_d}_{i_l}", use_container_width=True):
                     if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_DONE, "", uid_l):
                         time.sleep(1); st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
             with btn_c2:
-                if st.button("Cancelar", key=f"cancel_{ath_id_d}_{i_l}", use_container_width=True):
+                st.markdown("<div class='red-button'>", unsafe_allow_html=True)
+                if st.button("❌ Cancel", key=f"cancel_{ath_id_d}_{i_l}", use_container_width=True):
                     if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_BASE, "Solicitação cancelada", uid_l):
                         time.sleep(1); st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
         else:
             # Se estiver Pendente ou Concluído, mostrar botão para (re)solicitar
-            btn_label = "Solicitar Novamente" if curr_ath_task_stat == STATUS_DONE else "Solicitar"
+            btn_label = "📝 Request Again" if curr_ath_task_stat == STATUS_DONE else "📝 Request"
             btn_type = "secondary" if curr_ath_task_stat == STATUS_DONE else "primary"
             if st.button(btn_label, key=f"request_{ath_id_d}_{i_l}", type=btn_type, use_container_width=True):
                 if registrar_log(ath_id_d, ath_name_d, ath_event_d, FIXED_TASK, STATUS_REQUESTED, "", uid_l):

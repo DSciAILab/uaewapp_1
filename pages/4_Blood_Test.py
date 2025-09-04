@@ -6,7 +6,7 @@ import html
 import time
 
 # --- Importações do Projeto ---
-from utils import get_gspread_client, connect_gsheet_tab, load_users_data, get_valid_user_info
+from utils import get_gspread_client, connect_gsheet_tab, load_users_data, get_valid_user_info, load_config_data
 from auth import check_authentication, display_user_sidebar
 
 # --- Autenticação ---
@@ -108,6 +108,7 @@ ATHLETES_TAB_NAME = "df"
 ATTENDANCE_TAB_NAME = "Attendance"
 ID_COLUMN_IN_ATTENDANCE = "Athlete ID"
 FIXED_TASK = "Blood Test" # Tarefa fixa para esta página
+STATUS_PENDING_EQUIVALENTS = ["Pending", "---", "Not Registred"]
 
 # Status específicos para o fluxo: Solicitar -> Concluir/Cancelar
 STATUS_BASE = "---"
@@ -141,9 +142,6 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
         df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame()
 
-        # Normaliza os nomes das colunas para minúsculas e com underscores
-        # Isso torna o código mais robusto a variações nos nomes das colunas na planilha
-        # Ex: "Hotel Room Number" ou "hotel_room_number" se tornam "hotel_room_number"
         df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
 
         if "role" not in df.columns or "inactive" not in df.columns:
@@ -157,9 +155,9 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
         df["event"] = df["event"].fillna("Z") if "event" in df.columns else "Z"
         for col_check in ["image", "mobile", "fight_number", "corner", "passport_image", "room"]:
             if col_check not in df.columns:
-                df[col_check] = "" # Cria a coluna se não existir
+                df[col_check] = "" 
             else:
-                df[col_check] = df[col_check].fillna("") # Preenche valores nulos se existir
+                df[col_check] = df[col_check].fillna("") 
         if "name" not in df.columns:
             st.error(f"'NAME' não encontrada em '{athletes_tab_name}'.", icon="🚨"); return pd.DataFrame()
         return df.sort_values(by=["event", "name"]).reset_index(drop=True)
@@ -224,12 +222,11 @@ def get_latest_status_info(athlete_id, task, attendance_df):
     user = latest_record.get("User", "N/A")
     timestamp = latest_record.get("Timestamp", "N/A")
 
-    # Mapeamento de status da planilha para os status lógicos desta página
     if status_raw == STATUS_DONE:
         status = STATUS_DONE
     elif status_raw == STATUS_REQUESTED:
         status = STATUS_REQUESTED
-    else: # Qualquer outro status (Pending, ---, Issue, etc.) é tratado como o status base.
+    else: 
         status = STATUS_BASE
 
     return status, user, timestamp
@@ -251,6 +248,7 @@ for k,v in default_ss.items():
 with st.spinner("Carregando dados..."):
     df_athletes = load_athlete_data()
     df_attendance = load_attendance_data()
+    tasks_raw, _ = load_config_data()
 
 if not df_athletes.empty:
     df_athletes[['current_task_status', 'latest_task_user', 'latest_task_timestamp']] = df_athletes['id'].apply(
@@ -276,7 +274,6 @@ with st.expander("⚙️ Filtros e Ordenação", expanded=True):
         )
 
     with col_sort:
-        # Botão de Ordenação
         st.segmented_control(
             "Ordenar por:",
             options=["Nome", "Ordem de Luta"],
@@ -284,7 +281,6 @@ with st.expander("⚙️ Filtros e Ordenação", expanded=True):
             help="Escolha como ordenar a lista de atletas."
         )
 
-    # --- Linha 2: Filtros Adicionais ---
     event_list = sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else []
     if len(event_list) == 1:
         st.session_state.selected_event = event_list[0]
@@ -345,7 +341,6 @@ for i_l, row in df_filtered.iterrows():
     passport_image_url = str(row.get("passport_image", ""))
     room_number = str(row.get("room", ""))
 
-    # Cria o label/tag para o WhatsApp
     whatsapp_tag_html = ""
     if mobile_number:
         phone_digits = "".join(filter(str.isdigit, mobile_number))
@@ -355,7 +350,6 @@ for i_l, row in df_filtered.iterrows():
                                    <span style='background-color: #25D366; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>📞 WhatsApp</span>
                                </a>'''
 
-    # Cria o label/tag para o Passaporte
     passport_tag_html = ""
     if passport_image_url and passport_image_url.startswith("http"):
         passport_tag_html = f'''<a href='{html.escape(passport_image_url, True)}' target='_blank' style='text-decoration: none;'>
@@ -363,12 +357,9 @@ for i_l, row in df_filtered.iterrows():
                              </a>'''
 
     curr_ath_task_stat = row.get('current_task_status', STATUS_BASE)
-
-    # Define a cor de fundo do card com base no status
     card_bg_col = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_BASE])
 
     fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
-    #fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
     corner_tag_html = ""
     if ath_corner_color.lower() == 'red':
         corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>RED</span>"
@@ -398,11 +389,46 @@ for i_l, row in df_filtered.iterrows():
         </div>
         ''', unsafe_allow_html=True)
 
+        # --- BADGE LOGIC STARTS HERE ---
+        badges_html = "<div style='display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-bottom: 10px;'>"
+        status_color_map_badge = {"Requested": "#D35400", "Done": "#1E8449", "---": "#34495E"}
+        default_color = "#34495E"
+
+        if tasks_raw:
+            for task_name in tasks_raw:
+                status_for_badge = "---" 
+                if not df_attendance.empty:
+                    task_records = df_attendance[
+                        (df_attendance[ID_COLUMN_IN_ATTENDANCE].astype(str) == ath_id_d) & 
+                        (df_attendance["Task"] == task_name) &
+                        (df_attendance["Event"] == ath_event_d)
+                    ]
+                    if not task_records.empty:
+                        if "Timestamp" in task_records.columns:
+                            task_records['TS_dt'] = pd.to_datetime(task_records['Timestamp'], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+                            valid_records = task_records.dropna(subset=['TS_dt'])
+                            if not valid_records.empty:
+                                latest_record = valid_records.sort_values(by="TS_dt", ascending=False).iloc[0]
+                                status_for_badge = latest_record.get("Status", "---")
+                            else:
+                                status_for_badge = task_records.iloc[-1].get("Status", "---")
+                        else:
+                            status_for_badge = task_records.iloc[-1].get("Status", "---")
+                
+                color = status_color_map_badge.get(status_for_badge, default_color)
+                if status_for_badge in STATUS_PENDING_EQUIVALENTS: 
+                    color = default_color
+
+                badge_style = f"background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;"
+                badges_html += f"<span style='{badge_style}'>{html.escape(task_name)}</span>"
+            
+            badges_html += "</div>"
+            st.markdown(badges_html, unsafe_allow_html=True)
+
     with col_buttons:
         uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
 
         if curr_ath_task_stat == STATUS_REQUESTED:
-            # Se a tarefa foi solicitada, mostrar opções de Concluir e Cancelar
             st.markdown("<div class='mobile-button-row' style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
@@ -419,7 +445,6 @@ for i_l, row in df_filtered.iterrows():
                 st.markdown("</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # Se estiver Pendente ou Concluído, mostrar botão para (re)solicitar
             st.markdown("<div style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_label = "📝 Request Again" if curr_ath_task_stat == STATUS_DONE else "📝 Request"
             btn_type = "secondary" if curr_ath_task_stat == STATUS_DONE else "primary"

@@ -156,7 +156,7 @@ default_ss = {
     "selected_status": "Todos", 
     "selected_event": "Todos os Eventos", 
     "fighter_search_query": "",
-    "sort_by_fight_order": False
+    "sort_by": "Nome"
 }
 for k,v in default_ss.items():
     if k not in st.session_state: st.session_state[k]=v
@@ -170,51 +170,46 @@ if not df_athletes.empty:
         lambda id: pd.Series(get_latest_status_info(id, FIXED_TASK, df_attendance))
     )
 
-with st.expander("⚙️ Filtros e Ordenação", expanded=False):
-    # --- Filtro de Status ---
-    # Mapeamento de status para rótulos amigáveis para o filtro
-    STATUS_FILTER_LABELS = {
-        "Todos": "Todos",
-        STATUS_BASE: "Pendente / Cancelado",
-        STATUS_REQUESTED: "Requisitado",
-        STATUS_DONE: "Concluído"
-    }
-    # A ordem das opções no rádio
-    status_filter_options = ["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE]
-
-    st.session_state.selected_status = st.radio(
-        f"Filtrar Atletas por Status:",
-        options=status_filter_options, 
-        format_func=lambda x: STATUS_FILTER_LABELS.get(x, x),
-        index=status_filter_options.index(st.session_state.selected_status) if st.session_state.selected_status in status_filter_options else 0, 
-        horizontal=True, 
-        key="srad_w"
-    )
-
-    col_filter1, col_filter2 = st.columns(2)
-    with col_filter1:
-        # Seletor de Evento Condicional
-        event_list = sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else []
-        if len(event_list) == 1:
-            st.session_state.selected_event = event_list[0]
-            st.info(f"Exibindo evento: **{st.session_state.selected_event}**")
-        elif len(event_list) > 1:
-            event_options = ["Todos os Eventos"] + event_list
-            st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
-        else:
-            st.session_state.selected_event = "Todos os Eventos"
-            st.warning("Nenhum evento encontrado.")
-        
-        # Pesquisa
-        st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
-    
-    with col_filter2:
-        # Botão de Ordenação
-        st.toggle(
-            "Ordenar por Ordem de Luta",
-            key="sort_by_fight_order",
-            help="Ative para ordenar por número da luta (canto azul primeiro). Desative para ordenar por nome."
+with st.expander("⚙️ Filtros e Ordenação", expanded=True):
+    # --- Linha 1: Filtro de Status e Ordenação ---
+    col_status, col_sort = st.columns(2)
+    with col_status:
+        STATUS_FILTER_LABELS = {
+            "Todos": "Todos",
+            STATUS_BASE: "Pendente / Cancelado",
+            STATUS_REQUESTED: "Requisitado",
+            STATUS_DONE: "Concluído"
+        }
+        status_filter_options = ["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE]
+        st.segmented_control(
+            "Filtrar por Status:",
+            options=status_filter_options,
+            format_func=lambda x: STATUS_FILTER_LABELS.get(x, x),
+            key="selected_status"
         )
+
+    with col_sort:
+        # Botão de Ordenação
+        st.segmented_control(
+            "Ordenar por:",
+            options=["Nome", "Ordem de Luta"],
+            key="sort_by",
+            help="Escolha como ordenar a lista de atletas."
+        )
+
+    # --- Linha 2: Filtros Adicionais ---
+    event_list = sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else []
+    if len(event_list) == 1:
+        st.session_state.selected_event = event_list[0]
+        st.info(f"Exibindo evento: **{st.session_state.selected_event}**")
+    elif len(event_list) > 1:
+        event_options = ["Todos os Eventos"] + event_list
+        st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
+    else:
+        st.session_state.selected_event = "Todos os Eventos"
+        st.warning("Nenhum evento encontrado.")
+
+    st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
 
 # --- Lógica de Filtragem ---
 df_filtered = df_athletes.copy()
@@ -224,7 +219,7 @@ if not df_filtered.empty:
     if search_term: df_filtered = df_filtered[df_filtered["name"].str.lower().str.contains(search_term, na=False) | df_filtered["id"].astype(str).str.contains(search_term, na=False)]
     if st.session_state.selected_status != "Todos": df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
 
-    if st.session_state.get('sort_by_fight_order', False):
+    if st.session_state.get('sort_by', 'Nome') == 'Ordem de Luta':
         df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered['fight_number'], errors='coerce').fillna(999)
         df_filtered['CORNER_SORT'] = df_filtered['corner'].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
         df_filtered = df_filtered.sort_values(by=['FIGHT_NUMBER_NUM', 'CORNER_SORT'], ascending=[True, True])
@@ -285,7 +280,8 @@ for i_l, row in df_filtered.iterrows():
     # Define a cor de fundo do card com base no status
     card_bg_col = STATUS_COLOR_MAP.get(curr_ath_task_stat, STATUS_COLOR_MAP[STATUS_BASE])
 
-    fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
+    fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
+    #fight_number_html = f"<span style='background-color: #4A4A4A; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9em; font-weight: bold; margin-left: 10px;'>LUTA {html.escape(ath_fight_number)}</span>" if ath_fight_number else ""
     corner_tag_html = ""
     if ath_corner_color.lower() == 'red':
         corner_tag_html = "<span style='background-color: #d9534f; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold; margin-left: 10px;'>RED</span>"

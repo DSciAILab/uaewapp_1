@@ -1,5 +1,5 @@
 
-# --- 0. Import Libraries ---
+# --- 0. Import Libraries --- 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -216,7 +216,7 @@ if not df_athletes.empty:
 with st.expander("⚙️ Filtros e Ordenação", expanded=True):
     col_status, col_sort = st.columns(2)
     with col_status:
-        STATUS_FILTER_LABELS = { "Todos": "Todos", STATUS_BASE: "Pendente / Cancelado", STATUS_REQUESTED: "Requisitado", STATUS_DONE: "Concluído"}
+        STATUS_FILTER_LABELS = { "Todos": "Todos", STATUS_BASE: "Pendente", STATUS_REQUESTED: "Requisitado", STATUS_DONE: "Concluído"}
         status_filter_options = ["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE]
         st.segmented_control("Filtrar por Status:", options=status_filter_options, format_func=lambda x: STATUS_FILTER_LABELS.get(x, x), key="selected_status")
     with col_sort:

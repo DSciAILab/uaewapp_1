@@ -11,9 +11,12 @@ from utils import get_gspread_client, connect_gsheet_tab
 # ------------------------------------------------------------------------------
 # Bootstrap da página (config/layout/sidebar centralizados)
 # ------------------------------------------------------------------------------
-bootstrap_page("Dashboard")  # <- PRIMEIRA LINHA DA PÁGINA
-st.title("Dashboard")
+bootstrap_page("UAEW Task Status")  # <- PRIMEIRA LINHA DA PÁGINA
+st.markdown("<h1 style='text-align: center; font-size: 5em;'>UAEW Task Status</h1>", unsafe_allow_html=True) #<h1 style='text-align: center; font-size: 3em;'>UAEW Task Status</h1>", unsafe_allow_html=True)
+#st.markdown("<h1 style='text-align: center;'>Dashboard</h1>", unsafe_allow_html=True)
+#/*******  cd4e7d66-3406-496f-bc30-8a7f9af6cb3e  *******/
 
+#/*******  ca144cf6-dad0-4497-a3ce-af936fe2ee7e  *******/
 # ------------------------------------------------------------------------------
 # Constantes Globais
 # ------------------------------------------------------------------------------

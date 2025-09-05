@@ -32,18 +32,16 @@ def load_arrival_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DA
         if df.empty:
             return pd.DataFrame()
 
+        # mantém apenas colunas relevantes que existirem
         display_cols = [
-            'INACTIVE', 'ID', 'ROLE', 'CORNER', 'NAME', 'ArrivalFlight', 
-            'ArrivalDate', 'ArrivalTime', 'ArrivalAirport', 
-            'transfer_arrival_status', 'transfer_arrival_car'
+            'INACTIVE', 'ID', 'ROLE', 'CORNER', 'NAME',
+            'ArrivalFlight', 'ArrivalDate', 'ArrivalTime', 'ArrivalAirport',
+            'transfer_arrival_status', 'transfer_arrival_car', 'transfer_arrival_driver'
         ]
-
-        existing_cols = [col for col in display_cols if col in df.columns]
-        if 'TRANSFERdriver' in df.columns and 'TRANSFERdriver' not in existing_cols:
-            existing_cols.append('TRANSFERdriver')
-
+        existing_cols = [c for c in display_cols if c in df.columns]
         df = df[existing_cols]
 
+        # NAME é essencial
         if 'NAME' in df.columns:
             df.dropna(subset=['NAME'], inplace=True)
             df = df[df['NAME'].astype(str).str.strip() != ''].copy()
@@ -70,6 +68,7 @@ display_user_sidebar()
 with st.spinner("Loading data..."):
     df_arrivals = load_arrival_data()
 
+# Filtra INACTIVE
 if 'INACTIVE' in df_arrivals.columns:
     df_arrivals = df_arrivals[df_arrivals['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])]
     df_arrivals.drop(columns=['INACTIVE'], inplace=True, errors='ignore')
@@ -78,9 +77,11 @@ if df_arrivals.empty:
     st.info("No arrival records found with a filled name.")
 else:
     with st.expander("Settings", expanded=True):
+        # Filtro de tipo (fighters / car request)
         filtro = st.segmented_control(
             "Filter arrivals:",
-            options=["All", "Only Fighters", "Cars with request"]
+            options=["All", "Only Fighters", "Cars with request"],
+            key="role_car_filter"
         )
 
         df_filtrado = df_arrivals.copy()
@@ -88,6 +89,22 @@ else:
             df_filtrado = df_filtrado[df_filtrado['ROLE'].astype(str).str.upper() == "1 - FIGHTER"]
         elif filtro == "Cars with request" and 'transfer_arrival_car' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
+
+        # --- NOVO: filtro por STATUS (coluna transfer_arrival_status) ---
+        status_filter = st.segmented_control(
+            "Filter by status:",
+            options=["All", "Planned", "Done", "Canceled", "No Show"],
+            key="status_filter"
+        )
+
+        if status_filter != "All" and 'transfer_arrival_status' in df_filtrado.columns:
+            # normaliza e compara com a opção escolhida
+            target = status_filter.upper()
+            # aceita 'CANCELLED' como 'CANCELED' também
+            def _norm_status(s):
+                s = str(s).strip().upper()
+                return "CANCELED" if s in ("CANCELLED", "CANCELED") else s
+            df_filtrado = df_filtrado[df_filtrado['transfer_arrival_status'].apply(_norm_status) == target]
 
         # === Toggles lado a lado ===
         col_t1, col_t2 = st.columns(2)
@@ -98,7 +115,7 @@ else:
                 "Hide airport: Resident",
                 value=False,
                 key="hide_resident_cards",
-                help="When ON, hides cards where ArrivalAirport = Resident"
+                help="When ON, hides cards where ArrivalAirport = Resident (cards view only)."
             )
 
         # Search box para ambas visões
@@ -110,16 +127,30 @@ else:
                 mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
             df_search = df_search[mask]
 
-    # Métricas (sempre com base no df_search — não afetam o toggle de esconder cards)
+    # --- Métricas (baseadas em df_search) ---
+    def norm_status_series(s):
+        s = s.astype(str).str.strip().str.upper()
+        s = s.replace({"CANCELLED": "CANCELED"})  # mapeia variação britânica
+        return s
+
+    status_series = norm_status_series(
+        df_search.get('transfer_arrival_status', pd.Series(dtype=str))
+    )
+
     total_filtered = len(df_search)
     total_all = len(df_arrivals)
-    planned_count = df_search[df_search.get('transfer_arrival_status', pd.Series(dtype=str)).astype(str).str.strip().str.upper() == "PLANNED"].shape[0]
-    done_count = df_search[df_search.get('transfer_arrival_status', pd.Series(dtype=str)).astype(str).str.strip().str.upper() == "DONE"].shape[0]
-    
-    summary_html = f'''<div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 10px; margin-top: 10px;">
-        <span style="font-weight: bold;">Exibindo {total_filtered} de {total_all} chegadas:</span>
-        <span style="background-color: #ffe066; color: #23272f; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Planned: {planned_count}</span>
-        <span style="background-color: #27ae60; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Done: {done_count}</span>
+    planned_count = (status_series == "PLANNED").sum()
+    done_count = (status_series == "DONE").sum()
+    canceled_count = (status_series == "CANCELED").sum()
+    noshow_count = (status_series == "NO SHOW").sum()
+
+    summary_html = f'''
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;">
+        <span style="font-weight:bold;">Showing {total_filtered} of {total_all} arrivals:</span>
+        <span style="background-color:#ffe066;color:#23272f;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Planned: {planned_count}</span>
+        <span style="background-color:#27ae60;color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Done: {done_count}</span>
+        <span style="background-color:#e74c3c;color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Canceled: {canceled_count}</span>
+        <span style="background-color:#95a5a6;color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">No Show: {noshow_count}</span>
     </div>'''
     st.markdown(summary_html, unsafe_allow_html=True)
 
@@ -149,6 +180,7 @@ else:
             for _, row in group.iterrows():
                 card_color, text_color = "#23272f", "#f8f9fa"
 
+                # calcula janela crítica (laranja) para próximas 3h / últimas 30min
                 arrival_dt = None
                 try:
                     if row.get('ArrivalDate') and row.get('ArrivalTime'):
@@ -168,30 +200,35 @@ else:
                 corner = str(row.get('CORNER', '')).upper()
                 corner_label_color = corner_colors.get(corner, "#888")
 
-                status = str(row.get('transfer_arrival_status', '')).strip().upper()
+                # status chip (inclui CANCELED e NO SHOW)
+                raw_status = str(row.get('transfer_arrival_status', '')).strip().upper()
+                status = "CANCELED" if raw_status in ("CANCELLED", "CANCELED") else raw_status
+
                 if status == "PLANNED":
                     status_label = '<span style="background-color:#ffe066;color:#23272f;padding:2px 8px;border-radius:8px;font-weight:bold;">Planned</span>'
                 elif status == "DONE":
                     status_label = '<span style="background-color:#27ae60;color:#fff;padding:2px 8px;border-radius:8px;font-weight:bold;">Done</span>'
+                elif status == "CANCELED":
+                    status_label = '<span style="background-color:#e74c3c;color:#fff;padding:2px 8px;border-radius:8px;font-weight:bold;">Canceled</span>'
+                elif status == "NO SHOW":
+                    status_label = '<span style="background-color:#95a5a6;color:#fff;padding:2px 8px;border-radius:8px;font-weight:bold;">No Show</span>'
                 else:
-                    safe_status = str(row.get("transfer_arrival_status", ""))
-                    status_label = f'<span style="background-color:#888;color:#fff;padding:2px 8px;border-radius:8px;">{safe_status}</span>'
+                    safe = str(row.get("transfer_arrival_status", ""))
+                    status_label = f'<span style="background-color:#888;color:#fff;padding:2px 8px;border-radius:8px;">{safe}</span>'
 
                 car_val = str(row.get('transfer_arrival_car', '')).strip()
-                driver_val = str(row.get('TRANSFERdriver', '')).strip()
+                driver_val = str(row.get('transfer_arrival_driver', '')).strip()
 
-                # só monta a linha se houver carro ou driver
-                line_html = ""
+                # monta a linha inferior (car / driver / status)
                 if car_val or driver_val:
                     line_html = '<div style="display:flex;gap:18px;align-items:center;">'
                     if car_val:
                         line_html += f'<span><strong>Car:</strong> {car_val}</span>'
                     if driver_val:
                         line_html += f'<span style="margin-left:12px;opacity:0.9;"><strong>Driver:</strong> {driver_val}</span>'
-                    line_html += status_label.strip() + '</div>'
+                    line_html += status_label + '</div>'
                 else:
-                    # status sozinho (sem carro/driver)
-                    line_html = f'<div style="display:flex;align-items:center;">{status_label.strip()}</div>'
+                    line_html = f'<div style="display:flex;align-items:center;">{status_label}</div>'
 
                 st.markdown(
                     f"""
@@ -211,6 +248,7 @@ else:
                     unsafe_allow_html=True
                 )
     else:
+        # --- Tabela ---
         df_search_sorted = df_search.copy()
         current_year = datetime.datetime.now().year
         if 'ArrivalDate' in df_search_sorted.columns and 'ArrivalTime' in df_search_sorted.columns:
@@ -221,8 +259,9 @@ else:
             )
             df_search_sorted = df_search_sorted.sort_values(by='ArrivalDateTime', na_position='last').drop(columns=['ArrivalDateTime'])
 
-        if 'TRANSFERdriver' in df_search_sorted.columns:
-            df_table = df_search_sorted.drop(columns=['TRANSFERdriver'])
+        # remove driver na visão tabela (apenas para limpar)
+        if 'transfer_arrival_driver' in df_search_sorted.columns:
+            df_table = df_search_sorted.drop(columns=['transfer_arrival_driver'])
         else:
             df_table = df_search_sorted
 

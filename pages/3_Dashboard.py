@@ -40,7 +40,7 @@ FC_ORDER_COL = "FightOrder"
 FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
-# Mapeamento de Status para CSS/Texto
+# Mapeamento de Status para CSS/Texto (mantém camel case "oficial")
 STATUS_INFO = {
     "Done": {"class": "status-done", "text": "Done"},
     "Requested": {"class": "status-requested", "text": "Requested"},
@@ -51,6 +51,33 @@ STATUS_INFO = {
     "Não Solicitado": {"class": "status-neutral", "text": "Not Requested"},
 }
 DEFAULT_STATUS_CLASS = "status-pending"
+
+# ➜ Versão normalizada (todas as chaves em minúsculas) para lookup case-insensitive
+STATUS_INFO_NORM = {
+    "done": STATUS_INFO["Done"],
+    "requested": STATUS_INFO["Requested"],
+    "---": STATUS_INFO["---"],
+    "pending": STATUS_INFO["Pending"],
+    "pendente": STATUS_INFO["Pendente"],
+    "não registrado": STATUS_INFO["Não Registrado"],
+    "nao registrado": STATUS_INFO["Não Registrado"],  # sem acento
+    "não solicitado": STATUS_INFO["Não Solicitado"],
+    "nao solicitado": STATUS_INFO["Não Solicitado"],  # sem acento
+    "canceled": {"class": "status-neutral", "text": "Canceled"},
+    "cancelled": {"class": "status-neutral", "text": "Canceled"},
+}
+
+def _normalize_status_key(s: str) -> str:
+    s = (s or "").strip()
+    if not s:
+        return "pending"
+    low = s.lower()
+    # equivalências úteis
+    if low in ("canceled", "cancelled"):
+        return "canceled"
+    if low in ("---", "not requested"):
+        return "---"
+    return low
 
 # Emojis das tarefas (fallback na primeira letra)
 TASK_EMOJI_MAP = {
@@ -148,7 +175,8 @@ def _latest_status_row(relevant_records: pd.DataFrame) -> pd.Series | None:
 
 def get_task_status(athlete_id: str, task_name: str, event_name: str, df_attendance: pd.DataFrame) -> dict:
     """
-    Retorna um dict com {class, text} para colorir a célula no grid.
+    Retorna {class, text} para colorir a célula do grid.
+    Faz matching por Athlete ID + Task + Event e mapeia Status de forma case-insensitive.
     """
     if (
         df_attendance.empty
@@ -156,7 +184,7 @@ def get_task_status(athlete_id: str, task_name: str, event_name: str, df_attenda
         or not str(task_name).strip()
         or not str(event_name).strip()
     ):
-        return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
+        return STATUS_INFO_NORM["pending"]
 
     mask = (
         (df_attendance[ATTENDANCE_ATHLETE_ID_COL] == str(athlete_id).strip())
@@ -165,11 +193,13 @@ def get_task_status(athlete_id: str, task_name: str, event_name: str, df_attenda
     )
     relevant = df_attendance.loc[mask]
     if relevant.empty:
-        return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
+        return STATUS_INFO_NORM["pending"]
 
     last_row = _latest_status_row(relevant)
     latest_status_str = str(last_row[ATTENDANCE_STATUS_COL]).strip() if last_row is not None else "Pending"
-    return STATUS_INFO.get(latest_status_str, {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
+    key = _normalize_status_key(latest_status_str)
+
+    return STATUS_INFO_NORM.get(key, STATUS_INFO_NORM["pending"])
 
 
 # ------------------------------------------------------------------------------
@@ -403,7 +433,7 @@ for (ev, f_ord), group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]
         row_d["Foto Azul"] = "https://via.placeholder.com/50?text=N/A"
         row_d["Lutador Azul"] = "N/A"
         for task in selected_tasks:
-            row_d[f"{task} (Azul)"] = STATUS_INFO.get("Pending")
+            row_d[f"{task} (Azul)"] = STATUS_INFO_NORM["pending"]
 
     # Vermelho
     if isinstance(rd_s, pd.Series) and not rd_s.empty:
@@ -418,7 +448,7 @@ for (ev, f_ord), group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]
         row_d["Foto Vermelho"] = "https://via.placeholder.com/50?text=N/A"
         row_d["Lutador Vermelho"] = "N/A"
         for task in selected_tasks:
-            row_d[f"{task} (Vermelho)"] = STATUS_INFO.get("Pending")
+            row_d[f"{task} (Vermelho)"] = STATUS_INFO_NORM["pending"]
 
     # Division (prioriza do azul; se vazio usa vermelho)
     row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A")) if isinstance(bl_s, pd.Series) else rd_s.get(FC_DIVISION_COL, "N/A")

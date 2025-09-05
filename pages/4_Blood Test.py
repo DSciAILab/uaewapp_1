@@ -437,6 +437,9 @@ for i_l, row in df_filtered.iterrows():
         name_n = normalize_name(ath_name_d)
         evt_n  = normalize_name(ath_event_d)
         for task_name in tasks_raw:
+            # Skip the current page's fixed task to avoid redundancy
+            if task_name == FIXED_TASK:
+                continue
             status_for_badge = "---"
             if not df_attendance.empty:
                 t_norm = str(task_name).strip().lower()

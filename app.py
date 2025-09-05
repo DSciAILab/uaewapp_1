@@ -1,4 +1,4 @@
-from components.layout import bootstrap_page
+from components.layout import bootstrap_page 
 import streamlit as st
 
 # Inicializa a página (config, sidebar unificado, autenticação, etc.)

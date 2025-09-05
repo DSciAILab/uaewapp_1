@@ -146,6 +146,12 @@ def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] =
     regex = "(" + "|".join(pats) + ")"
     return t.str.contains(regex, regex=True, na=False)
 
+def _slugify(s: str) -> str:
+    """Cria um prefixo estável para keys do session_state a partir do título da página."""
+    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+    s = re.sub(r'[^a-zA-Z0-9]+', '_', s).strip('_').lower()
+    return s or "page"
+
 
 # ==============================================================================
 # DATA LOADING (CACHED)
@@ -501,9 +507,13 @@ def render_athlete_card(row: pd.Series, last_info: tuple[str, str], badges_html:
 def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
     """
     Render a full Streamlit page for a single fixed task.
+    Garante filtros padrão: Status="All" e Event="All Events" por página.
     """
     st.set_page_config(page_title=page_title, layout="wide")  # keep first UI call
     check_authentication()
+
+    # Prefixo único para as chaves desta página
+    _kpref = _slugify(page_title)
 
     # Global CSS
     st.markdown("""
@@ -530,11 +540,21 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
 
     cfg = BaseConfig  # alias
 
-    # Session defaults
-    defaults = {"selected_status": "All", "selected_event": "All Events", "fighter_search_query": "", "sort_by": "Name"}
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+    # Chaves de estado únicas por página
+    K_STATUS = f"{_kpref}_selected_status"
+    K_EVENT  = f"{_kpref}_selected_event"
+    K_SEARCH = f"{_kpref}_fighter_search_query"
+    K_SORT   = f"{_kpref}_sort_by"
+
+    # Defaults garantidos (primeiro load da página)
+    if K_STATUS not in st.session_state:
+        st.session_state[K_STATUS] = "All"
+    if K_EVENT not in st.session_state:
+        st.session_state[K_EVENT] = "All Events"
+    if K_SEARCH not in st.session_state:
+        st.session_state[K_SEARCH] = ""
+    if K_SORT not in st.session_state:
+        st.session_state[K_SORT] = "Name"
 
     # Load data
     with st.spinner("Loading data..."):
@@ -571,39 +591,51 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
                 "Filter by Status:",
                 options=["All", cfg.STATUS_PENDING, cfg.STATUS_REQUESTED, cfg.STATUS_DONE, cfg.STATUS_NOT_REQUESTED],
                 format_func=lambda x: STATUS_FILTER_LABELS.get(x, x if x else "Pending"),
-                key="selected_status"
+                key=K_STATUS
             )
         with col_sort:
             st.segmented_control(
                 "Sort by:",
                 options=["Name", "Fight Order"],
-                key="sort_by",
+                key=K_SORT,
                 help="Choose how to sort the athletes list."
             )
+
+        # Eventos disponíveis
         event_options = ["All Events"] + (
             sorted([evt for evt in df_athletes[cfg.COL_EVENT].unique() if evt != cfg.DEFAULT_EVENT_PLACEHOLDER])
             if not df_athletes.empty else []
         )
-        st.selectbox("Filter by Event:", options=event_options, key="selected_event")
-        st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key="fighter_search_query")
+        # Se o valor salvo não existe mais (ou é primeira vez), força "All Events"
+        if st.session_state[K_EVENT] not in event_options:
+            st.session_state[K_EVENT] = "All Events"
+
+        st.selectbox("Filter by Event:", options=event_options, key=K_EVENT)
+        st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key=K_SEARCH)
+
+    # Valores atuais dos filtros (por página)
+    selected_status = st.session_state[K_STATUS]
+    selected_event  = st.session_state[K_EVENT]
+    search_query    = st.session_state[K_SEARCH]
+    sort_by         = st.session_state[K_SORT]
 
     # Apply filters
     df_filtered = df_athletes.copy()
     if not df_filtered.empty:
-        if st.session_state.selected_event != "All Events":
-            df_filtered = df_filtered[df_filtered[cfg.COL_EVENT] == st.session_state.selected_event]
+        if selected_event != "All Events":
+            df_filtered = df_filtered[df_filtered[cfg.COL_EVENT] == selected_event]
 
-        search_term = st.session_state.fighter_search_query.strip().lower()
+        search_term = search_query.strip().lower()
         if search_term:
             df_filtered = df_filtered[
                 df_filtered[cfg.COL_NAME].str.lower().str.contains(search_term, na=False) |
                 df_filtered[cfg.COL_ID].astype(str).str.contains(search_term, na=False)
             ]
 
-        if st.session_state.selected_status != "All":
-            df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
+        if selected_status != "All":
+            df_filtered = df_filtered[df_filtered['current_task_status'] == selected_status]
 
-        if st.session_state.get('sort_by', 'Name') == 'Fight Order':
+        if sort_by == 'Fight Order':
             df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered[cfg.COL_FIGHT_NUMBER], errors='coerce').fillna(999)
             df_filtered['CORNER_SORT'] = df_filtered[cfg.COL_CORNER].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
             df_filtered = df_filtered.sort_values(by=['FIGHT_NUMBER_NUM', 'CORNER_SORT'], ascending=[True, True])

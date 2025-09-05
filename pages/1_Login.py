@@ -10,7 +10,7 @@ import streamlit as st
 from utils import get_valid_user_info
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="UAEW App - Login", layout="centered")
+#st.set_page_config(page_title="UAEW App - Login", layout="centered")
 
 # Se o usuário já está logado, mostra uma mensagem e opções para navegar ou deslogar.
 if st.session_state.get("user_confirmed", False):

@@ -509,19 +509,27 @@ def render_athlete_card(row: pd.Series, last_info: tuple[str, str], badges_html:
 # ==============================================================================
 # PAGE RENDERER (ENTRYPOINT)
 # ==============================================================================
-def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
-    """
-    Render a full Streamlit page for a single fixed task.
-    Garante filtros padrão: Status="All" e Event="All Events" por página.
-    """
-    # Só configura página e autentica se o sidebar unificado AINDA não foi renderizado.
-    if not st.session_state.get("_unified_sidebar_rendered", False):
-        st.set_page_config(page_title=page_title, layout="wide")  # primeira chamada UI
-        check_authentication()
+#def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
+#    """
+#    Render a full Streamlit page for a single fixed task.
+#    Garante filtros padrão: Status="All" e Event="All Events" por página.
+#    """
+#    # Só configura página e autentica se o sidebar unificado AINDA não foi renderizado.
+#    if not st.session_state.get("_unified_sidebar_rendered", False):
+#        st.set_page_config(page_title=page_title, layout="wide")  # primeira chamada UI
+#        check_authentication()#
 
-    # Título e header do usuário (evita duplicar se já há sidebar unificado)
+##    # Título e header do usuário (evita duplicar se já há sidebar unificado)
+#    st.title(page_title)
+#    _safe_display_user_sidebar()
+
+
+def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
+    # Config & auth já vieram do bootstrap_page()
     st.title(page_title)
-    _safe_display_user_sidebar()
+
+
+
 
     cfg = BaseConfig  # alias
 

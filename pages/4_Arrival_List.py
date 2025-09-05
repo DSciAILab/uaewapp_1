@@ -32,21 +32,18 @@ def load_arrival_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DA
         if df.empty:
             return pd.DataFrame()
 
-        # Use original column names as requested
         display_cols = [
             'INACTIVE', 'ID', 'ROLE', 'CORNER', 'NAME', 'ArrivalFlight', 
             'ArrivalDate', 'ArrivalTime', 'ArrivalAirport', 
             'transfer_arrival_status', 'transfer_arrival_car'
         ]
 
-        # Mantém TRANSFERdriver disponível para os cards (sem alterar layout)
         existing_cols = [col for col in display_cols if col in df.columns]
         if 'TRANSFERdriver' in df.columns and 'TRANSFERdriver' not in existing_cols:
             existing_cols.append('TRANSFERdriver')
 
         df = df[existing_cols]
 
-        # Filtra linhas com NAME vazio
         if 'NAME' in df.columns:
             df.dropna(subset=['NAME'], inplace=True)
             df = df[df['NAME'].astype(str).str.strip() != ''].copy()
@@ -73,9 +70,7 @@ display_user_sidebar()
 with st.spinner("Loading data..."):
     df_arrivals = load_arrival_data()
 
-# Filter only active records and remove the INACTIVE column
 if 'INACTIVE' in df_arrivals.columns:
-    # Consider False, "FALSE", "false", 0, etc.
     df_arrivals = df_arrivals[df_arrivals['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])]
     df_arrivals.drop(columns=['INACTIVE'], inplace=True, errors='ignore')
 
@@ -94,10 +89,8 @@ else:
         elif filtro == "Cars with request" and 'transfer_arrival_car' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
 
-        # Toggle for cards or table view
         modo_cards = st.toggle("View as cards", value=True)
 
-        # Search box for both views
         search = st.text_input("Search in any column:")
         df_search = df_filtrado.copy()
         if search:
@@ -106,7 +99,6 @@ else:
                 mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
             df_search = df_search[mask]
 
-    # Quick metrics
     total_filtered = len(df_search)
     total_all = len(df_arrivals)
     planned_count = df_search[df_search.get('transfer_arrival_status', pd.Series(dtype=str)).astype(str).str.strip().str.upper() == "PLANNED"].shape[0]
@@ -120,11 +112,9 @@ else:
     st.markdown(summary_html, unsafe_allow_html=True)
 
     if modo_cards:
-        # Group by ArrivalDate and show cards
         now = datetime.datetime.now()
         today_str = now.strftime('%d/%m')
         
-        # Colors for corners
         corner_colors = {
             "RED": "#e74c3c",
             "BLUE": "#3498db",
@@ -134,51 +124,33 @@ else:
             "WHITE": "#f8f9fa"
         }
 
-        # Garante agrupamento mesmo se existir valores faltantes
-        if 'ArrivalDate' not in df_search.columns:
-            st.warning("Column 'ArrivalDate' not found.")
-            groups = [(None, df_search)]
-        else:
-            groups = df_search.groupby('ArrivalDate')
+        groups = df_search.groupby('ArrivalDate') if 'ArrivalDate' in df_search.columns else [(None, df_search)]
 
         for arrival_date, group in groups:
-            total_chegadas = len(group)
-            st.subheader(f"Arrivals on {arrival_date} ({total_chegadas})")
+            st.subheader(f"Arrivals on {arrival_date} ({len(group)})")
             
-            for idx, row in group.iterrows():
-                card_color = "#23272f"  # Default color
-                text_color = "#f8f9fa"  # Default text color
+            for _, row in group.iterrows():
+                card_color, text_color = "#23272f", "#f8f9fa"
 
-                # Parse arrival date and time (DD/MM + HH:MM)
                 arrival_dt = None
                 try:
-                    arrival_date_str = str(row.get('ArrivalDate', ''))
-                    arrival_time_str = str(row.get('ArrivalTime', ''))
-                    if arrival_date_str and arrival_time_str:
-                        arrival_datetime_str = f"{arrival_date_str}/{now.year} {arrival_time_str}"
+                    if row.get('ArrivalDate') and row.get('ArrivalTime'):
+                        arrival_datetime_str = f"{row['ArrivalDate']}/{now.year} {row['ArrivalTime']}"
                         arrival_dt = datetime.datetime.strptime(arrival_datetime_str, '%d/%m/%Y %H:%M')
                 except Exception:
-                    arrival_dt = None
+                    pass
 
                 is_today = (str(arrival_date) == today_str)
-                is_soon = False
                 if arrival_dt:
-                    time_diff = arrival_dt - now
-                    if datetime.timedelta(minutes=-30) <= time_diff <= datetime.timedelta(hours=3):
-                        is_soon = True
-
-                if is_soon:
-                    card_color = "#FF8C00"  # Darker Orange for "soon"
-                    text_color = "#f8f9fa"
+                    diff = arrival_dt - now
+                    if datetime.timedelta(minutes=-30) <= diff <= datetime.timedelta(hours=3):
+                        card_color, text_color = "#FF8C00", "#f8f9fa"
                 elif is_today:
-                    card_color = "#ffe066"  # Yellow for "today"
-                    text_color = "#23272f"
-                
-                # Corner label
+                    card_color, text_color = "#ffe066", "#23272f"
+
                 corner = str(row.get('CORNER', '')).upper()
                 corner_label_color = corner_colors.get(corner, "#888")
 
-                # Status label
                 status = str(row.get('transfer_arrival_status', '')).strip().upper()
                 if status == "PLANNED":
                     status_label = '<span style="background-color:#ffe066;color:#23272f;padding:2px 8px;border-radius:8px;font-weight:bold;">Planned</span>'
@@ -188,19 +160,21 @@ else:
                     safe_status = str(row.get("transfer_arrival_status", ""))
                     status_label = f'<span style="background-color:#888;color:#fff;padding:2px 8px;border-radius:8px;">{safe_status}</span>'
 
-                # Valores de Carro e Driver
                 car_val = str(row.get('transfer_arrival_car', '')).strip()
                 driver_val = str(row.get('TRANSFERdriver', '')).strip()
-                status_html = status_label.strip()  # evita começar com espaço/nova linha
 
-                # Monta a linha flex sem que HTML cru apareça
-                line_html = (
-                    '<div style="display:flex;gap:18px;align-items:center;">'
-                    f'<span><strong>Car:</strong> {car_val}</span>'
-                )
-                if driver_val:
-                    line_html += f'<span style="margin-left:12px;opacity:0.9;"><strong>Driver:</strong> {driver_val}</span>'
-                line_html += status_html + '</div>'
+                # só monta a linha se houver carro ou driver
+                line_html = ""
+                if car_val or driver_val:
+                    line_html = '<div style="display:flex;gap:18px;align-items:center;">'
+                    if car_val:
+                        line_html += f'<span><strong>Car:</strong> {car_val}</span>'
+                    if driver_val:
+                        line_html += f'<span style="margin-left:12px;opacity:0.9;"><strong>Driver:</strong> {driver_val}</span>'
+                    line_html += status_label.strip() + '</div>'
+                else:
+                    # status sozinho (sem carro/driver)
+                    line_html = f'<div style="display:flex;align-items:center;">{status_label.strip()}</div>'
 
                 st.markdown(
                     f"""
@@ -220,10 +194,7 @@ else:
                     unsafe_allow_html=True
                 )
     else:
-        # Prepare for sorting by date and time
         df_search_sorted = df_search.copy()
-        
-        # Combine ArrivalDate and ArrivalTime into a single datetime column for sorting
         current_year = datetime.datetime.now().year
         if 'ArrivalDate' in df_search_sorted.columns and 'ArrivalTime' in df_search_sorted.columns:
             df_search_sorted['ArrivalDateTime'] = pd.to_datetime(
@@ -233,7 +204,6 @@ else:
             )
             df_search_sorted = df_search_sorted.sort_values(by='ArrivalDateTime', na_position='last').drop(columns=['ArrivalDateTime'])
 
-        # Oculta TRANSFERdriver na tabela para não alterar layout visual
         if 'TRANSFERdriver' in df_search_sorted.columns:
             df_table = df_search_sorted.drop(columns=['TRANSFERdriver'])
         else:

@@ -1,5 +1,5 @@
 # ==============================================================================
-# STATS MANAGEMENT SYSTEM - STREAMLIT APP
+# STATS MANAGEMENT SYSTEM - STREAMLIT APP (simplified flow)
 # ==============================================================================
 
 # --- 0. Import Libraries ---
@@ -23,7 +23,7 @@ from auth import check_authentication, display_user_sidebar
 # CONSTANTS & CONFIG
 # ==============================================================================
 class Config:
-    """Centralizes constants and column names for consistency with task pages."""
+    """Centralizes constants and column names for consistency."""
     # Sheets / Tabs
     MAIN_SHEET_NAME = "UAEW_App"
     ATHLETES_TAB_NAME = "df"
@@ -33,24 +33,20 @@ class Config:
     # Fixed Task name for this page
     FIXED_TASK = "Stats"
 
-    # Task aliases (if needed in Attendance)
+    # Task aliases (in case historical logs vary)
     TASK_ALIASES = [r"\bstats?\b", r"\bstatistic(s)?\b"]
 
-    # Logical statuses
-    STATUS_PENDING = ""           # no request yet on current event
-    STATUS_NOT_REQUESTED = "---"  # explicitly not requested
-    STATUS_REQUESTED = "Requested"
+    # Logical statuses for STATS FLOW (only Done or Pending)
+    STATUS_PENDING = ""           # no confirmation yet
     STATUS_DONE = "Done"
-
-    ALL_LOGICAL_STATUSES = [STATUS_PENDING, STATUS_NOT_REQUESTED, STATUS_REQUESTED, STATUS_DONE]
 
     # Colors (same palette used in other pages)
     STATUS_COLOR_MAP = {
         STATUS_DONE: "#143d14",
-        STATUS_REQUESTED: "#B08D00",
         STATUS_PENDING: "#1e1e1e",
-        STATUS_NOT_REQUESTED: "#6c757d",
-        # Raw fallbacks (in case legacy values appear)
+        # Raw fallbacks
+        "Requested": "#1e1e1e",
+        "---": "#1e1e1e",
         "Pending": "#1e1e1e",
         "Not Registred": "#1e1e1e",
         "Issue": "#1e1e1e",
@@ -121,17 +117,10 @@ class Config:
     ]
 
     @staticmethod
-    def map_raw_status(raw_status: str) -> str:
-        """Map raw status from sheet to logical constants."""
+    def map_raw_status_stats(raw_status: str) -> str:
+        """For STATS: only 'Done' counts as Done; anything else => Pending."""
         s = "" if raw_status is None else str(raw_status).strip()
-        sl = s.lower()
-        if sl == Config.STATUS_DONE.lower():
-            return Config.STATUS_DONE
-        if sl == Config.STATUS_REQUESTED.lower():
-            return Config.STATUS_REQUESTED
-        if s == Config.STATUS_NOT_REQUESTED:
-            return Config.STATUS_NOT_REQUESTED
-        return Config.STATUS_PENDING
+        return Config.STATUS_DONE if s.lower() == "done" else Config.STATUS_PENDING
 
 
 # ==============================================================================
@@ -179,11 +168,9 @@ def _fmt_date_from_text(s: str) -> str:
 
 def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] = None) -> pd.Series:
     t = task_series.fillna("").astype(str).str.lower()
-    pats = [re.escape(fixed_task.lower())]
-    for al in aliases or []:
-        pats.append(al)
+    pats = [re.escape(fixed_task.lower())] + list(aliases or [])
     regex = "(" + "|".join(pats) + ")"
-    return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
+    return t.str.contains(regex, regex=True, na=False)
 
 def field_is_empty(value) -> bool:
     """Detects if a value should be considered 'missing' for red label highlight."""
@@ -348,8 +335,8 @@ def registrar_log(
     ath_event: str,
     task: str,
     status: str,
-    notes: str,
     user_log_id: str,
+    notes: str = ""
 ) -> bool:
     """
     Append a row to Attendance with columns:
@@ -377,7 +364,6 @@ def registrar_log(
             notes
         ]
         ws.append_row(new_row, value_input_option="USER_ENTERED")
-        st.success(f"'{task}' for {ath_name} recorded as '{status}'.")
         load_attendance.clear()
         return True
     except Exception as e:
@@ -392,13 +378,12 @@ check_authentication()
 st.title("Stats")
 display_user_sidebar()
 
-# --- Defaults (same pattern as task pages) ---
+# --- Defaults ---
 default_ss = {
     "selected_status": "All",
     "selected_event": "All Events",
     "fighter_search_query": "",
     "sort_by": "Name",
-    "notes_input": ""
 }
 for k, v in default_ss.items():
     if k not in st.session_state:
@@ -446,7 +431,7 @@ def compute_task_status_for_athletes(df_athletes, df_attendance, fixed_task: str
     merged = merged.sort_values(by=['name_norm', 'event_norm', 'TS_dt', '__idx__'], ascending=[True, True, False, False])
     latest = merged.drop_duplicates(subset=['name_norm', 'event_norm'], keep='first')
 
-    latest['current_task_status'] = latest[Config.ATT_COL_STATUS].apply(Config.map_raw_status)
+    latest['current_task_status'] = latest[Config.ATT_COL_STATUS].apply(Config.map_raw_status_stats)
     latest['latest_task_timestamp'] = latest.apply(
         lambda r: r['TS_dt'].strftime("%d/%m/%Y") if pd.notna(r.get('TS_dt', pd.NaT))
         else _fmt_date_from_text(r.get('TS_raw', r.get(Config.ATT_COL_TIMESTAMP_ALT, r.get(Config.ATT_COL_TIMESTAMP, '')))),
@@ -466,20 +451,19 @@ if not df_athletes.empty:
         'latest_task_timestamp': 'N/A'
     }, inplace=True)
 
-# --- Settings (same as other pages) ---
+# --- Settings (simplified filter) ---
 with st.expander("Settings", expanded=True):
     col_status, col_sort = st.columns(2)
     with col_status:
         STATUS_FILTER_LABELS = {
             "All": "All",
             Config.STATUS_PENDING: "Pending",
-            Config.STATUS_REQUESTED: "Requested",
             Config.STATUS_DONE: "Done",
-            Config.STATUS_NOT_REQUESTED: "Not Requested (---)"
         }
         st.segmented_control(
             "Filter by Status:",
-            options=["All", Config.STATUS_PENDING, Config.STATUS_REQUESTED, Config.STATUS_DONE, Config.STATUS_NOT_REQUESTED],
+            options=["All", Config.STATUS_DONE, Config.STATUS_PENDING],
+            # keep order "All / Done / Pending" as requested
             format_func=lambda x: STATUS_FILTER_LABELS.get(x, x if x else "Pending"),
             key="selected_status"
         )
@@ -521,18 +505,14 @@ if not df_filtered.empty:
     else:
         df_filtered = df_filtered.sort_values(by=Config.COL_NAME, ascending=True)
 
-# --- Summary badges ---
+# --- Summary badges (Done / Pending only) ---
 if not df_filtered.empty:
     done_count = (df_filtered['current_task_status'] == Config.STATUS_DONE).sum()
-    requested_count = (df_filtered['current_task_status'] == Config.STATUS_REQUESTED).sum()
-    pending_count = (df_filtered['current_task_status'] == Config.STATUS_PENDING).sum()
-    not_req_count = (df_filtered['current_task_status'] == Config.STATUS_NOT_REQUESTED).sum()
+    pending_count = len(df_filtered) - done_count
     summary_html = f'''<div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin: 10px 0;">
         <span style="font-weight: bold;">Showing {len(df_filtered)} of {len(df_athletes)} athletes:</span>
         <span style="background-color: {Config.STATUS_COLOR_MAP[Config.STATUS_DONE]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Done: {done_count}</span>
-        <span style="background-color: {Config.STATUS_COLOR_MAP[Config.STATUS_REQUESTED]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Requested: {requested_count}</span>
         <span style="background-color: {Config.STATUS_COLOR_MAP[Config.STATUS_PENDING]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Pending: {pending_count}</span>
-        <span style="background-color: {Config.STATUS_COLOR_MAP[Config.STATUS_NOT_REQUESTED]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Not Requested: {not_req_count}</span>
     </div>'''
     st.markdown(summary_html, unsafe_allow_html=True)
 
@@ -574,16 +554,6 @@ st.markdown("""
         margin: 0;
         color: white;
     }
-    .task-badges { display: flex; flex-wrap: wrap; gap: 8px; }
-    .event-badge {
-        background-color: #428bca;
-        color: #fff;
-        padding: 3px 8px;
-        border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: bold;
-        display: inline-block;
-    }
     .button-group-row {
         display: flex;
         gap: 10px;
@@ -599,7 +569,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Render loop (cards, actions + STATS FORM WITH RED LABELS) ---
+# --- Render loop (cards + STATS FORM WITH RED LABELS) ---
 for i_l, row in df_filtered.iterrows():
     ath_id = str(row.get(Config.COL_ID, ""))
     ath_name = str(row.get(Config.COL_NAME, ""))
@@ -647,7 +617,7 @@ for i_l, row in df_filtered.iterrows():
     )
 
     # Status line
-    stat_text = curr_status if curr_status not in [Config.STATUS_PENDING, None, ""] else "Pending"
+    stat_text = "Done" if curr_status == Config.STATUS_DONE else "Pending"
     latest_user = row.get("latest_task_user", "N/A") or "N/A"
     latest_dt = row.get("latest_task_timestamp", "N/A") or "N/A"
     task_status_html = f"<small style='color:#ccc;'>{html.escape(Config.FIXED_TASK)}: <b>{html.escape(stat_text)}</b> <i>({html.escape(latest_dt)} • {html.escape(latest_user)})</i></small>"
@@ -663,7 +633,7 @@ for i_l, row in df_filtered.iterrows():
         </div>
     </div>"""
 
-    col_card, col_buttons = st.columns([2.5, 1])
+    col_card, col_actions = st.columns([2.5, 1])
 
     # --- Left: Card & STATS FORM ---
     with col_card:
@@ -702,26 +672,31 @@ for i_l, row in df_filtered.iterrows():
                 if k not in st.session_state:
                     st.session_state[k] = 0.0 if f in ['weight_kg', 'height_cm', 'reach_cm'] else ("-- Select --" if "tshirt" in f or "country" in f else "")
 
-        # Buttons to the right of the card title area (consistent with your screenshot)
+        # Top buttons: Confirm Data (DONE) + Edit Data / Cancel Edit
         btn_row = st.columns([0.66, 0.17, 0.17])
         with btn_row[1]:
-            if latest_stats is not None and not is_editing:
-                if st.button("Confirm Data", key=f"confirm_{ath_id}", use_container_width=True):
-                    # Add a confirm record to stats and log Done
-                    data_to_confirm = latest_stats.to_dict()
-                    data_to_confirm['updated_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                    data_to_confirm['updated_by_user'] = st.session_state.get('current_user_name', 'System')
-                    data_to_confirm['operation'] = "confirmed"
-                    if add_stats_record(data_to_confirm):
-                        registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_DONE, "Data confirmed", st.session_state.get('current_user_name', 'System'))
-                        st.rerun()
+            if st.button("Confirm Data", key=f"confirm_{ath_id}", use_container_width=True):
+                # Save a confirm record and log Done
+                # Build data from current session state (so user can confirm even sem editar)
+                data_to_save = {
+                    'fighter_id': ath_id,
+                    'fighter_event_name': ath_name,
+                    'event': ath_event,
+                    'updated_at': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    'updated_by_user': st.session_state.get('current_user_name', 'System'),
+                    'operation': "confirmed"
+                }
+                for f in Config.STATS_FIELDS:
+                    data_to_save[f] = st.session_state.get(f"stat_{f}_{ath_id}")
+                if add_stats_record(data_to_save):
+                    if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_DONE, st.session_state.get('current_user_name', 'System')):
+                        time.sleep(1); st.rerun()
         with btn_row[2]:
             if st.button("Edit Data" if not is_editing else "Cancel Edit", key=f"toggle_edit_{ath_id}", use_container_width=True, type="secondary" if not is_editing else "primary"):
                 st.session_state[edit_mode_key] = not is_editing
                 st.rerun()
 
-        # --------- STATS FORM (labels in RED if empty) ----------
-        # 3 columns grid like your screenshot
+        # --------- STATS FORM (labels in RED if empty; numeric keypad on mobile) ----------
         c1, c2, c3 = st.columns(3)
         cols = [c1, c2, c3]
         field_labels = {
@@ -748,21 +723,15 @@ for i_l, row in df_filtered.iterrows():
             key = f"stat_{f}_{ath_id}"
             with cols[i % 3]:
                 val = st.session_state.get(key)
-
-                # Decide if empty -> label red
-                empty = field_is_empty(val)
-
-                # Render label (red when empty)
+                empty = field_is_empty(val)  # label red if empty
                 st.markdown(label_html(field_labels.get(f, f), empty), unsafe_allow_html=True)
 
-                # Inputs (numeric show mobile numeric keypad)
                 if f in ['weight_kg', 'height_cm', 'reach_cm']:
-                    # number_input -> type="number" on mobile (numeric keypad).
                     st.number_input(
                         label="",
                         key=key,
                         min_value=0.0,
-                        step=0.10,           # decimal step => keypad with decimal
+                        step=0.10,           # decimal step => numeric keypad w/ decimal
                         format="%.2f",
                         disabled=disabled,
                         label_visibility="collapsed"
@@ -794,7 +763,6 @@ for i_l, row in df_filtered.iterrows():
 
         if is_editing:
             if st.button(f"Save Changes for {ath_name}", key=f"save_stats_{ath_id}", type="primary", use_container_width=True):
-                # Build record
                 new_data = {
                     'fighter_id': ath_id,
                     'fighter_event_name': ath_name,
@@ -807,46 +775,12 @@ for i_l, row in df_filtered.iterrows():
                     new_data[f] = st.session_state.get(f"stat_{f}_{ath_id}")
 
                 if add_stats_record(new_data):
-                    registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_DONE, f"Operation: {new_data['operation']}", st.session_state.get('current_user_name', 'System'))
-                    st.session_state[edit_mode_key] = False
-                    st.rerun()
-
-    # --- Right: Task actions (like other pages) ---
-    with col_buttons:
-        st.text_area("Notes", value="", key=f"notes_input_{i_l}", placeholder="Add notes...", height=50)
-        current_notes = st.session_state.get(f"notes_input_{i_l}", "")
-
-        st.markdown("<div class='button-group-row'>", unsafe_allow_html=True)
-
-        if curr_status == Config.STATUS_REQUESTED:
-            btn_c1, btn_c2 = st.columns(2)
-            with btn_c1:
-                st.markdown("<div class='green-button'>", unsafe_allow_html=True)
-                if st.button("Done", key=f"done_{ath_name}_{i_l}", use_container_width=True):
-                    if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_DONE, current_notes, st.session_state.get("current_user_name", "System")):
+                    if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_DONE, st.session_state.get('current_user_name', 'System')):
+                        st.session_state[edit_mode_key] = False
                         time.sleep(1); st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-            with btn_c2:
-                st.markdown("<div class='red-button'>", unsafe_allow_html=True)
-                if st.button("Cancel", key=f"cancel_{ath_name}_{i_l}", use_container_width=True):
-                    # Cancel => Not Requested + note
-                    if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_NOT_REQUESTED, "Canceled by user", st.session_state.get("current_user_name", "System")):
-                        time.sleep(1); st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            btn_l, btn_r = st.columns(2)
-            with btn_l:
-                btn_label = "Request Again" if curr_status == Config.STATUS_DONE else "Request"
-                btn_type = "secondary" if curr_status == Config.STATUS_DONE else "primary"
-                if st.button(btn_label, key=f"request_{ath_name}_{i_l}", type=btn_type, use_container_width=True):
-                    if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_REQUESTED, current_notes, st.session_state.get("current_user_name", "System")):
-                        time.sleep(1); st.rerun()
-            with btn_r:
-                if curr_status != Config.STATUS_NOT_REQUESTED:
-                    if st.button("Not Requested", key=f"notrequested_{ath_name}_{i_l}", use_container_width=True):
-                        if registrar_log(ath_id, ath_name, ath_event, Config.FIXED_TASK, Config.STATUS_NOT_REQUESTED, current_notes, st.session_state.get("current_user_name", "System")):
-                            time.sleep(1); st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    # --- Right: (no action buttons for Stats flow) ---
+    with col_actions:
+        st.empty()  # Reserved column for visual symmetry with other pages
 
     st.divider()

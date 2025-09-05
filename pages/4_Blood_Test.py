@@ -97,14 +97,15 @@ STATUS_COLOR_MAP = {
 }
 
 # --- Helpers ---
+_INVALID_STRS = {"", "none", "None", "null", "NULL", "nan", "NaN", "<NA>"}
+
 def normalize_name(name: str) -> str:
     if not isinstance(name, str):
         return ""
     name = name.strip().lower()
     name = unicodedata.normalize('NFKD', name)
     name = "".join([c for c in name if not unicodedata.combining(c)])
-    name = " ".join(name.split())
-    return name
+    return " ".join(name.split())
 
 def parse_ts_series(raw: pd.Series) -> pd.Series:
     """Tenta múltiplos formatos e retorna uma série datetime."""
@@ -120,59 +121,60 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
         ts_final = ts_final.fillna(cand)
     return ts_final
 
+def _clean_str_series(s: pd.Series) -> pd.Series:
+    s = s.fillna("").astype(str).str.strip()
+    return s.replace({k: "" for k in _INVALID_STRS})
+
+def _fmt_date_from_text(s: str) -> str:
+    """Formata qualquer texto de data/horário para dd/mm/aaaa; se inválido, 'N/A'."""
+    if s is None:
+        return "N/A"
+    s = str(s).strip()
+    if s in _INVALID_STRS:
+        return "N/A"
+    dt = pd.to_datetime(s, dayfirst=True, errors="coerce")
+    return dt.strftime("%d/%m/%Y") if pd.notna(dt) else "N/A"
+
 def preprocess_attendance(df_attendance: pd.DataFrame) -> pd.DataFrame:
     """
-    NÃO filtra por evento. Normaliza colunas e cria TS_dt com COALESCE de Timestamp/TimeStamp.
-    Trata strings 'None'/'none'/'NULL'/'NaN' como vazio.
+    NÃO filtra por evento. Cria colunas normalizadas e TS_dt a partir de
+    um COALESCE que **prioriza TimeStamp** (e usa Timestamp só se preciso).
     """
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
 
-    # Normalizações leves (sem alterar colunas originais)
     df["fighter_norm"] = df.get("Fighter", "").astype(str).apply(normalize_name)
     df["event_norm"]   = df.get("Event", "").astype(str).apply(normalize_name)
     df["task_norm"]    = df.get("Task", "").astype(str).str.strip().str.lower()
     df["status_norm"]  = df.get("Status", "").astype(str).str.strip().str.lower()
 
-    # --- COALESCE Timestamp/TimeStamp -> TS_raw ---
-    ts1 = df.get("Timestamp")
-    ts2 = df.get("TimeStamp")
-    if ts1 is None and ts2 is None:
+    t2 = df.get("TimeStamp")  # PRIORIDADE
+    t1 = df.get("Timestamp")
+    if t2 is None and t1 is None:
         df["TS_raw"] = ""
     else:
-        s1 = ts1.astype(str) if ts1 is not None else pd.Series([""]*len(df))
-        s2 = ts2.astype(str) if ts2 is not None else pd.Series([""]*len(df))
-        def clean(s: pd.Series) -> pd.Series:
-            return (
-                s.fillna("")
-                 .astype(str)
-                 .str.strip()
-                 .replace({"None": "", "none": "", "NULL": "", "null": "", "NaN": "", "nan": ""})
-            )
-        s1 = clean(s1); s2 = clean(s2)
-        df["TS_raw"] = s1.where(s1 != "", s2)
+        s2 = _clean_str_series(t2) if t2 is not None else pd.Series([""]*len(df))
+        s1 = _clean_str_series(t1) if t1 is not None else pd.Series([""]*len(df))
+        df["TS_raw"] = s2.where(s2 != "", s1)  # usa TimeStamp; se vazio, cai para Timestamp
 
-    # --- TS_dt parseado a partir de TS_raw ---
     df["TS_dt"] = parse_ts_series(df["TS_raw"])
-
     return df
 
 def status_for_current_event_by_name(att_df: pd.DataFrame, athlete_name: str, current_event: str, task: str):
-    """
-    Retorna (status, user, timestamp_str_dd/mm/aaaa) do 'task' para o 'athlete_name' no 'current_event'.
-    Busca por Fighter (nome normalizado) + Event (normalizado). Não usa ID.
-    """
+    """(status, user, data_dd/mm/aaaa) para o evento atual, buscando por NOME + EVENTO."""
     if att_df is None or att_df.empty:
         return STATUS_BASE, "N/A", "N/A"
 
     name_n = normalize_name(athlete_name)
     evt_n  = normalize_name(current_event)
 
-    task_is = (att_df["task_norm"] == task.lower()) | (att_df["task_norm"].str.contains(r"\bblood\s*test\b", na=False)) | (att_df["task_norm"].str.contains("blood", na=False))
-    mask = (att_df["fighter_norm"] == name_n) & (att_df["event_norm"] == evt_n) & task_is
-
-    recs = att_df.loc[mask].copy()
+    task_is = (
+        (att_df["task_norm"] == task.lower()) |
+        (att_df["task_norm"].str.contains(r"\bblood\s*test\b", na=False)) |
+        (att_df["task_norm"].str.contains("blood", na=False))
+    )
+    recs = att_df[(att_df["fighter_norm"] == name_n) & (att_df["event_norm"] == evt_n) & task_is].copy()
     if recs.empty:
         return STATUS_BASE, "N/A", "N/A"
 
@@ -182,28 +184,20 @@ def status_for_current_event_by_name(att_df: pd.DataFrame, athlete_name: str, cu
         recs = recs.reset_index(drop=False).sort_values("index", ascending=False)
 
     latest = recs.iloc[0]
-    status_raw = str(latest.get("Status", STATUS_BASE)).strip()
-    if status_raw.lower() == STATUS_DONE.lower():
-        status = STATUS_DONE
-    elif status_raw.lower() == STATUS_REQUESTED.lower():
-        status = STATUS_REQUESTED
-    else:
-        status = STATUS_BASE
+    status_raw = str(latest.get("Status", STATUS_BASE)).strip().lower()
+    status = STATUS_DONE if status_raw == STATUS_DONE.lower() else (STATUS_REQUESTED if status_raw == STATUS_REQUESTED.lower() else STATUS_BASE)
 
-    # Timestamp formatado dd/mm/aaaa
     if pd.notna(latest.get("TS_dt", pd.NaT)):
         ts_str = latest["TS_dt"].strftime("%d/%m/%Y")
     else:
-        ts_str = str(latest.get("TS_raw", latest.get("Timestamp", latest.get("TimeStamp", "N/A"))))
-        ts_str = ts_str.split(" ")[0] if ts_str else "N/A"
+        ts_str = _fmt_date_from_text(latest.get("TS_raw", latest.get("TimeStamp", latest.get("Timestamp", ""))))
     user_str = str(latest.get("User", "N/A"))
     return status, user_str, ts_str
 
 def last_blood_test_other_event_by_name(att_df: pd.DataFrame, athlete_name: str, current_event: str, task: str, fallback_any_event: bool = True):
     """
     Retorna ("dd/mm/aaaa", "EVENTO") do último Blood Test (Done) em OUTRO evento.
-    Se não encontrar e fallback_any_event=True, usa o último em QUALQUER evento.
-    Busca exclusivamente por Fighter (nome normalizado). NÃO usa ID.
+    Se não houver e fallback=True, usa o último em QUALQUER evento.
     """
     if att_df is None or att_df.empty:
         return "N/A", ""
@@ -211,24 +205,23 @@ def last_blood_test_other_event_by_name(att_df: pd.DataFrame, athlete_name: str,
     name_n = normalize_name(athlete_name)
     evt_n  = normalize_name(current_event)
 
-    task_is_blood = (att_df["task_norm"] == task.lower()) | (att_df["task_norm"].str.contains(r"\bblood\s*test\b", na=False)) | (att_df["task_norm"].str.contains("blood", na=False))
-    status_done   = att_df["status_norm"].str.fullmatch(r"\s*done\s*", case=False, na=False)
+    task_is = (
+        (att_df["task_norm"] == task.lower()) |
+        (att_df["task_norm"].str.contains(r"\bblood\s*test\b", na=False)) |
+        (att_df["task_norm"].str.contains("blood", na=False))
+    )
+    status_done = att_df["status_norm"].str.fullmatch(r"\s*done\s*", case=False, na=False)
+    base_mask = (att_df["fighter_norm"] == name_n) & task_is & status_done
 
-    base_mask = (att_df["fighter_norm"] == name_n) & task_is_blood & status_done
-
-    # OUTRO evento
-    mask_other = base_mask & (att_df["event_norm"] != evt_n)
-    cand = att_df.loc[mask_other].copy()
+    cand = att_df[base_mask & (att_df["event_norm"] != evt_n)].copy()
     if not cand.empty:
         if cand["TS_dt"].notna().any():
-            cand = cand.dropna(subset=["TS_dt"]).sort_values("TS_dt", descending:=False)
-            cand = cand.sort_values("TS_dt", ascending=False)
+            cand = cand.dropna(subset=["TS_dt"]).sort_values("TS_dt", ascending=False)
         else:
             cand = cand.reset_index(drop=False).sort_values("index", ascending=False)
 
-    # Fallback: QUALQUER evento
     if cand.empty and fallback_any_event:
-        cand = att_df.loc[base_mask].copy()
+        cand = att_df[base_mask].copy()
         if not cand.empty:
             if cand["TS_dt"].notna().any():
                 cand = cand.dropna(subset=["TS_dt"]).sort_values("TS_dt", ascending=False)
@@ -243,8 +236,7 @@ def last_blood_test_other_event_by_name(att_df: pd.DataFrame, athlete_name: str,
     if pd.notna(row.get("TS_dt", pd.NaT)):
         dt_str = row["TS_dt"].strftime("%d/%m/%Y")
     else:
-        dt_str = str(row.get("TS_raw", "")).split(" ")[0] or "N/A"
-
+        dt_str = _fmt_date_from_text(row.get("TS_raw", row.get("TimeStamp", row.get("Timestamp", ""))))
     return dt_str, ev_label
 
 # --- Data Loading ---
@@ -265,7 +257,6 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
             st.error(f"Colunas 'ROLE'/'INACTIVE' não encontradas em '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
-        # Inactive parsing
         if df["inactive"].dtype == 'object':
             df["inactive"] = df["inactive"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
         elif pd.api.types.is_numeric_dtype(df["inactive"]):
@@ -273,7 +264,6 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
 
         df = df[(df["role"] == "1 - Fighter") & (df["inactive"] == False)].copy()
 
-        # Defaults
         df["event"] = df["event"].fillna("Z") if "event" in df.columns else "Z"
         for col_check in ["image", "mobile", "fight_number", "corner", "passport_image", "room"]:
             if col_check not in df.columns:
@@ -297,9 +287,7 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(worksheet.get_all_records())
         if df_att.empty:
-            # Estrutura mínima
             return pd.DataFrame(columns=["#", "Event", "Name", "Fighter", "Task", "Status", "User", "Timestamp", "TimeStamp", "Notes"])
-        # Garante as colunas
         for col in ["#", "Event", "Name", "Fighter", "Task", "Status", "User", "Timestamp", "TimeStamp", "Notes"]:
             if col not in df_att.columns:
                 df_att[col] = pd.NA
@@ -358,25 +346,16 @@ with st.expander("⚙️ Filtros e Ordenação", expanded=True):
     col_status, col_sort = st.columns(2)
     with col_status:
         STATUS_FILTER_LABELS = { "Todos": "Todos", STATUS_BASE: "Pendente", STATUS_REQUESTED: "Requisitado", STATUS_DONE: "Concluído"}
-        status_filter_options = ["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE]
         st.segmented_control(
             "Filtrar por Status:",
-            options=status_filter_options,
+            options=["Todos", STATUS_BASE, STATUS_REQUESTED, STATUS_DONE],
             format_func=lambda x: STATUS_FILTER_LABELS.get(x, x),
             key="selected_status"
         )
     with col_sort:
         st.segmented_control("Ordenar por:", options=["Nome", "Ordem de Luta"], key="sort_by", help="Escolha como ordenar a lista de atletas.")
-    event_list = sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else []
-    if len(event_list) == 1:
-        st.session_state.selected_event = event_list[0]
-        st.info(f"Exibindo evento: **{st.session_state.selected_event}**")
-    elif len(event_list) > 1:
-        event_options = ["Todos os Eventos"] + event_list
-        st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
-    else:
-        st.session_state.selected_event = "Todos os Eventos"
-        st.warning("Nenhum evento encontrado.")
+    event_options = ["Todos os Eventos"] + (sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else [])
+    st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
     st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
 
 df_filtered = df_athletes.copy()
@@ -430,20 +409,16 @@ for i_l, row in df_filtered.iterrows():
     label_color = corner_color_map.get(ath_corner_color.lower(), '#4A4A4A')
 
     info_parts = []
-    if ath_event_d != 'Z':
-        info_parts.append(html.escape(ath_event_d))
-    if ath_fight_number:
-        info_parts.append(f"LUTA {html.escape(ath_fight_number)}")
-    if ath_corner_color:
-        info_parts.append(html.escape(ath_corner_color.upper()))
+    if ath_event_d != 'Z': info_parts.append(html.escape(ath_event_d))
+    if ath_fight_number:   info_parts.append(f"LUTA {html.escape(ath_fight_number)}")
+    if ath_corner_color:   info_parts.append(html.escape(ath_corner_color.upper()))
     fight_info_text = " | ".join(info_parts)
     fight_info_label_html = f"<span style='background-color: {label_color}; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>{fight_info_text}</span>" if fight_info_text else ""
 
     whatsapp_tag_html = ""
     if mobile_number:
         phone_digits = "".join(filter(str.isdigit, mobile_number))
-        if phone_digits.startswith('00'):
-            phone_digits = phone_digits[2:]
+        if phone_digits.startswith('00'): phone_digits = phone_digits[2:]
         if phone_digits:
             escaped_phone = html.escape(phone_digits, True)
             whatsapp_tag_html = f"<a href='https://wa.me/{escaped_phone}' target='_blank' style='text-decoration: none;'><span style='background-color: #25D366; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>📞 WhatsApp</span></a>"
@@ -473,8 +448,7 @@ for i_l, row in df_filtered.iterrows():
                         latest_record = task_records.tail(1).iloc[0]
                     status_for_badge = str(latest_record.get("Status","---"))
             color = status_color_map_badge.get(status_for_badge, default_color)
-            if status_for_badge in STATUS_PENDING_EQUIVALENTS:
-                color = default_color
+            if status_for_badge in STATUS_PENDING_EQUIVALENTS: color = default_color
             badges_html += f"<span style='background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;'>{html.escape(task_name)}</span>"
 
     # --- Último Blood Test (outro evento; badge "EVENTO | DATA") ---

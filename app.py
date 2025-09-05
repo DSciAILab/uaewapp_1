@@ -28,15 +28,17 @@ st.subheader("Acesso Rápido")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.page_link("pages/1_Dashboard.py", label="📊 Dashboard Geral", icon="📊", use_container_width=True)
-    st.page_link("pages/2_Tasks.py", label="📋 Controle de Tarefas", icon="📋", use_container_width=True)
-    st.page_link("pages/3_Stats.py", label="📈 Controle de Estatísticas", icon="📈", use_container_width=True)
+    st.page_link("pages/1_Dashboard.py", label="Dashboard", icon="📊", use_container_width=True)
+    st.page_link("pages/Fightcard.py", label="Fight Card", icon="🥊", use_container_width=True)
+    #st.page_link("pages/2_Tasks.py", label="📋 Controle de Tarefas", icon="📋", use_container_width=True)
+    st.page_link("pages/3_Stats.py", label="Fighter Stats", icon="📈", use_container_width=True)
 
 with col2:
-    st.page_link("pages/4_Blood_Test.py", label="🩸 Exame de Sangue", icon="🩸", use_container_width=True)
-    st.page_link("pages/transfer1.py", label="✈️ Transfer & Check-in", icon="✈️", use_container_width=True)
+    st.page_link("pages/4_Blood_Test.py", label="Blood Test", icon="🩸", use_container_width=True)
+    #st.page_link("pages/transfer1.py", label="✈️ Transfer & Check-in", icon="✈️", use_container_width=True)
     st.page_link("pages/Bus.py", label="🚌 Controle de Ônibus", icon="🚌", use_container_width=True)
 
 with col3:
-    st.page_link("pages/Fightcard.py", label="🥊 Fightcard", icon="🥊", use_container_width=True)
     st.page_link("pages/Attendance [Register].py", label="⏳ Fila de Atendimento", icon="⏳", use_container_width=True)
+    st.page_link("3_Medical Team.py", label="Medical Team", icon="⏳", use_container_width=True)
+

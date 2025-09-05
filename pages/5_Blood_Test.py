@@ -1,3 +1,12 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Blood Test")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Blood Test")
+
+
+
 # ==============================================================================
 # BLOOD TEST - PAGE
 # ==============================================================================

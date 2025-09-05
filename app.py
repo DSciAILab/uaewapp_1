@@ -1,44 +1,20 @@
+from components.layout import bootstrap_page
 import streamlit as st
 
-# Importa o guardião de autenticação
-from auth import check_authentication
-
-# A verificação de autenticação deve ser a primeira coisa a ser executada
-check_authentication()
-
-# --- Configuração da Página ---
-st.set_page_config(
-    page_title="UAEW Operations App",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Exibe a barra lateral com informações do usuário e botão de logout
-from auth import display_user_sidebar
-display_user_sidebar()
+bootstrap_page("UAEW Operations App")  # <- PRIMEIRA LINHA
 
 st.title("UAEW Operations App")
-st.markdown("Use os botões abaixo para navegar entre as diferentes seções do aplicativo, ou use o menu na barra lateral.")
-
+st.markdown("Use o menu segmentado na barra lateral ou os botões abaixo.")
 st.divider()
-
 st.subheader("Quick Navigation")
 
-# Cria colunas para os botões de navegação
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.page_link("pages/1_Login.py", label="Login Page", icon="📝", use_container_width=True)
-    st.page_link("pages/2_Fightcard.py", label="Fight Card", icon="🥊", use_container_width=True)
-    st.page_link("pages/3_Dashboard.py", label="Dashboard", icon="📊", use_container_width=True)
-    st.page_link("pages/6_Stats.py", label="Fighter Stats", icon="📈", use_container_width=True)
-    st.page_link("pages/4_Arrival_List.py", label="Arrivals", icon="📈", use_container_width=True)
-
-#with col2:
-#    st.page_link("pages/4_Blood_Test.py", label="Blood Test", icon="🩸", use_container_width=True)
-#    #st.page_link("pages/transfer1.py", label="✈️ Transfer & Check-in", icon="✈️", use_container_width=True)
-#    st.page_link("pages/Bus.py", label="🚌 Controle de Ônibus", icon="🚌", use_container_width=True)
-
-#with col3:
-#    #st.page_link("pages/Attendance [Register].py", label="⏳ Fila de Atendimento", icon="⏳", use_container_width=True)
-#    st.page_link("pages/3_Medical Team.py", label="Medical Team", icon="⏳", use_container_width=True)
+    st.page_link("pages/1_Login.py", label="🔐 Login Page", use_container_width=True)
+    st.page_link("pages/2_Fightcard.py", label="🥊 Fight Card", use_container_width=True)
+with col2:
+    st.page_link("pages/3_Dashboard.py", label="📊 Dashboard", use_container_width=True)
+    # aceita _4_Arrival_List.py também (já tratado no sidebar)
+    st.page_link("pages/4_Arrival_List.py", label="🛬 Arrivals", use_container_width=True)
+with col3:
+    st.page_link("pages/6_Stats.py", label="📈 Fighter Stats", use_container_width=True)

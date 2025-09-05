@@ -1,11 +1,6 @@
-# ==============================================================================
-# STATS MANAGEMENT SYSTEM - STREAMLIT APP (simplified flow)
-# ==============================================================================
-
-# --- 0. Import Libraries ---
+# pages/6_Stats.py
+from components.layout import bootstrap_page
 import streamlit as st
-st.set_page_config(page_title="Stats", layout="wide")  # keep as first UI call
-
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -14,10 +9,13 @@ import time
 import unicodedata
 import re
 
+# --- Bootstrap: configura página, autentica e desenha o sidebar unificado ---
+bootstrap_page("Stats")
+
+st.title("Stats")
+
 # --- Project Imports ---
 from utils import get_gspread_client, connect_gsheet_tab
-from auth import check_authentication, display_user_sidebar
-
 
 # ==============================================================================
 # CONSTANTS & CONFIG
@@ -374,11 +372,8 @@ def registrar_log(
 # ==============================================================================
 # PAGE UI & LOGIC
 # ==============================================================================
-check_authentication()
-st.title("Stats")
-display_user_sidebar()
 
-# --- Defaults ---
+# --- Defaults centralizados no Session State (sem default nos widgets) ---
 default_ss = {
     "selected_status": "All",
     "selected_event": "All Events",
@@ -451,7 +446,7 @@ if not df_athletes.empty:
         'latest_task_timestamp': 'N/A'
     }, inplace=True)
 
-# --- Settings (simplified filter) ---
+# --- Settings (sem default nos widgets; usa session_state) ---
 with st.expander("Settings", expanded=True):
     col_status, col_sort = st.columns(2)
     with col_status:
@@ -462,16 +457,15 @@ with st.expander("Settings", expanded=True):
         }
         st.segmented_control(
             "Filter by Status:",
-            options=["All", Config.STATUS_DONE, Config.STATUS_PENDING],
-            # keep order "All / Done / Pending" as requested
+            options=["All", Config.STATUS_DONE, Config.STATUS_PENDING],  # All / Done / Pending
             format_func=lambda x: STATUS_FILTER_LABELS.get(x, x if x else "Pending"),
-            key="selected_status"
+            key="selected_status"   # <-- sem default
         )
     with col_sort:
         st.segmented_control(
             "Sort by:",
             options=["Name", "Fight Order"],
-            key="sort_by",
+            key="sort_by",          # <-- sem default
             help="Choose how to sort the athletes list."
         )
 
@@ -677,7 +671,6 @@ for i_l, row in df_filtered.iterrows():
         with btn_row[1]:
             if st.button("Confirm Data", key=f"confirm_{ath_id}", use_container_width=True):
                 # Save a confirm record and log Done
-                # Build data from current session state (so user can confirm even sem editar)
                 data_to_save = {
                     'fighter_id': ath_id,
                     'fighter_event_name': ath_name,
@@ -731,7 +724,7 @@ for i_l, row in df_filtered.iterrows():
                         label="",
                         key=key,
                         min_value=0.0,
-                        step=0.10,           # decimal step => numeric keypad w/ decimal
+                        step=0.10,
                         format="%.2f",
                         disabled=disabled,
                         label_visibility="collapsed"
@@ -779,8 +772,8 @@ for i_l, row in df_filtered.iterrows():
                         st.session_state[edit_mode_key] = False
                         time.sleep(1); st.rerun()
 
-    # --- Right: (no action buttons for Stats flow) ---
+    # --- Right: reserved column (visual symmetry) ---
     with col_actions:
-        st.empty()  # Reserved column for visual symmetry with other pages
+        st.empty()
 
     st.divider()

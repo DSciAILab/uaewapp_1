@@ -1,17 +1,16 @@
-# --- 0. Import Libraries ---
+# pages/4_Arrival_List.py
+from components.layout import bootstrap_page
 import streamlit as st
 import pandas as pd
 import datetime
 
+# --- Bootstrap: configura página, autentica e desenha o sidebar unificado ---
+bootstrap_page("Arrival List")
+
+st.title("Arrival List")
+
 # --- Project Imports ---
 from utils import get_gspread_client, connect_gsheet_tab
-from auth import check_authentication, display_user_sidebar
-
-# --- Authentication ---
-check_authentication()
-
-# --- 1. Page Configuration ---
-st.set_page_config(page_title="UAEW | Arrival List", layout="wide")
 
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App"
@@ -62,9 +61,6 @@ def highlight_today(row):
     return [''] * len(row)
 
 # --- Main Application ---
-st.title("Arrival List")
-display_user_sidebar()
-
 with st.spinner("Loading data..."):
     df_arrivals = load_arrival_data()
 
@@ -81,7 +77,8 @@ else:
         filtro = st.segmented_control(
             "Filter arrivals:",
             options=["All", "Only Fighters", "Cars with request"],
-            key="role_car_filter"
+            key="role_car_filter",
+            default="All"  # evita None
         )
 
         df_filtrado = df_arrivals.copy()
@@ -90,19 +87,18 @@ else:
         elif filtro == "Cars with request" and 'transfer_arrival_car' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
 
-        # --- NOVO: filtro por STATUS (coluna transfer_arrival_status) ---
+        # --- Filtro por STATUS (coluna transfer_arrival_status) ---
         status_filter = st.segmented_control(
             "Filter by status:",
             options=["All", "Planned", "Done", "Canceled", "No Show"],
-            key="status_filter"
+            key="status_filter",
+            default="All"  # evita None
         )
 
         if status_filter != "All" and 'transfer_arrival_status' in df_filtrado.columns:
-            # normaliza e compara com a opção escolhida
             target = status_filter.upper()
-            # aceita 'CANCELLED' como 'CANCELED' também
             def _norm_status(s):
-                s = str(s).strip().upper()
+                s = str(s).strip().str.upper()
                 return "CANCELED" if s in ("CANCELLED", "CANCELED") else s
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_status'].apply(_norm_status) == target]
 
@@ -139,10 +135,10 @@ else:
 
     total_filtered = len(df_search)
     total_all = len(df_arrivals)
-    planned_count = (status_series == "PLANNED").sum()
-    done_count = (status_series == "DONE").sum()
+    planned_count  = (status_series == "PLANNED").sum()
+    done_count     = (status_series == "DONE").sum()
     canceled_count = (status_series == "CANCELED").sum()
-    noshow_count = (status_series == "NO SHOW").sum()
+    noshow_count   = (status_series == "NO SHOW").sum()
 
     summary_html = f'''
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;">

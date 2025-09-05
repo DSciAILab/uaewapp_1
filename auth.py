@@ -37,7 +37,7 @@ def display_user_sidebar():
             </div>
             """, unsafe_allow_html=True)
 
-        if st.sidebar.button("Logout", use_container_width=True, type="secondary"):
+        if st.sidebar.button("Logout", use_container_width=True, type="secondary", key="logout_btn"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.switch_page("pages/1_Login.py")

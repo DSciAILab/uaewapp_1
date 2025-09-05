@@ -1,3 +1,11 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Dashboard")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Dashboard")
+
+
 # pages/DashboardNovo.py
 
 # --- Importações de Bibliotecas ---

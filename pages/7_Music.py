@@ -1,3 +1,10 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Music")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Music")
+
 # ==============================================================================
 # WALKOUT MUSIC - STREAMLIT APP (Task Page)
 # ==============================================================================

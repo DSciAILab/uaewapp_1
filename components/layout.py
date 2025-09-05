@@ -102,6 +102,11 @@ def render_sidebar():
         st.divider()
         st.caption("Use os grupos para navegar 👆")
 
+    # >>> FLAG IMPORTANTE <<<
+    # Indica para o restante do app que o sidebar unificado já foi renderizado.
+    # Use em outros módulos para evitar redesenhar o header (e duplicar keys).
+    st.session_state["_unified_sidebar_rendered"] = True
+
 
 def bootstrap_page(page_title: str, layout: str = "wide"):
     """
@@ -121,4 +126,4 @@ def bootstrap_page(page_title: str, layout: str = "wide"):
     check_authentication()
 
     # Sidebar unificado
-    render_sidebar()
+    render_sidebar()    

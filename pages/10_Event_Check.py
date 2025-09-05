@@ -1,3 +1,10 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Event Check")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Event Check")
+
 # --- 0. Import Libraries ---
 import streamlit as st
 import pandas as pd

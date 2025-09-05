@@ -97,9 +97,12 @@ else:
 
         if status_filter != "All" and 'transfer_arrival_status' in df_filtrado.columns:
             target = status_filter.upper()
-            def _norm_status(s):
-                s = str(s).strip().str.upper()
+
+            # ✅ Corrigido: usar .upper() (string), não .str.upper() (Series)
+            def _norm_status(x):
+                s = ("" if x is None else str(x)).strip().upper()
                 return "CANCELED" if s in ("CANCELLED", "CANCELED") else s
+
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_status'].apply(_norm_status) == target]
 
         # === Toggles lado a lado ===

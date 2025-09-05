@@ -1,3 +1,11 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Login")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Login")
+
+
 import streamlit as st
 from utils import get_valid_user_info
 

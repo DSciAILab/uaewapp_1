@@ -1,32 +1,19 @@
+# pages/7_Music.py
 from components.layout import bootstrap_page
 import streamlit as st
-
-bootstrap_page("Music")  # <- PRIMEIRA LINHA DA PÁGINA
-
-st.title("Music")
-
-# ==============================================================================
-# WALKOUT MUSIC - STREAMLIT APP (Task Page)
-# ==============================================================================
-
-# --- 0. Import Libraries ---
-import streamlit as st
-st.set_page_config(page_title="Walkout Music", layout="wide")  # first UI call
-
 import pandas as pd
-import numpy as np
 from datetime import datetime
 import html
 import time
 import unicodedata
 import re
 
-# --- Project Imports ---
-from utils import get_gspread_client, connect_gsheet_tab, load_config_data
-from auth import check_authentication, display_user_sidebar
+# --- Bootstrap: configura página, autentica e desenha o sidebar unificado ---
+bootstrap_page("Walkout Music")
+st.title("Walkout Music")
 
-# --- Auth ---
-check_authentication()
+# --- Project Imports ---
+from utils import get_gspread_client, connect_gsheet_tab
 
 # ==============================================================================
 # CONFIG
@@ -63,20 +50,6 @@ class Config:
     COL_CORNER = "corner"
     COL_PASSPORT_IMAGE = "passport_image"
 
-    # Attendance known column names (DO NOT force them; we detect dynamically)
-    ATT_KNOWN = {
-        "#": "#",
-        "Event": "Event",
-        "Athlete ID": "Athlete ID",
-        "Name": "Name",
-        "Fighter": "Fighter",
-        "Task": "Task",
-        "Status": "Status",
-        "User": "User",
-        "Timestamp": "Timestamp",     # keep blank if present
-        "TimeStamp": "TimeStamp",     # write ts here if present
-        "Notes": "Notes",
-    }
 
 # ==============================================================================
 # CSS
@@ -239,8 +212,8 @@ def load_attendance_data() -> pd.DataFrame:
             df["Athlete ID"] = df["Athlete ID"].astype(str)
 
         return df
-    except Exception as e:
-        # Fail safe, no warning spam; return empty compatible df
+    except Exception:
+        # Fail safe; return empty compatible df
         return pd.DataFrame(columns=["Event", "Fighter", "Task", "Status", "User", "TimeStamp", "Timestamp", "Notes", "Athlete ID"])
 
 # ==============================================================================
@@ -401,18 +374,13 @@ def registrar_log_music_link(
         return False
 
 # ==============================================================================
-# PAGE HEADER & SIDEBAR
-# ==============================================================================
-st.title("Walkout Music")
-display_user_sidebar()
-
-# ==============================================================================
 # SESSION DEFAULTS
 # ==============================================================================
 defaults = {
     "wm_selected_status": "All",           # All / Done / Pending
     "wm_selected_event": "All Events",
     "wm_search": "",
+    "wm_sort_by": "Name",                  # << adicionado para evitar aviso
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -435,13 +403,13 @@ with st.expander("Settings", expanded=True):
         st.segmented_control(
             "Filter by Status:",
             options=["All", "Done", "Pending"],
-            key="wm_selected_status"
+            key="wm_selected_status"    # sem default
         )
     with col2:
         st.segmented_control(
             "Sort by:",
             options=["Name", "Fight Order"],
-            key="wm_sort_by",
+            key="wm_sort_by",           # sem default
             help="Choose how to sort the athlete list."
         )
     event_opts = ["All Events"] + (sorted([e for e in df_athletes[Config.COL_EVENT].unique() if e != Config.DEFAULT_EVENT_PLACEHOLDER]) if not df_athletes.empty else [])
@@ -578,7 +546,7 @@ for i, row in df_show.iterrows():
             st.session_state[kk] = ""
 
     with c_right:
-        pass
+        st.empty()
 
     c_l1, c_l2, c_l3 = st.columns(3)
     disabled_inputs = not st.session_state[edit_key]

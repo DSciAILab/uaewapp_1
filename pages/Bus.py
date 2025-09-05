@@ -1,3 +1,10 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Bus Attendance")  # <- PRIMEIRA LINHA DA PÁGINA
+
+st.title("Bus Attendance")
+
 # --- 0. Import Libraries ---
 import streamlit as st
 import pandas as pd

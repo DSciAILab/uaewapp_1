@@ -140,9 +140,7 @@ def _fmt_date_from_text(s: str) -> str:
 def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] = None) -> pd.Series:
     """Boolean mask to match task name (with aliases)."""
     t = task_series.fillna("").astype(str).str.lower()
-    pats = [re.escape(fixed_task.lower())]
-    for al in aliases or []:
-        pats.append(al)
+    pats = [re.escape(fixed_task.lower())] + list(aliases or [])
     regex = "(" + "|".join(pats) + ")"
     return t.str.contains(regex, regex=True, na=False)
 
@@ -151,6 +149,12 @@ def _slugify(s: str) -> str:
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
     s = re.sub(r'[^a-zA-Z0-9]+', '_', s).strip('_').lower()
     return s or "page"
+
+# ---- NEW: draw user sidebar only if unified wasn't rendered ----
+def _safe_display_user_sidebar():
+    """Renderiza o header do usuário no sidebar apenas se o sidebar unificado não foi desenhado."""
+    if not st.session_state.get("_unified_sidebar_rendered", False):
+        display_user_sidebar()
 
 
 # ==============================================================================
@@ -235,6 +239,7 @@ def preprocess_attendance(df_attendance: pd.DataFrame, cfg: BaseConfig) -> pd.Da
     df = df_attendance.copy()
     df["fighter_norm"] = df.get(cfg.ATT_COL_FIGHTER, "").astype(str).apply(clean_and_normalize)
     df["event_norm"]   = df.get(cfg.ATT_COL_EVENT, "").astype(str).apply(clean_and_normalize)
+    # --- FIX: linha corrigida (sem syntax error) ---
     df["task_norm"]    = df.get(cfg.ATT_COL_TASK, "").astype(str).str.strip().str.lower()
     df["status_norm"]  = df.get(cfg.ATT_COL_STATUS, "").astype(str).str.strip().str.lower()
 
@@ -509,8 +514,16 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
     Render a full Streamlit page for a single fixed task.
     Garante filtros padrão: Status="All" e Event="All Events" por página.
     """
-    st.set_page_config(page_title=page_title, layout="wide")  # keep first UI call
-    check_authentication()
+    # Só configura página e autentica se o sidebar unificado AINDA não foi renderizado.
+    if not st.session_state.get("_unified_sidebar_rendered", False):
+        st.set_page_config(page_title=page_title, layout="wide")  # primeira chamada UI
+        check_authentication()
+
+    # Título e header do usuário (evita duplicar se já há sidebar unificado)
+    st.title(page_title)
+    _safe_display_user_sidebar()
+
+    cfg = BaseConfig  # alias
 
     # Prefixo único para as chaves desta página
     _kpref = _slugify(page_title)
@@ -534,11 +547,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
         .red-button button:hover { background-color: #c82333; color: white !important; border: 1px solid #c82333; }
     </style>
     """, unsafe_allow_html=True)
-
-    st.title(page_title)
-    display_user_sidebar()
-
-    cfg = BaseConfig  # alias
 
     # Chaves de estado únicas por página
     K_STATUS = f"{_kpref}_selected_status"

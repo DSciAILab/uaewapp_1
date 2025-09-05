@@ -3,7 +3,7 @@ import streamlit as st
 
 bootstrap_page("Blood Test")  # <- PRIMEIRA LINHA DA PÁGINA
 
-st.title("Blood Test")
+#st.title("Blood Test")
 
 
 

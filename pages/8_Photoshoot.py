@@ -1,3 +1,10 @@
+from components.layout import bootstrap_page
+import streamlit as st
+
+bootstrap_page("Photoshoot")  # <- PRIMEIRA LINHA DA PÁGINA
+
+#st.title("Photoshoot")
+
 # ==============================================================================
 # PHOTOSHOOT - PAGE
 # ==============================================================================

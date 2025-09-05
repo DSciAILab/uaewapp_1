@@ -8,7 +8,7 @@ check_authentication()
 
 # --- Configuração da Página ---
 st.set_page_config(
-    page_title="UAEW App - Home",
+    page_title="UAEW Operations App",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -17,12 +17,12 @@ st.set_page_config(
 from auth import display_user_sidebar
 display_user_sidebar()
 
-st.title("Bem-vindo ao UAEW App! 👋")
+st.title("UAEW Operations App")
 st.markdown("Use os botões abaixo para navegar entre as diferentes seções do aplicativo, ou use o menu na barra lateral.")
 
 st.divider()
 
-st.subheader("Acesso Rápido")
+st.subheader("Quick Navigation")
 
 # Cria colunas para os botões de navegação
 col1, col2, col3 = st.columns(3)
@@ -39,6 +39,6 @@ with col2:
     st.page_link("pages/Bus.py", label="🚌 Controle de Ônibus", icon="🚌", use_container_width=True)
 
 with col3:
-    st.page_link("pages/Attendance [Register].py", label="⏳ Fila de Atendimento", icon="⏳", use_container_width=True)
-    st.page_link("3_Medical Team.py", label="Medical Team", icon="⏳", use_container_width=True)
+    #st.page_link("pages/Attendance [Register].py", label="⏳ Fila de Atendimento", icon="⏳", use_container_width=True)
+    st.page_link("pages/3_Medical Team.py", label="Medical Team", icon="⏳", use_container_width=True)
 

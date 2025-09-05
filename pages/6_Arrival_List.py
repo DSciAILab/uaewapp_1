@@ -76,37 +76,54 @@ if 'INACTIVE' in df_arrivals.columns:
     df_arrivals = df_arrivals[df_arrivals['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])]
     df_arrivals.drop(columns=['INACTIVE'], inplace=True)
 
-st.divider()
+#st.divider()
 
 if df_arrivals.empty:
     st.info("No arrival records found with a filled name.")
 else:
-    filtro = st.segmented_control(
-        "Filter arrivals:",
-        options=["All", "Only Fighters", "Cars with request"]
-    )
+    with st.expander("⚙️ Filtros e Pesquisa", expanded=True):
+        filtro = st.segmented_control(
+            "Filter arrivals:",
+            options=["All", "Only Fighters", "Cars with request"]
+        )
 
-    df_filtrado = df_arrivals.copy()
-    if filtro == "Only Fighters":
-        df_filtrado = df_filtrado[df_filtrado['ROLE'].str.upper() == "1 - FIGHTER"]
-    elif filtro == "Cars with request":
-        df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
+        df_filtrado = df_arrivals.copy()
+        if filtro == "Only Fighters":
+            df_filtrado = df_filtrado[df_filtrado['ROLE'].str.upper() == "1 - FIGHTER"]
+        elif filtro == "Cars with request":
+            df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
 
-    # Toggle for cards or table view
-    modo_cards = st.toggle("View as cards", value=True)
+        # Toggle for cards or table view
+        modo_cards = st.toggle("View as cards", value=True)
 
-    # Search box for both views
-    search = st.text_input("Search in any column:")
-    df_search = df_filtrado.copy()
-    if search:
-        mask = pd.Series(False, index=df_search.index)
-        for col in df_search.columns:
-            mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
-        df_search = df_search[mask]
+        # Search box for both views
+        search = st.text_input("Search in any column:")
+        df_search = df_filtrado.copy()
+        if search:
+            mask = pd.Series(False, index=df_search.index)
+            for col in df_search.columns:
+                mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
+            df_search = df_search[mask]
+
+    total_filtered = len(df_search)
+    total_all = len(df_arrivals)
+    planned_count = df_search[df_search['transfer_arrival_status'].astype(str).str.strip().str.upper() == "PLANNED"].shape[0]
+    done_count = df_search[df_search['transfer_arrival_status'].astype(str).str.strip().str.upper() == "DONE"].shape[0]
+    
+    summary_html = f'''<div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 10px; margin-top: 10px;">
+        <span style="font-weight: bold;">Exibindo {total_filtered} de {total_all} chegadas:</span>
+        <span style="background-color: #ffe066; color: #23272f; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Planned: {planned_count}</span>
+        <span style="background-color: #27ae60; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Done: {done_count}</span>
+    </div>'''
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+#st.divider() - Removi para deixar mais compacto
 
     if modo_cards:
         # Group by ArrivalDate and show cards
-        today_str = datetime.datetime.now().strftime('%d/%m')
+        now = datetime.datetime.now()
+        today_str = now.strftime('%d/%m')
+        
         # Colors for corners
         corner_colors = {
             "RED": "#e74c3c",
@@ -119,9 +136,33 @@ else:
         for arrival_date, group in df_search.groupby('ArrivalDate'):
             total_chegadas = len(group)
             st.subheader(f"Arrivals on {arrival_date} ({total_chegadas})")
-            card_color = "#ffe066" if arrival_date == today_str else "#23272f"
-            text_color = "#23272f" if arrival_date == today_str else "#f8f9fa"
+            
             for idx, row in group.iterrows():
+                card_color = "#23272f" # Default color
+                text_color = "#f8f9fa" # Default text color
+
+                # Parse arrival date and time
+                try:
+                    # Assuming ArrivalDate is DD/MM and ArrivalTime is HH:MM
+                    arrival_datetime_str = f"{row['ArrivalDate']}/{now.year} {row['ArrivalTime']}"
+                    arrival_dt = datetime.datetime.strptime(arrival_datetime_str, '%d/%m/%Y %H:%M')
+                except ValueError:
+                    arrival_dt = None # Handle cases where date/time format is unexpected
+
+                is_today = (arrival_date == today_str)
+                is_soon = False
+                if arrival_dt:
+                    time_diff = arrival_dt - now
+                    if datetime.timedelta(minutes=-30) <= time_diff <= datetime.timedelta(hours=3): # 30 min before to 3 hours after
+                        is_soon = True
+
+                if is_soon:
+                    card_color = "#FF8C00" # Darker Orange for "soon"
+                    text_color = "#f8f9fa"
+                elif is_today:
+                    card_color = "#ffe066" # Yellow for "today"
+                    text_color = "#23272f"
+                
                 # Corner label
                 corner = str(row['CORNER']).upper()
                 corner_label_color = corner_colors.get(corner, "#888")
@@ -154,5 +195,21 @@ else:
                     unsafe_allow_html=True
                 )
     else:
-        styled_df = df_search.style.apply(highlight_today, axis=1)
+        # Prepare for sorting by date and time
+        df_search_sorted = df_search.copy()
+        
+        # Combine ArrivalDate and ArrivalTime into a single datetime column for sorting
+        # Assuming ArrivalDate is DD/MM and ArrivalTime is HH:MM
+        # Add a dummy year (current year) for parsing
+        current_year = datetime.datetime.now().year
+        df_search_sorted['ArrivalDateTime'] = pd.to_datetime(
+            df_search_sorted['ArrivalDate'].astype(str) + '/' + str(current_year) + ' ' + df_search_sorted['ArrivalTime'].astype(str),
+            format='%d/%m/%Y %H:%M',
+            errors='coerce' # Coerce errors will turn invalid parsing into NaT (Not a Time)
+        )
+        
+        # Sort by the new datetime column, putting NaT (invalid dates) at the end
+        df_search_sorted = df_search_sorted.sort_values(by='ArrivalDateTime', na_position='last').drop(columns=['ArrivalDateTime'])
+
+        styled_df = df_search_sorted.style.apply(highlight_today, axis=1)
         st.dataframe(styled_df, use_container_width=True, hide_index=True)

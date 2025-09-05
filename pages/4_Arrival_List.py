@@ -1,6 +1,3 @@
-4_Arrival_List.py
-
-# pages/4_Arrival_List.py
 from components.layout import bootstrap_page
 import streamlit as st
 import pandas as pd

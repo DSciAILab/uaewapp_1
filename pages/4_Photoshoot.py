@@ -14,7 +14,7 @@ from auth import check_authentication, display_user_sidebar
 check_authentication()
 
 # --- 1. Page Configuration ---
-st.set_page_config(page_title="Blood Test", layout="wide")
+st.set_page_config(page_title="Photoshoot", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -81,7 +81,7 @@ st.markdown("""
 MAIN_SHEET_NAME = "UAEW_App"
 ATHLETES_TAB_NAME = "df"
 ATTENDANCE_TAB_NAME = "Attendance"
-FIXED_TASK = "Blood Test"
+FIXED_TASK = "Photoshoot"
 STATUS_PENDING_EQUIVALENTS = ["Pending", "---", "Not Registred"]
 STATUS_BASE = "---"
 STATUS_REQUESTED = "Requested"
@@ -196,7 +196,7 @@ def status_for_current_event_by_name(att_df: pd.DataFrame, athlete_name: str, cu
 
 def last_blood_test_other_event_by_name(att_df: pd.DataFrame, athlete_name: str, current_event: str, task: str, fallback_any_event: bool = True):
     """
-    Retorna ("dd/mm/aaaa", "EVENTO") do último Blood Test (Done) em OUTRO evento.
+    Retorna ("dd/mm/aaaa", "EVENTO") do último Photoshoot (Done) em OUTRO evento.
     Se não houver e fallback=True, usa o último em QUALQUER evento.
     """
     if att_df is None or att_df.empty:
@@ -317,7 +317,7 @@ def registrar_log(ath_name: str, ath_event: str, task: str, status: str, notes: 
 
 # --- Main Application Logic ---
 #st.title(f"UAEW | {FIXED_TASK} Control")
-st.title("Blood Test")
+st.title("Photoshoot")
 
 display_user_sidebar()
 
@@ -426,7 +426,7 @@ for i_l, row in df_filtered.iterrows():
             whatsapp_tag_html = f"<a href='https://wa.me/{escaped_phone}' target='_blank' style='text-decoration: none;'><span style='background-color: #25D366; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>📞 WhatsApp</span></a>"
 
     passport_tag_html = f"<a href='{html.escape(passport_image_url, True)}' target='_blank' style='text-decoration: none;'><span style='background-color: #007BFF; color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.8em; font-weight: bold;'>🛂 Passaporte</span></a>" if passport_image_url and passport_image_url.startswith("http") else ""
-    blood_test_status_html = f"<small style='color:#ccc;'>Blood Test: <b>{html.escape(curr_ath_task_stat)}</b></small>"
+    blood_test_status_html = f"<small style='color:#ccc;'>Photoshoot: <b>{html.escape(curr_ath_task_stat)}</b></small>"
     arrival_status_html = f"<small style='color:#ccc;'>Arrival Status: <b>{html.escape(room_number)}</b></small>" if room_number else ""
 
     # --- Badges para demais tasks (por NOME + EVENTO; sem ID) ---
@@ -456,7 +456,7 @@ for i_l, row in df_filtered.iterrows():
             if status_for_badge in STATUS_PENDING_EQUIVALENTS: color = default_color
             badges_html += f"<span style='background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;'>{html.escape(task_name)}</span>"
 
-    # --- Último Blood Test (outro evento; badge "EVENTO | DATA") ---
+    # --- Último Photoshoot (outro evento; badge "EVENTO | DATA") ---
     last_dt_str, last_event_str = last_blood_test_other_event_by_name(
         df_attendance, ath_name_d, ath_event_d, FIXED_TASK, fallback_any_event=True
     )
@@ -477,7 +477,7 @@ for i_l, row in df_filtered.iterrows():
             <hr style='border-color: #444; margin: 5px 0; width: 100%;'>
             <div class='task-badges'>{badges_html}</div>
             <div class='info-line' style='margin-top:6px;'>
-                <small style='color:#ccc;'>Last Blood Test: <b>{last_blood_test_html}</b></small>
+                <small style='color:#ccc;'>Last Photoshoot: <b>{last_blood_test_html}</b></small>
             </div>
         </div>
     </div>"""

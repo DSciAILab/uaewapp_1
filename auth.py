@@ -20,20 +20,25 @@ def _safe_switch_page(target: str):
     st.markdown(f"[Open {html.escape(target)}]({target})")
 
 
+# auth.py
+import streamlit as st
+import html
+
 def check_authentication():
     """
-    Se não autenticado, redireciona uma única vez e interrompe a execução,
-    evitando múltiplos switch_page no mesmo ciclo.
+    Se não autenticado, redireciona uma única vez para /pages/1_Login.py
+    e interrompe a renderização da página atual.
     """
     if st.session_state.get("user_confirmed", False):
         return
 
-    # evita redirecionar N vezes no mesmo run
+    # evita múltiplos redirecionamentos em um mesmo ciclo
     if not st.session_state.get("_did_redirect_to_login", False):
         st.session_state["_did_redirect_to_login"] = True
-        _safe_switch_page("pages/1_Login.py")
-    # interrompe para não continuar renderizando a página protegida
+        st.switch_page("pages/1_Login.py")
+
     st.stop()
+
 
 def display_user_sidebar():
     """

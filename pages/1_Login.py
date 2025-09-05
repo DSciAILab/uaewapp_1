@@ -6,7 +6,7 @@ import html
 # ------------------------------------------------------------------------------
 # Bootstrap da página (config/layout/sidebar centralizados)
 # ------------------------------------------------------------------------------
-bootstrap_page("Login")  # <- PRIMEIRA LINHA DA PÁGINA
+bootstrap_page("Login", require_auth=False)  # <- PRIMEIRA LINHA DA PÁGINA
 
 # ------------------------------------------------------------------------------
 # Helpers de navegação (compatibilidade entre versões do Streamlit)

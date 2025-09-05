@@ -12,6 +12,7 @@ import html
 import time
 import unicodedata
 import re
+from typing import List, Tuple, Optional
 
 # --- Project Imports (your existing helpers) ---
 from utils import get_gspread_client, connect_gsheet_tab, load_users_data, get_valid_user_info, load_config_data
@@ -137,10 +138,10 @@ def _fmt_date_from_text(s: str) -> str:
     dt = pd.to_datetime(s, dayfirst=True, errors="coerce")
     return dt.strftime("%d/%m/%Y") if pd.notna(dt) else "N/A"
 
-def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] = None) -> pd.Series:
+def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: List[str] = None) -> pd.Series:
     """Boolean mask to match task name (with aliases)."""
     t = task_series.fillna("").astype(str).str.lower()
-    pats = [re.escape(fixed_task.lower())] + list(aliases or [])
+    pats = [re.escape((fixed_task or "").lower())] + [re.escape(x.lower()) for x in (aliases or [])]
     regex = "(" + "|".join(pats) + ")"
     return t.str.contains(regex, regex=True, na=False)
 
@@ -172,29 +173,42 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
         df = pd.DataFrame(data)
         if df.empty:
             return pd.DataFrame()
+        # normaliza colunas (snake case minúsculo)
         df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
+        # garante colunas essenciais
         if cfg.COL_ROLE not in df.columns or cfg.COL_INACTIVE not in df.columns:
             st.error(f"Columns '{cfg.COL_ROLE.upper()}'/'{cfg.COL_INACTIVE.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
+        if cfg.COL_ID not in df.columns:
+            df[cfg.COL_ID] = ""  # evita KeyError em buscas/merge
+        if cfg.COL_NAME not in df.columns:
+            st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
+            return pd.DataFrame()
 
+        # trata inativos: vazio => ativo (False); TRUE => inativo
         if df[cfg.COL_INACTIVE].dtype == 'object':
-            df[cfg.COL_INACTIVE] = df[cfg.COL_INACTIVE].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+            df[cfg.COL_INACTIVE] = (
+                df[cfg.COL_INACTIVE]
+                .astype(str).str.strip().str.upper()
+                .map({'FALSE': False, 'TRUE': True, '': False})
+                .fillna(False)
+            )
         elif pd.api.types.is_numeric_dtype(df[cfg.COL_INACTIVE]):
-            df[cfg.COL_INACTIVE] = df[cfg.COL_INACTIVE].map({0: False, 1: True}).fillna(True)
+            df[cfg.COL_INACTIVE] = df[cfg.COL_INACTIVE].map({0: False, 1: True}).fillna(False)
+        else:
+            df[cfg.COL_INACTIVE] = False
 
+        # filtra somente lutadores ativos
         df = df[(df[cfg.COL_ROLE] == "1 - Fighter") & (df[cfg.COL_INACTIVE] == False)].copy()
 
+        # completa colunas usadas na UI
         df[cfg.COL_EVENT] = df[cfg.COL_EVENT].fillna(cfg.DEFAULT_EVENT_PLACEHOLDER) if cfg.COL_EVENT in df.columns else cfg.DEFAULT_EVENT_PLACEHOLDER
         for col_check in [cfg.COL_IMAGE, cfg.COL_MOBILE, cfg.COL_FIGHT_NUMBER, cfg.COL_CORNER, cfg.COL_PASSPORT_IMAGE, cfg.COL_ROOM]:
             if col_check not in df.columns:
                 df[col_check] = ""
             else:
                 df[col_check] = df[col_check].fillna("")
-
-        if cfg.COL_NAME not in df.columns:
-            st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
-            return pd.DataFrame()
 
         return df.sort_values(by=[cfg.COL_EVENT, cfg.COL_NAME]).reset_index(drop=True)
     except Exception as e:
@@ -209,23 +223,25 @@ def load_attendance_data(sheet_name: str, attendance_tab_name: str, cfg: BaseCon
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(ws.get_all_records())
-        if df_att.empty:
-            return pd.DataFrame(columns=[
-                cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
-                cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
-                cfg.ATT_COL_TIMESTAMP, cfg.ATT_COL_TIMESTAMP_ALT, cfg.ATT_COL_NOTES
-            ])
-        for col in [
+        # garante todas as colunas esperadas (evita 'str' has no attribute 'astype')
+        required_cols = [
             cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
             cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
             cfg.ATT_COL_TIMESTAMP, cfg.ATT_COL_TIMESTAMP_ALT, cfg.ATT_COL_NOTES
-        ]:
+        ]
+        if df_att.empty:
+            return pd.DataFrame(columns=required_cols)
+        for col in required_cols:
             if col not in df_att.columns:
                 df_att[col] = pd.NA
         return df_att
     except Exception as e:
         st.error(f"Error loading attendance '{attendance_tab_name}': {e}", icon="🚨")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[
+            cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
+            cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
+            cfg.ATT_COL_TIMESTAMP, cfg.ATT_COL_TIMESTAMP_ALT, cfg.ATT_COL_NOTES
+        ])
 
 
 # ==============================================================================
@@ -237,27 +253,29 @@ def preprocess_attendance(df_attendance: pd.DataFrame, cfg: BaseConfig) -> pd.Da
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
-    df["fighter_norm"] = df.get(cfg.ATT_COL_FIGHTER, "").astype(str).apply(clean_and_normalize)
-    df["event_norm"]   = df.get(cfg.ATT_COL_EVENT, "").astype(str).apply(clean_and_normalize)
-    # --- FIX: linha corrigida (sem syntax error) ---
-    df["task_norm"]    = df.get(cfg.ATT_COL_TASK, "").astype(str).str.strip().str.lower()
-    df["status_norm"]  = df.get(cfg.ATT_COL_STATUS, "").astype(str).str.strip().str.lower()
+
+    # As colunas necessárias já são garantidas em load_attendance_data
+    df["fighter_norm"] = df[cfg.ATT_COL_FIGHTER].astype(str).apply(clean_and_normalize)
+    df["event_norm"]   = df[cfg.ATT_COL_EVENT].astype(str).apply(clean_and_normalize)
+    df["task_norm"]    = df[cfg.ATT_COL_TASK].astype(str).str.strip().str.lower()
+    df["status_norm"]  = df[cfg.ATT_COL_STATUS].astype(str).str.strip().str.lower()
 
     # Prefer TimeStamp then fallback to Timestamp
-    t2 = df.get(cfg.ATT_COL_TIMESTAMP_ALT)
-    t1 = df.get(cfg.ATT_COL_TIMESTAMP)
-    if t2 is None and t1 is None:
-        df["TS_raw"] = ""
-    else:
-        s2 = _clean_str_series(t2) if t2 is not None else pd.Series([""]*len(df))
-        s1 = _clean_str_series(t1) if t1 is not None else pd.Series([""]*len(df))
-        df["TS_raw"] = s2.where(s2 != "", s1)
+    s2 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP_ALT])
+    s1 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP])
+    df["TS_raw"] = s2.where(s2 != "", s1)
 
     df["TS_dt"] = parse_ts_series(df["TS_raw"])
     return df
 
 
-def get_all_athletes_status(df_athletes: pd.DataFrame, df_attendance: pd.DataFrame, fixed_task: str, aliases: list[str], cfg: BaseConfig) -> pd.DataFrame:
+def get_all_athletes_status(
+    df_athletes: pd.DataFrame,
+    df_attendance: pd.DataFrame,
+    fixed_task: str,
+    aliases: List[str],
+    cfg: BaseConfig
+) -> pd.DataFrame:
     """Compute current fixed-task status for each athlete+event."""
     if df_athletes is None or df_athletes.empty:
         return pd.DataFrame(columns=[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
@@ -310,10 +328,10 @@ def last_task_other_event_by_name(
     athlete_name: str,
     current_event: str,
     fixed_task: str,
-    aliases: list[str],
+    aliases: List[str],
     cfg: BaseConfig,
     fallback_any_event: bool = True
-) -> tuple[str, str]:
+) -> Tuple[str, str]:
     """Return (date_str, event_name) of the last DONE record for the fixed task in a different event."""
     if df_attendance is None or df_attendance.empty:
         return "N/A", ""
@@ -322,7 +340,8 @@ def last_task_other_event_by_name(
     evt_n  = clean_and_normalize(current_event)
 
     task_is = make_task_mask(df_attendance["task_norm"], fixed_task, aliases)
-    status_done = df_attendance["status_norm"].str.fullmatch(cfg.STATUS_DONE.lower(), case=False, na=False)
+    # pandas Series.str.fullmatch não tem parâmetro 'case'; usamos comparação direta em lower()
+    status_done = df_attendance["status_norm"] == cfg.STATUS_DONE.lower()
     base_mask = (df_attendance["fighter_norm"] == name_n) & task_is & status_done
 
     cand = df_attendance[base_mask & (df_attendance["event_norm"] != evt_n)].copy()
@@ -398,7 +417,7 @@ def registrar_log(
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, cfg.MAIN_SHEET_NAME, cfg.ATTENDANCE_TAB_NAME)
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        user_ident = st.session_state.get('current_user_name', user_log_id)
+        user_ident = st.session_state.get('current_user_name', None) or st.session_state.get('current_user_id', None) or user_log_id
 
         values = {
             cfg.ATT_COL_EVENT: ath_event,
@@ -427,7 +446,7 @@ def registrar_log(
 # ==============================================================================
 # UI RENDERING
 # ==============================================================================
-def render_athlete_card(row: pd.Series, last_info: tuple[str, str], badges_html: str, fixed_task: str, cfg: BaseConfig) -> str:
+def render_athlete_card(row: pd.Series, last_info: Tuple[str, str], badges_html: str, fixed_task: str, cfg: BaseConfig) -> str:
     """Return HTML card for an athlete."""
     ath_id_d = str(row.get(cfg.COL_ID, ""))
     ath_name_d = str(row.get(cfg.COL_NAME, ""))
@@ -509,27 +528,9 @@ def render_athlete_card(row: pd.Series, last_info: tuple[str, str], badges_html:
 # ==============================================================================
 # PAGE RENDERER (ENTRYPOINT)
 # ==============================================================================
-#def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
-#    """
-#    Render a full Streamlit page for a single fixed task.
-#    Garante filtros padrão: Status="All" e Event="All Events" por página.
-#    """
-#    # Só configura página e autentica se o sidebar unificado AINDA não foi renderizado.
-#    if not st.session_state.get("_unified_sidebar_rendered", False):
-#        st.set_page_config(page_title=page_title, layout="wide")  # primeira chamada UI
-#        check_authentication()#
-
-##    # Título e header do usuário (evita duplicar se já há sidebar unificado)
-#    st.title(page_title)
-#    _safe_display_user_sidebar()
-
-
-def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
+def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     # Config & auth já vieram do bootstrap_page()
     st.title(page_title)
-
-
-
 
     cfg = BaseConfig  # alias
 
@@ -721,7 +722,8 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: list[str]):
             st.markdown(card_html, unsafe_allow_html=True)
 
         with col_buttons:
-            uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
+            # evita AttributeError quando a chave não existir
+            uid_l = st.session_state.get("current_user_ps_id_internal", None) or st.session_state.get("current_user_id", None) or ""
             curr = row.get('current_task_status', cfg.STATUS_PENDING)
             athlete_id_val = row.get(cfg.COL_ID, "")
 

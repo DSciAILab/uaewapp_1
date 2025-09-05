@@ -316,7 +316,9 @@ def registrar_log(ath_name: str, ath_event: str, task: str, status: str, notes: 
         return False
 
 # --- Main Application Logic ---
-st.title(f"UAEW | {FIXED_TASK} Control")
+#st.title(f"UAEW | {FIXED_TASK} Control")
+st.title("Blood Test")
+
 display_user_sidebar()
 
 # defaults da página (padrão: Status=Todos, Ordenar=Nome)

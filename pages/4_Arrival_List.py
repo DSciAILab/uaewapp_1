@@ -39,14 +39,14 @@ def load_arrival_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DA
             'transfer_arrival_status', 'transfer_arrival_car'
         ]
 
-        # Ensure we keep TRANSFERdriver available for the cards (without changing layout)
+        # Mantém TRANSFERdriver disponível para os cards (sem alterar layout)
         existing_cols = [col for col in display_cols if col in df.columns]
         if 'TRANSFERdriver' in df.columns and 'TRANSFERdriver' not in existing_cols:
             existing_cols.append('TRANSFERdriver')
 
         df = df[existing_cols]
 
-        # Filter out rows where NAME is empty or just whitespace
+        # Filtra linhas com NAME vazio
         if 'NAME' in df.columns:
             df.dropna(subset=['NAME'], inplace=True)
             df = df[df['NAME'].astype(str).str.strip() != ''].copy()
@@ -133,7 +133,15 @@ else:
             "BLACK": "#23272f",
             "WHITE": "#f8f9fa"
         }
-        for arrival_date, group in df_search.groupby('ArrivalDate'):
+
+        # Garante agrupamento mesmo se existir valores faltantes
+        if 'ArrivalDate' not in df_search.columns:
+            st.warning("Column 'ArrivalDate' not found.")
+            groups = [(None, df_search)]
+        else:
+            groups = df_search.groupby('ArrivalDate')
+
+        for arrival_date, group in groups:
             total_chegadas = len(group)
             st.subheader(f"Arrivals on {arrival_date} ({total_chegadas})")
             
@@ -141,19 +149,22 @@ else:
                 card_color = "#23272f"  # Default color
                 text_color = "#f8f9fa"  # Default text color
 
-                # Parse arrival date and time
+                # Parse arrival date and time (DD/MM + HH:MM)
+                arrival_dt = None
                 try:
-                    # Assuming ArrivalDate is DD/MM and ArrivalTime is HH:MM
-                    arrival_datetime_str = f"{row['ArrivalDate']}/{now.year} {row['ArrivalTime']}"
-                    arrival_dt = datetime.datetime.strptime(arrival_datetime_str, '%d/%m/%Y %H:%M')
+                    arrival_date_str = str(row.get('ArrivalDate', ''))
+                    arrival_time_str = str(row.get('ArrivalTime', ''))
+                    if arrival_date_str and arrival_time_str:
+                        arrival_datetime_str = f"{arrival_date_str}/{now.year} {arrival_time_str}"
+                        arrival_dt = datetime.datetime.strptime(arrival_datetime_str, '%d/%m/%Y %H:%M')
                 except Exception:
-                    arrival_dt = None  # Handle cases where date/time format is unexpected
+                    arrival_dt = None
 
-                is_today = (arrival_date == today_str)
+                is_today = (str(arrival_date) == today_str)
                 is_soon = False
                 if arrival_dt:
                     time_diff = arrival_dt - now
-                    if datetime.timedelta(minutes=-30) <= time_diff <= datetime.timedelta(hours=3):  # 30 min before to 3 hours after
+                    if datetime.timedelta(minutes=-30) <= time_diff <= datetime.timedelta(hours=3):
                         is_soon = True
 
                 if is_soon:
@@ -177,9 +188,19 @@ else:
                     safe_status = str(row.get("transfer_arrival_status", ""))
                     status_label = f'<span style="background-color:#888;color:#fff;padding:2px 8px;border-radius:8px;">{safe_status}</span>'
 
-                # Driver info (ONLY if there's data in TRANSFERdriver)
+                # Valores de Carro e Driver
+                car_val = str(row.get('transfer_arrival_car', '')).strip()
                 driver_val = str(row.get('TRANSFERdriver', '')).strip()
-                driver_snippet = f'<span style="margin-left:12px; opacity:0.9;"><strong>Driver:</strong> {driver_val}</span>' if driver_val else ''
+                status_html = status_label.strip()  # evita começar com espaço/nova linha
+
+                # Monta a linha flex sem que HTML cru apareça
+                line_html = (
+                    '<div style="display:flex;gap:18px;align-items:center;">'
+                    f'<span><strong>Car:</strong> {car_val}</span>'
+                )
+                if driver_val:
+                    line_html += f'<span style="margin-left:12px;opacity:0.9;"><strong>Driver:</strong> {driver_val}</span>'
+                line_html += status_html + '</div>'
 
                 st.markdown(
                     f"""
@@ -193,11 +214,7 @@ else:
                             <span><strong>Time:</strong> {row.get('ArrivalTime','')}</span>
                             <span><strong>Airport:</strong> {row.get('ArrivalAirport','')}</span>
                         </div>
-                        <div style="display: flex; gap: 18px; align-items:center;">
-                            <span><strong>Car:</strong> {row.get('transfer_arrival_car','')}</span>
-                            {driver_snippet}
-                            {status_label}
-                        </div>
+                        {line_html}
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -215,7 +232,8 @@ else:
                 errors='coerce'
             )
             df_search_sorted = df_search_sorted.sort_values(by='ArrivalDateTime', na_position='last').drop(columns=['ArrivalDateTime'])
-        # Hide TRANSFERdriver in table view to avoid changing the visual layout
+
+        # Oculta TRANSFERdriver na tabela para não alterar layout visual
         if 'TRANSFERdriver' in df_search_sorted.columns:
             df_table = df_search_sorted.drop(columns=['TRANSFERdriver'])
         else:

@@ -35,8 +35,6 @@ class Config:
     TASK_ALIASES = [r"\bphoto\s*shoot\b", r"\bphotoshoot\b", r"\bphoto\b"]
 
     # Status lógicos:
-    # ""  -> Pendente (sem solicitação no evento atual)
-    # "---" -> Não precisa
     STATUS_PENDING = ""            # pendente/sem registro ou registro com status vazio
     STATUS_NOT_NEEDED = "---"      # explicitamente sem necessidade
     STATUS_REQUESTED = "Requested"
@@ -50,10 +48,58 @@ class Config:
         STATUS_REQUESTED: "#B08D00",
         STATUS_PENDING: "#1e1e1e",     # pendente (sem solicitação)
         STATUS_NOT_NEEDED: "#6c757d",  # não precisa
+        # Mapeamentos adicionais para o caso de status brutos ou labels
         "Pending": "#1e1e1e",
         "Not Registred": "#1e1e1e",
         "Issue": "#1e1e1e"
     }
+
+    # Constantes para nomes de colunas (melhora a manutenibilidade)
+    COL_ID = "id"
+    COL_NAME = "name"
+    COL_EVENT = "event"
+    COL_ROLE = "role"
+    COL_INACTIVE = "inactive"
+    COL_IMAGE = "image"
+    COL_MOBILE = "mobile"
+    COL_FIGHT_NUMBER = "fight_number"
+    COL_CORNER = "corner"
+    COL_PASSPORT_IMAGE = "passport_image"
+    COL_ROOM = "room"
+
+    # Colunas de presença
+    ATT_COL_EVENT = "Event"
+    ATT_COL_NAME = "Name"
+    ATT_COL_FIGHTER = "Fighter"
+    ATT_COL_TASK = "Task"
+    ATT_COL_STATUS = "Status"
+    ATT_COL_USER = "User"
+    ATT_COL_TIMESTAMP = "Timestamp"
+    ATT_COL_TIMESTAMP_ALT = "TimeStamp" # Gspread pode retornar "TimeStamp" ou "Timestamp"
+    ATT_COL_NOTES = "Notes"
+    ATT_COL_ID = "#"
+
+    DEFAULT_EVENT_PLACEHOLDER = "Z" # Valor padrão para eventos não especificados
+
+    @staticmethod
+    def map_raw_status_to_config(raw_status: str) -> str:
+        """
+        Mapeia um status bruto da planilha para uma das constantes de status da Config.
+        Args:
+            raw_status (str): Status lido da planilha (pode ser vazio, 'Requested', 'Done', '---', etc.).
+        Returns:
+            str: O status correspondente da Config.
+        """
+        raw_status = "" if raw_status is None else str(raw_status).strip()
+        raw_status_low = raw_status.lower()
+        if raw_status_low == Config.STATUS_DONE.lower():
+            return Config.STATUS_DONE
+        if raw_status_low == Config.STATUS_REQUESTED.lower():
+            return Config.STATUS_REQUESTED
+        if raw_status == Config.STATUS_NOT_NEEDED: # '---' deve ser exato
+            return Config.STATUS_NOT_NEEDED
+        # Qualquer outra coisa (incluindo vazio) é considerada pendente
+        return Config.STATUS_PENDING
 
 
 # ==============================================================================
@@ -84,6 +130,9 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
     Returns:
         pd.Series: Série convertida para datetime.
     """
+    if raw is None or raw.empty:
+        return pd.Series([], dtype='datetime64[ns]')
+    
     tries = [
         pd.to_datetime(raw, format="%d/%m/%Y %H:%M:%S", errors="coerce"),
         pd.to_datetime(raw, format="%d/%m/%Y", errors="coerce"),
@@ -98,6 +147,8 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
 
 def _clean_str_series(s: pd.Series) -> pd.Series:
     """Limpa uma série de strings, removendo valores inválidos."""
+    if s is None or s.empty:
+        return pd.Series([], dtype=str)
     s = s.fillna("").astype(str).str.strip()
     return s.replace({k: "" for k in _INVALID_STRS})
 
@@ -139,7 +190,7 @@ def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] =
 # FUNÇÕES DE CARREGAMENTO DE DADOS (COM CACHE)
 # ==============================================================================
 @st.cache_data(ttl=600)
-def load_athlete_data(sheet_name: str = Config.MAIN_SHEET_NAME, athletes_tab_name: str = Config.ATHLETES_TAB_NAME):
+def load_athlete_data(sheet_name: str = Config.MAIN_SHEET_NAME, athletes_tab_name: str = Config.ATHLETES_TAB_NAME) -> pd.DataFrame:
     """
     Carrega os dados dos atletas da planilha, aplicando filtros e normalizações.
     Args:
@@ -159,36 +210,37 @@ def load_athlete_data(sheet_name: str = Config.MAIN_SHEET_NAME, athletes_tab_nam
             return pd.DataFrame()
         df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
 
-        if "role" not in df.columns or "inactive" not in df.columns:
-            st.error(f"Colunas 'ROLE'/'INACTIVE' não encontradas em '{athletes_tab_name}'.", icon="🚨")
+        # Usar constantes para nomes de colunas
+        if Config.COL_ROLE not in df.columns or Config.COL_INACTIVE not in df.columns:
+            st.error(f"Colunas '{Config.COL_ROLE.upper()}'/'{Config.COL_INACTIVE.upper()}' não encontradas em '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
-        if df["inactive"].dtype == 'object':
-            df["inactive"] = df["inactive"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
-        elif pd.api.types.is_numeric_dtype(df["inactive"]):
-            df["inactive"] = df["inactive"].map({0: False, 1: True}).fillna(True)
+        if df[Config.COL_INACTIVE].dtype == 'object':
+            df[Config.COL_INACTIVE] = df[Config.COL_INACTIVE].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
+        elif pd.api.types.is_numeric_dtype(df[Config.COL_INACTIVE]):
+            df[Config.COL_INACTIVE] = df[Config.COL_INACTIVE].map({0: False, 1: True}).fillna(True)
 
-        df = df[(df["role"] == "1 - Fighter") & (df["inactive"] == False)].copy()
+        df = df[(df[Config.COL_ROLE] == "1 - Fighter") & (df[Config.COL_INACTIVE] == False)].copy()
 
-        df["event"] = df["event"].fillna("Z") if "event" in df.columns else "Z"
-        for col_check in ["image", "mobile", "fight_number", "corner", "passport_image", "room"]:
+        df[Config.COL_EVENT] = df[Config.COL_EVENT].fillna(Config.DEFAULT_EVENT_PLACEHOLDER) if Config.COL_EVENT in df.columns else Config.DEFAULT_EVENT_PLACEHOLDER
+        for col_check in [Config.COL_IMAGE, Config.COL_MOBILE, Config.COL_FIGHT_NUMBER, Config.COL_CORNER, Config.COL_PASSPORT_IMAGE, Config.COL_ROOM]:
             if col_check not in df.columns:
                 df[col_check] = ""
             else:
                 df[col_check] = df[col_check].fillna("")
 
-        if "name" not in df.columns:
-            st.error(f"'NAME' não encontrada em '{athletes_tab_name}'.", icon="🚨")
+        if Config.COL_NAME not in df.columns:
+            st.error(f"'{Config.COL_NAME.upper()}' não encontrada em '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
-        return df.sort_values(by=["event", "name"]).reset_index(drop=True)
+        return df.sort_values(by=[Config.COL_EVENT, Config.COL_NAME]).reset_index(drop=True)
     except Exception as e:
         st.error(f"Erro ao carregar atletas (gspread): {e}", icon="🚨")
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=120)
-def load_attendance_data(sheet_name: str = Config.MAIN_SHEET_NAME, attendance_tab_name: str = Config.ATTENDANCE_TAB_NAME):
+def load_attendance_data(sheet_name: str = Config.MAIN_SHEET_NAME, attendance_tab_name: str = Config.ATTENDANCE_TAB_NAME) -> pd.DataFrame:
     """
     Carrega os dados de presença da planilha.
     Args:
@@ -202,8 +254,17 @@ def load_attendance_data(sheet_name: str = Config.MAIN_SHEET_NAME, attendance_ta
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(worksheet.get_all_records())
         if df_att.empty:
-            return pd.DataFrame(columns=["#", "Event", "Name", "Fighter", "Task", "Status", "User", "Timestamp", "TimeStamp", "Notes"])
-        for col in ["#", "Event", "Name", "Fighter", "Task", "Status", "User", "Timestamp", "TimeStamp", "Notes"]:
+            return pd.DataFrame(columns=[
+                Config.ATT_COL_ID, Config.ATT_COL_EVENT, Config.ATT_COL_NAME, Config.ATT_COL_FIGHTER,
+                Config.ATT_COL_TASK, Config.ATT_COL_STATUS, Config.ATT_COL_USER,
+                Config.ATT_COL_TIMESTAMP, Config.ATT_COL_TIMESTAMP_ALT, Config.ATT_COL_NOTES
+            ])
+        # Garantir que todas as colunas esperadas existam
+        for col in [
+            Config.ATT_COL_ID, Config.ATT_COL_EVENT, Config.ATT_COL_NAME, Config.ATT_COL_FIGHTER,
+            Config.ATT_COL_TASK, Config.ATT_COL_STATUS, Config.ATT_COL_USER,
+            Config.ATT_COL_TIMESTAMP, Config.ATT_COL_TIMESTAMP_ALT, Config.ATT_COL_NOTES
+        ]:
             if col not in df_att.columns:
                 df_att[col] = pd.NA
         return df_att
@@ -227,14 +288,14 @@ def preprocess_attendance(df_attendance: pd.DataFrame) -> pd.DataFrame:
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
-    df["fighter_norm"] = df.get("Fighter", "").astype(str).apply(clean_and_normalize)
-    df["event_norm"]   = df.get("Event", "").astype(str).apply(clean_and_normalize)
-    df["task_norm"]    = df.get("Task", "").astype(str).str.strip().str.lower()
-    df["status_norm"]  = df.get("Status", "").astype(str).str.strip().str.lower()
+    df["fighter_norm"] = df.get(Config.ATT_COL_FIGHTER, "").astype(str).apply(clean_and_normalize)
+    df["event_norm"]   = df.get(Config.ATT_COL_EVENT, "").astype(str).apply(clean_and_normalize)
+    df["task_norm"]    = df.get(Config.ATT_COL_TASK, "").astype(str).str.strip().str.lower()
+    df["status_norm"]  = df.get(Config.ATT_COL_STATUS, "").astype(str).str.strip().str.lower()
 
     # Prioriza 'TimeStamp' e usa 'Timestamp' como fallback
-    t2 = df.get("TimeStamp")
-    t1 = df.get("Timestamp")
+    t2 = df.get(Config.ATT_COL_TIMESTAMP_ALT)
+    t1 = df.get(Config.ATT_COL_TIMESTAMP)
     if t2 is None and t1 is None:
         df["TS_raw"] = ""
     else:
@@ -257,17 +318,19 @@ def get_all_athletes_status(df_athletes: pd.DataFrame, df_attendance: pd.DataFra
         pd.DataFrame: DataFrame com colunas de status adicionadas.
     """
     if df_athletes is None or df_athletes.empty:
-        return pd.DataFrame(columns=['name', 'event', 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
+        return pd.DataFrame(columns=[
+            Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'
+        ])
 
     base = df_athletes.copy()
-    base['name_norm'] = base['name'].apply(clean_and_normalize)
-    base['event_norm'] = base['event'].apply(clean_and_normalize)
+    base['name_norm'] = base[Config.COL_NAME].apply(clean_and_normalize)
+    base['event_norm'] = base[Config.COL_EVENT].apply(clean_and_normalize)
 
     if df_attendance is None or df_attendance.empty:
         base['current_task_status'] = Config.STATUS_PENDING
         base['latest_task_user'] = 'N/A'
         base['latest_task_timestamp'] = 'N/A'
-        return base[['name', 'event', 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+        return base[[Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
     task_mask = make_task_mask(df_attendance["task_norm"], fixed_task, Config.TASK_ALIASES)
     df_task = df_attendance[task_mask].copy()
@@ -276,12 +339,12 @@ def get_all_athletes_status(df_athletes: pd.DataFrame, df_attendance: pd.DataFra
         base['current_task_status'] = Config.STATUS_PENDING
         base['latest_task_user'] = 'N/A'
         base['latest_task_timestamp'] = 'N/A'
-        return base[['name', 'event', 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+        return base[[Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
     df_task["__idx__"] = np.arange(len(df_task))
 
     merged = pd.merge(
-        base[['name', 'event', 'name_norm', 'event_norm']],
+        base[[Config.COL_NAME, Config.COL_EVENT, 'name_norm', 'event_norm']],
         df_task,
         left_on=['name_norm', 'event_norm'],
         right_on=['fighter_norm', 'event_norm'],
@@ -295,30 +358,16 @@ def get_all_athletes_status(df_athletes: pd.DataFrame, df_attendance: pd.DataFra
 
     latest_records = merged.drop_duplicates(subset=['name_norm', 'event_norm'], keep='first')
 
-    def _map_status(x):
-        x = "" if x is None else str(x).strip()
-        x_low = x.lower()
-        if x_low == Config.STATUS_DONE.lower():
-            return Config.STATUS_DONE
-        if x_low == Config.STATUS_REQUESTED.lower():
-            return Config.STATUS_REQUESTED
-        if x == Config.STATUS_NOT_NEEDED:
-            return Config.STATUS_NOT_NEEDED
-        # vazio -> pendente
-        if x == "":
-            return Config.STATUS_PENDING
-        # default: considerar pendente
-        return Config.STATUS_PENDING
-
-    latest_records['current_task_status'] = latest_records['Status'].apply(_map_status)
+    # Usar o método estático da Config para mapear o status
+    latest_records['current_task_status'] = latest_records[Config.ATT_COL_STATUS].apply(Config.map_raw_status_to_config)
     latest_records['latest_task_timestamp'] = latest_records.apply(
         lambda row: row['TS_dt'].strftime("%d/%m/%Y") if pd.notna(row.get('TS_dt', pd.NaT))
-        else _fmt_date_from_text(row.get('TS_raw', row.get('TimeStamp', row.get('Timestamp', '')))),
+        else _fmt_date_from_text(row.get('TS_raw', row.get(Config.ATT_COL_TIMESTAMP_ALT, row.get(Config.ATT_COL_TIMESTAMP, '')))),
         axis=1
     )
-    latest_records['latest_task_user'] = latest_records['User'].fillna('N/A')
+    latest_records['latest_task_user'] = latest_records[Config.ATT_COL_USER].fillna('N/A')
 
-    return latest_records[['name', 'event', 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+    return latest_records[[Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
 
 @st.cache_data(ttl=600)
@@ -329,9 +378,18 @@ def last_task_other_event_by_name(
     fixed_task: str,
     aliases: list[str],
     fallback_any_event: bool = True
-) -> tuple:
+) -> tuple[str, str]:
     """
     Retorna a data e o evento do último registro (Done) da tarefa fixa em OUTRO evento.
+    Args:
+        df_attendance (pd.DataFrame): DataFrame de presença pré-processado.
+        athlete_name (str): Nome do atleta.
+        current_event (str): Evento atual do atleta.
+        fixed_task (str): Nome da tarefa fixa.
+        aliases (list[str]): Aliases da tarefa fixa.
+        fallback_any_event (bool): Se True, busca em qualquer evento se não encontrar em outro.
+    Returns:
+        tuple[str, str]: Data formatada e nome do evento.
     """
     if df_attendance is None or df_attendance.empty:
         return "N/A", ""
@@ -340,7 +398,8 @@ def last_task_other_event_by_name(
     evt_n  = clean_and_normalize(current_event)
 
     task_is = make_task_mask(df_attendance["task_norm"], fixed_task, aliases)
-    status_done = df_attendance["status_norm"].str.fullmatch(r"\s*done\s*", case=False, na=False)
+    # Usar o status normalizado para 'Done'
+    status_done = df_attendance["status_norm"].str.fullmatch(Config.STATUS_DONE.lower(), case=False, na=False)
     base_mask = (df_attendance["fighter_norm"] == name_n) & task_is & status_done
 
     cand = df_attendance[base_mask & (df_attendance["event_norm"] != evt_n)].copy()
@@ -358,29 +417,35 @@ def last_task_other_event_by_name(
         return "N/A", ""
 
     row = cand.iloc[0]
-    ev_label = str(row.get("Event", "")).strip()
+    ev_label = str(row.get(Config.ATT_COL_EVENT, "")).strip()
     if pd.notna(row.get("TS_dt", pd.NaT)):
         dt_str = row["TS_dt"].strftime("%d/%m/%Y")
     else:
-        dt_str = _fmt_date_from_text(row.get("TS_raw", row.get("TimeStamp", row.get("Timestamp", ""))))
+        dt_str = _fmt_date_from_text(row.get("TS_raw", row.get(Config.ATT_COL_TIMESTAMP_ALT, row.get(Config.ATT_COL_TIMESTAMP, ""))))
     return dt_str, ev_label
 
 
 # ==============================================================================
 # FUNÇÕES DE RENDERIZAÇÃO DE UI
 # ==============================================================================
-def render_athlete_card(row: pd.Series, last_info: tuple, badges_html: str) -> str:
+def render_athlete_card(row: pd.Series, last_info: tuple[str, str], badges_html: str) -> str:
     """
     Gera o HTML para o card de um atleta.
+    Args:
+        row (pd.Series): Linha do DataFrame com dados do atleta.
+        last_info (tuple[str, str]): Tuple (data, evento) do último registro da tarefa.
+        badges_html (str): HTML com os badges de outras tarefas.
+    Returns:
+        str: String HTML do card.
     """
-    ath_id_d = str(row.get("id", ""))
-    ath_name_d = str(row.get("name", ""))
-    ath_event_d = str(row.get("event", ""))
-    ath_fight_number = str(row.get("fight_number", ""))
-    ath_corner_color = str(row.get("corner", ""))
-    mobile_number = str(row.get("mobile", ""))
-    passport_image_url = str(row.get("passport_image", ""))
-    room_number = str(row.get("room", ""))
+    ath_id_d = str(row.get(Config.COL_ID, ""))
+    ath_name_d = str(row.get(Config.COL_NAME, ""))
+    ath_event_d = str(row.get(Config.COL_EVENT, ""))
+    ath_fight_number = str(row.get(Config.COL_FIGHT_NUMBER, ""))
+    ath_corner_color = str(row.get(Config.COL_CORNER, ""))
+    mobile_number = str(row.get(Config.COL_MOBILE, ""))
+    passport_image_url = str(row.get(Config.COL_PASSPORT_IMAGE, ""))
+    room_number = str(row.get(Config.COL_ROOM, ""))
     curr_ath_task_stat = row.get('current_task_status', Config.STATUS_PENDING)
     card_bg_col = Config.STATUS_COLOR_MAP.get(curr_ath_task_stat, Config.STATUS_COLOR_MAP[Config.STATUS_PENDING])
 
@@ -388,7 +453,7 @@ def render_athlete_card(row: pd.Series, last_info: tuple, badges_html: str) -> s
     corner_color_map = {'red': '#d9534f', 'blue': '#428bca'}
     label_color = corner_color_map.get(ath_corner_color.lower(), '#4A4A4A')
     info_parts = []
-    if ath_event_d != 'Z': info_parts.append(html.escape(ath_event_d))
+    if ath_event_d != Config.DEFAULT_EVENT_PLACEHOLDER: info_parts.append(html.escape(ath_event_d))
     if ath_fight_number:   info_parts.append(f"LUTA {html.escape(ath_fight_number)}")
     if ath_corner_color:   info_parts.append(html.escape(ath_corner_color.upper()))
     fight_info_text = " | ".join(info_parts)
@@ -438,7 +503,7 @@ def render_athlete_card(row: pd.Series, last_info: tuple, badges_html: str) -> s
     )
 
     card_html = f"""<div class='card-container' style='background-color:{card_bg_col};'>
-        <img src='{html.escape(row.get("image","https://via.placeholder.com/60?text=NA"), True)}' class='card-img'>
+        <img src='{html.escape(row.get(Config.COL_IMAGE,"https://via.placeholder.com/60?text=NA"), True)}' class='card-img'>
         <div class='card-info'>
             <div class='info-line'><span class='fighter-name'>{html.escape(ath_name_d)} | {html.escape(ath_id_d)}</span></div>
             <div class='info-line'>{fight_info_label_html}</div>
@@ -470,8 +535,17 @@ def registrar_log(
 ) -> bool:
     """
     Registra um log na planilha de presença.
-    - Para 'Cancel', gravamos status "" (pendente).
-    - Para 'Not Needed', gravamos status "---".
+    Args:
+        ath_name (str): Nome do atleta.
+        ath_event (str): Nome do evento.
+        task (str): Tarefa registrada.
+        status (str): Status da tarefa (ex: "Done", "Requested", "---", "").
+        notes (str): Notas adicionais para o registro.
+        user_log_id (str): ID do usuário que registrou a ação.
+        sheet_name (str): Nome da planilha principal.
+        att_tab_name (str): Nome da aba de attendance.
+    Returns:
+        bool: True se o registro foi bem-sucedido, False caso contrário.
     """
     try:
         gspread_client = get_gspread_client()
@@ -479,14 +553,29 @@ def registrar_log(
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name', user_log_id)
 
-        next_num = len(log_ws.get_all_values()) + 1
+        # Buscar o maior ID existente para garantir unicidade, se a coluna ID for numérica
+        # Ou simplesmente contar as linhas se o ID for apenas um contador
+        existing_rows = log_ws.get_all_values()
+        next_num = len(existing_rows) + 1 # Assumindo que '#' é apenas um contador de linhas
 
         # Alinha com as colunas esperadas:
         # ["#", "Event", "Name", "Fighter", "Task", "Status", "User", "Timestamp", "TimeStamp", "Notes"]
-        new_row_data = [str(next_num), ath_event, ath_name, ath_name, task, status, user_ident, ts, ts, notes]
+        new_row_data = [
+            str(next_num),
+            ath_event,
+            ath_name,
+            ath_name,
+            task,
+            status,
+            user_ident,
+            ts, # Usar Timestamp
+            ts, # Usar TimeStamp (para compatibilidade)
+            notes
+        ]
 
         log_ws.append_row(new_row_data, value_input_option="USER_ENTERED")
-        lbl = "(vazio/pending)" if status == "" else status
+        lbl = "(vazio/pending)" if status == Config.STATUS_PENDING else (
+              "Não precisa" if status == Config.STATUS_NOT_NEEDED else status)
         st.success(f"'{task}' para {ath_name} registrado como '{lbl}'.", icon="✍️")
         load_attendance_data.clear()  # Limpa cache para forçar recarregamento
         return True
@@ -546,10 +635,15 @@ st.markdown("""
         font-weight: bold;
         display: inline-block;
     }
-    @media (max-width: 768px) {
-        .mobile-button-row div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important; gap: 10px;
-        }
+    /* Estilos para botões para garantir responsividade em linha */
+    .button-group-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px; /* Ajuste para espaçamento */
+        width: 100%;
+    }
+    .button-group-row > div {
+        flex: 1; /* Faz com que os botões ocupem o espaço igualmente */
     }
     div.stButton > button { width: 100%; }
     .green-button button { background-color: #28a745; color: white !important; border: 1px solid #28a745; }
@@ -571,7 +665,8 @@ default_ss = {
     "selected_status": "Todos",
     "selected_event": "Todos os Eventos",
     "fighter_search_query": "",
-    "sort_by": "Nome"
+    "sort_by": "Nome",
+    "notes_input": "" # Adicionar estado para a caixa de notas
 }
 for k, v in default_ss.items():
     if k not in st.session_state:
@@ -590,7 +685,7 @@ df_attendance = preprocess_attendance(df_attendance_raw)
 # Obter status atual da tarefa fixa para todos os atletas
 if not df_athletes.empty:
     athletes_status = get_all_athletes_status(df_athletes, df_attendance, Config.FIXED_TASK)
-    df_athletes = pd.merge(df_athletes, athletes_status, on=['name', 'event'], how='left')
+    df_athletes = pd.merge(df_athletes, athletes_status, on=[Config.COL_NAME, Config.COL_EVENT], how='left')
     df_athletes.fillna({
         'current_task_status': Config.STATUS_PENDING,
         'latest_task_user': 'N/A',
@@ -621,7 +716,10 @@ with st.expander("Settings", expanded=True):
             key="sort_by",
             help="Escolha como ordenar a lista de atletas."
         )
-    event_options = ["Todos os Eventos"] + (sorted([evt for evt in df_athletes["event"].unique() if evt != "Z"]) if not df_athletes.empty else [])
+    event_options = ["Todos os Eventos"] + (
+        sorted([evt for evt in df_athletes[Config.COL_EVENT].unique() if evt != Config.DEFAULT_EVENT_PLACEHOLDER])
+        if not df_athletes.empty else []
+    )
     st.selectbox("Filtrar Evento:", options=event_options, key="selected_event")
     st.text_input("Pesquisar Lutador:", placeholder="Digite o nome ou ID do lutador...", key="fighter_search_query")
 
@@ -629,26 +727,26 @@ with st.expander("Settings", expanded=True):
 df_filtered = df_athletes.copy()
 if not df_filtered.empty:
     if st.session_state.selected_event != "Todos os Eventos":
-        df_filtered = df_filtered[df_filtered["event"] == st.session_state.selected_event]
+        df_filtered = df_filtered[df_filtered[Config.COL_EVENT] == st.session_state.selected_event]
 
     search_term = st.session_state.fighter_search_query.strip().lower()
     if search_term:
         df_filtered = df_filtered[
-            df_filtered["name"].str.lower().str.contains(search_term, na=False) |
-            df_filtered["id"].astype(str).str.contains(search_term, na=False)
+            df_filtered[Config.COL_NAME].str.lower().str.contains(search_term, na=False) |
+            df_filtered[Config.COL_ID].astype(str).str.contains(search_term, na=False)
         ]
 
     if st.session_state.selected_status != "Todos":
         df_filtered = df_filtered[df_filtered['current_task_status'] == st.session_state.selected_status]
 
     if st.session_state.get('sort_by', 'Nome') == 'Ordem de Luta':
-        df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered['fight_number'], errors='coerce').fillna(999)
-        df_filtered['CORNER_SORT'] = df_filtered['corner'].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
+        df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered[Config.COL_FIGHT_NUMBER], errors='coerce').fillna(999)
+        df_filtered['CORNER_SORT'] = df_filtered[Config.COL_CORNER].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
         df_filtered = df_filtered.sort_values(by=['FIGHT_NUMBER_NUM', 'CORNER_SORT'], ascending=[True, True])
     else:
-        df_filtered = df_filtered.sort_values(by='name', ascending=True)
+        df_filtered = df_filtered.sort_values(by=Config.COL_NAME, ascending=True)
 
-# Resumo de status (agora separa Pendente de Não precisa)
+# Resumo de status
 if not df_filtered.empty:
     done_count = (df_filtered['current_task_status'] == Config.STATUS_DONE).sum()
     requested_count = (df_filtered['current_task_status'] == Config.STATUS_REQUESTED).sum()
@@ -669,16 +767,21 @@ st.divider()
 for i_l, row in df_filtered.iterrows():
     # Obter informações do último registro da tarefa fixa em outro evento
     last_dt_str, last_event_str = last_task_other_event_by_name(
-        df_attendance, row["name"], row["event"], Config.FIXED_TASK, Config.TASK_ALIASES, fallback_any_event=True
+        df_attendance, row[Config.COL_NAME], row[Config.COL_EVENT], Config.FIXED_TASK, Config.TASK_ALIASES, fallback_any_event=True
     )
 
     # Gerar badges para outras tarefas
     badges_html = ""
     if tasks_raw:
-        status_color_map_badge = {"Requested": "#D35400", "Done": "#1E8449", Config.STATUS_NOT_NEEDED: "#6c757d", "": "#34495E"}
+        status_color_map_badge = {
+            Config.STATUS_REQUESTED: "#D35400",
+            Config.STATUS_DONE: "#1E8449",
+            Config.STATUS_NOT_NEEDED: "#6c757d",
+            Config.STATUS_PENDING: "#34495E"
+        }
         default_color = "#34495E"
-        name_n = clean_and_normalize(row["name"])
-        evt_n  = clean_and_normalize(row["event"])
+        name_n = clean_and_normalize(row[Config.COL_NAME])
+        evt_n  = clean_and_normalize(row[Config.COL_EVENT])
         for task_name in tasks_raw:
             if str(task_name).strip().lower() == Config.FIXED_TASK.lower():
                 continue
@@ -691,7 +794,8 @@ for i_l, row in df_filtered.iterrows():
                 if not task_records.empty:
                     task_records["__idx__"] = np.arange(len(task_records))
                     task_records = task_records.sort_values(by=["TS_dt", "__idx__"], ascending=[False, False])
-                    status_for_badge = str(task_records.iloc[0].get("Status", Config.STATUS_PENDING)).strip()
+                    # Usar o mapeamento de status da Config
+                    status_for_badge = Config.map_raw_status_to_config(str(task_records.iloc[0].get(Config.ATT_COL_STATUS, Config.STATUS_PENDING)))
 
             color = status_color_map_badge.get(status_for_badge, default_color)
             badges_html += (
@@ -709,62 +813,48 @@ for i_l, row in df_filtered.iterrows():
         uid_l = st.session_state.get("current_user_ps_id_internal", st.session_state.current_user_id)
         curr = row.get('current_task_status', Config.STATUS_PENDING)
 
+        st.text_area("Notes", value=st.session_state.notes_input, key=f"notes_input_{i_l}", placeholder="Adicione notas aqui...", height=50)
+        current_notes = st.session_state[f"notes_input_{i_l}"]
+
+        st.markdown("<div class='button-group-row'>", unsafe_allow_html=True) # Usar a nova classe CSS
+        
         if curr == Config.STATUS_REQUESTED:
             # Fluxo quando já foi requisitado
-            st.markdown("<div class='mobile-button-row' style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_c1, btn_c2 = st.columns(2)
             with btn_c1:
                 st.markdown("<div class='green-button'>", unsafe_allow_html=True)
-                if st.button("✅ Done", key=f"done_{row['name']}_{i_l}", use_container_width=True):
-                    if registrar_log(row['name'], row['event'], Config.FIXED_TASK, Config.STATUS_DONE, "", uid_l):
+                if st.button("✅ Done", key=f"done_{row[Config.COL_NAME]}_{i_l}", use_container_width=True):
+                    if registrar_log(row[Config.COL_NAME], row[Config.COL_EVENT], Config.FIXED_TASK, Config.STATUS_DONE, current_notes, uid_l):
                         time.sleep(1); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
             with btn_c2:
                 st.markdown("<div class='red-button'>", unsafe_allow_html=True)
-                if st.button("❌ Cancel", key=f"cancel_{row['name']}_{i_l}", use_container_width=True):
+                if st.button("❌ Cancel", key=f"cancel_{row[Config.COL_NAME]}_{i_l}", use_container_width=True):
                     # Cancel volta para pendente -> status ""
-                    if registrar_log(row['name'], row['event'], Config.FIXED_TASK, Config.STATUS_PENDING, "Solicitação cancelada", uid_l):
+                    if registrar_log(row[Config.COL_NAME], row[Config.COL_EVENT], Config.FIXED_TASK, Config.STATUS_PENDING, current_notes, uid_l):
                         time.sleep(1); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
 
         else:
             # Fluxo padrão: permitir REQUISITAR e marcar como NÃO PRECISA
-            st.markdown("<div class='mobile-button-row' style='padding-top: 20px'>", unsafe_allow_html=True)
             btn_l, btn_r = st.columns(2)
 
             with btn_l:
                 btn_label = "📝 Request Again" if curr == Config.STATUS_DONE else "📝 Request"
                 btn_type = "secondary" if curr == Config.STATUS_DONE else "primary"
-                if st.button(btn_label, key=f"request_{row['name']}_{i_l}", type=btn_type, use_container_width=True):
-                    if registrar_log(row['name'], row['event'], Config.FIXED_TASK, Config.STATUS_REQUESTED, "", uid_l):
+                if st.button(btn_label, key=f"request_{row[Config.COL_NAME]}_{i_l}", type=btn_type, use_container_width=True):
+                    if registrar_log(row[Config.COL_NAME], row[Config.COL_EVENT], Config.FIXED_TASK, Config.STATUS_REQUESTED, current_notes, uid_l):
                         time.sleep(1); st.rerun()
 
             with btn_r:
                 # Marca como não precisa (---)
-                if st.button("🚫 Not Needed", key=f"notneeded_{row['name']}_{i_l}", use_container_width=True):
-                    if registrar_log(row['name'], row['event'], Config.FIXED_TASK, Config.STATUS_NOT_NEEDED, "Não precisa", uid_l):
+                if st.button("🚫 Not Needed", key=f"notneeded_{row[Config.COL_NAME]}_{i_l}", use_container_width=True):
+                    if registrar_log(row[Config.COL_NAME], row[Config.COL_EVENT], Config.FIXED_TASK, Config.STATUS_NOT_NEEDED, current_notes, uid_l):
                         time.sleep(1); st.rerun()
 
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True) # Fechar a div do button-group-row
 
     st.divider()
 
-
-# ==============================================================================
-# RESUMO DO CÓDIGO
-# ==============================================================================
-#"""
-#RESUMO DO CÓDIGO:
-
-#Agora o app diferencia explicitamente:
-#- Pendente: status vazio "" (sem solicitação no evento).
-#- Não precisa: status "---" (explicitamente indicado).
-
-#Impactos:
-#- Filtros, cores e contadores separam Pending de Not Needed.
-#- Botões do card:
-#  • Se 'Requested' → 'Done' e 'Cancel' (Cancel volta para "").
-#  • Caso contrário → 'Request' (ou 'Request Again') e 'Not Needed'.
-#- Mapeamento de status atualizado para considerar "" como pendente e '---' como não precisa.
-#"""
+# Limpar a caixa de notas após a renderização para a próxima iteração
+st.session_state.notes_input = ""

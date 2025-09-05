@@ -31,15 +31,24 @@ def nav_link(target: str, label: str):
                 alt_target = target.split("/")[-1]
                 st.switch_page(alt_target)
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     nav_link("pages/1_Login.py", label="🔐 Login Page")
     nav_link("pages/2_Fightcard.py", label="🥊 Fight Card")
+    nav_link("pages/3_Dashboard.py", label="📊 Dashboard")
 
 with col2:
-    nav_link("pages/3_Dashboard.py", label="📊 Dashboard")
-    # Aceita _4_Arrival_List.py também (já tratado no sidebar); aqui usamos a versão canonical:
     nav_link("pages/4_Arrival_List.py", label="🛬 Arrivals")
+    nav_link("pages/5_Blood_Test.py", label="🩸 Blood Test")
+    nav_link("pages/6_Stats.py", label="📈 Fighter Stats")
 
 with col3:
-    nav_link("pages/6_Stats.py", label="📈 Fighter Stats")
+    nav_link("pages/7_Music.py", label="🎵 Music")
+    nav_link("pages/8_Photoshoot.py", label="📸 Photoshoot")
+    nav_link("pages/9_Video.py", label="🎥 Video")
+
+with col4:
+    nav_link("pages/10_Event_Check.py", label="✅ Event Check")
+    nav_link("pages/12_Medical_Team.py", label="🧑‍⚕️ Medical Team")
+    nav_link("pages/Bus.py", label="🚌 Bus")
+    nav_link("pages/Line Order.py", label="🚶 Line Order")

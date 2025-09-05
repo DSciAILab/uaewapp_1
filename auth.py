@@ -22,19 +22,18 @@ def _safe_switch_page(target: str):
 
 def check_authentication():
     """
-    Verifica se o usuário está autenticado.
-    Se não estiver, redireciona para a página de login.
-    Deve ser a PRIMEIRA chamada em qualquer página protegida.
+    Se não autenticado, redireciona uma única vez e interrompe a execução,
+    evitando múltiplos switch_page no mesmo ciclo.
     """
-    # Evita loop de redirecionamento quando já estamos na página de login
-    current_page_key = st.session_state.get("_current_page_path", "")
-    if not current_page_key:
-        # opcionalmente, frameworks mais novos populam isso; se não, ignoramos
-        pass
+    if st.session_state.get("user_confirmed", False):
+        return
 
-    if not st.session_state.get("user_confirmed", False):
+    # evita redirecionar N vezes no mesmo run
+    if not st.session_state.get("_did_redirect_to_login", False):
+        st.session_state["_did_redirect_to_login"] = True
         _safe_switch_page("pages/1_Login.py")
-
+    # interrompe para não continuar renderizando a página protegida
+    st.stop()
 
 def display_user_sidebar():
     """

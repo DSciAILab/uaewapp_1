@@ -1,38 +1,37 @@
 from components.layout import bootstrap_page
 import streamlit as st
-
-bootstrap_page("Dashboard")  # <- PRIMEIRA LINHA DA PÁGINA
-
-st.title("Dashboard")
-
-
-# pages/DashboardNovo.py
-
-# --- Importações de Bibliotecas ---
-import streamlit as st
-import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
+import pandas as pd
+import html
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-if 'layout_mode' not in st.session_state:
-    st.session_state.layout_mode = "wide"
+# Helpers centralizados (evita duplicar código de credenciais e conexão)
+from utils import get_gspread_client, connect_gsheet_tab
 
-st.set_page_config(layout=st.session_state.layout_mode, page_title="Fight Dashboard")
+# ------------------------------------------------------------------------------
+# Bootstrap da página (config/layout/sidebar centralizados)
+# ------------------------------------------------------------------------------
+bootstrap_page("Dashboard")  # <- PRIMEIRA LINHA DA PÁGINA
+st.title("Dashboard")
 
-
-# --- Constantes Globais ---
+# ------------------------------------------------------------------------------
+# Constantes Globais
+# ------------------------------------------------------------------------------
 MAIN_SHEET_NAME = "UAEW_App"
 CONFIG_TAB_NAME = "Config"
-FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/gviz/tq?tqx=out:csv&sheet=Fightcard"
+FIGHTCARD_SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/1_JIQmKWytwwkmjTYoxVFoxayk8lCv75hrfqKlEjdh58/"
+    "gviz/tq?tqx=out:csv&sheet=Fightcard"
+)
+
 ATTENDANCE_TAB_NAME = "Attendance"
 ATTENDANCE_ATHLETE_ID_COL = "Athlete ID"
 ATTENDANCE_TASK_COL = "Task"
 ATTENDANCE_STATUS_COL = "Status"
-ATTENDANCE_TIMESTAMP_COL = "Timestamp"
+ATTENDANCE_TIMESTAMP_COL = "Timestamp"     # pode vir vazio
+ATTENDANCE_TIMESTAMP_ALT_COL = "TimeStamp" # onde gravamos
 ATTENDANCE_EVENT_COL = "Event"
+
 FC_EVENT_COL = "Event"
 FC_FIGHTER_COL = "Fighter"
 FC_ATHLETE_ID_COL = "AthleteID"
@@ -41,7 +40,7 @@ FC_ORDER_COL = "FightOrder"
 FC_PICTURE_COL = "Picture"
 FC_DIVISION_COL = "Division"
 
-# Mapeamento de Status para Classes CSS e Texto
+# Mapeamento de Status para CSS/Texto
 STATUS_INFO = {
     "Done": {"class": "status-done", "text": "Done"},
     "Requested": {"class": "status-requested", "text": "Requested"},
@@ -53,172 +52,199 @@ STATUS_INFO = {
 }
 DEFAULT_STATUS_CLASS = "status-pending"
 
-# Mapeamento de Tarefas para Emojis
+# Emojis das tarefas (fallback na primeira letra)
 TASK_EMOJI_MAP = {
     "Walkout Music": "🎵", "Stats": "📊", "Black Screen Video": "⬛",
     "Video Shooting": "🎥", "Photoshoot": "📸", "Blood Test": "🩸",
 }
 
-# --- Funções de Carregamento de Dados e Conexão ---
-
-@st.cache_resource(ttl=3600)
-def get_gspread_client():
-    try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        if "gcp_service_account" not in st.secrets:
-            st.error("CRITICAL: `gcp_service_account` not in secrets.", icon="🚨")
-            st.stop()
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-        return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"CRITICAL: Gspread client error: {e}", icon="🚨")
-        st.stop()
-
-def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
-    if not gspread_client:
-        st.error("CRITICAL: Gspread client not initialized.", icon="🚨")
-        st.stop()
-    try:
-        return gspread_client.open(sheet_name).worksheet(tab_name)
-    except Exception as e:
-        st.error(f"CRITICAL: Error connecting to {sheet_name}/{tab_name}: {e}", icon="🚨")
-        st.stop()
-
-@st.cache_data
-def load_fightcard_data():
+# ------------------------------------------------------------------------------
+# Carregamento de dados
+# ------------------------------------------------------------------------------
+@st.cache_data(ttl=300)
+def load_fightcard_data() -> pd.DataFrame:
     try:
         df = pd.read_csv(FIGHTCARD_SHEET_URL)
         df.columns = df.columns.str.strip()
+        # Garante colunas essenciais
+        for col in (FC_EVENT_COL, FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_CORNER_COL, FC_ORDER_COL, FC_PICTURE_COL, FC_DIVISION_COL):
+            if col not in df.columns:
+                df[col] = pd.NA
 
-        # Garante que a coluna AthleteID exista e a limpa
-        if FC_ATHLETE_ID_COL in df.columns:
-            df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
-        else:
-            st.error(f"CRITICAL: Column '{FC_ATHLETE_ID_COL}' not found in Fightcard.")
-            df[FC_ATHLETE_ID_COL] = "" # Adiciona coluna vazia para evitar erros
-
-        # Limpa outras colunas essenciais
+        # Normalizações
+        df[FC_EVENT_COL] = df[FC_EVENT_COL].astype(str).str.strip()
         df[FC_FIGHTER_COL] = df[FC_FIGHTER_COL].astype(str).str.strip()
-
-        # Filtra linhas onde o nome do lutador ou o ID estão vazios
-        df = df[df[FC_FIGHTER_COL].notna() & (df[FC_FIGHTER_COL] != '')]
-        df = df[df[FC_ATHLETE_ID_COL].notna() & (df[FC_ATHLETE_ID_COL] != '')]
-
-        # Processa as colunas restantes após a limpeza
+        df[FC_ATHLETE_ID_COL] = df[FC_ATHLETE_ID_COL].astype(str).str.strip()
         df[FC_CORNER_COL] = df[FC_CORNER_COL].astype(str).str.strip().str.lower()
-        df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip().fillna("")
-        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce").fillna(999)
+        df[FC_PICTURE_COL] = df[FC_PICTURE_COL].astype(str).str.strip()
+        df[FC_ORDER_COL] = pd.to_numeric(df[FC_ORDER_COL], errors="coerce")
 
+        # Filtra registros válidos
+        df = df[df[FC_FIGHTER_COL].ne("") & df[FC_ATHLETE_ID_COL].ne("")]
         return df
     except Exception as e:
-        st.error(f"Error loading Fightcard: {e}")
-        return pd.DataFrame()
+        st.error(f"Error loading Fightcard: {e}", icon="🚨")
+        return pd.DataFrame(columns=[FC_EVENT_COL, FC_FIGHTER_COL, FC_ATHLETE_ID_COL, FC_CORNER_COL, FC_ORDER_COL, FC_PICTURE_COL, FC_DIVISION_COL])
+
 
 @st.cache_data(ttl=120)
-def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME):
-    gspread_client = get_gspread_client()
-    worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
+def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDANCE_TAB_NAME) -> pd.DataFrame:
     try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(worksheet.get_all_records())
-        if df_att.empty: return pd.DataFrame()
-        cols_to_process = [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL]
-        for col in cols_to_process:
-            if col in df_att.columns: df_att[col] = df_att[col].astype(str).str.strip()
-            else: df_att[col] = ""
+        if df_att.empty:
+            return pd.DataFrame(columns=[ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL])
+
+        # Normalizações e garantia de colunas
+        for col in [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL]:
+            if col not in df_att.columns:
+                df_att[col] = ""
+            df_att[col] = df_att[col].astype(str).str.strip()
+
         return df_att
-    except Exception as e: st.error(f"Error loading Attendance: {e}"); return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading Attendance: {e}", icon="🚨")
+        return pd.DataFrame(columns=[ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL])
+
 
 @st.cache_data(ttl=600)
-def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME):
-    gspread_client = get_gspread_client()
-    worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
+def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME) -> list[str]:
     try:
+        gspread_client = get_gspread_client()
+        worksheet = connect_gsheet_tab(gspread_client, sheet_name, config_tab)
         data = worksheet.get_all_values()
-        if not data or len(data) < 1: return []
+        if not data or len(data) < 1:
+            return []
         df_conf = pd.DataFrame(data[1:], columns=data[0])
         return df_conf["TaskList"].dropna().astype(str).str.strip().unique().tolist() if "TaskList" in df_conf.columns else []
-    except Exception as e: st.error(f"Error loading TaskList from Config: {e}"); return []
+    except Exception as e:
+        st.error(f"Error loading TaskList from Config: {e}", icon="🚨")
+        return []
 
-# --- Funções de Lógica e Processamento ---
-def get_task_status(athlete_id, task_name, event_name, df_attendance):
-    if df_attendance.empty or pd.isna(athlete_id) or str(athlete_id).strip() == "" or not task_name or not event_name:
+
+# ------------------------------------------------------------------------------
+# Lógica
+# ------------------------------------------------------------------------------
+def _latest_status_row(relevant_records: pd.DataFrame) -> pd.Series | None:
+    """
+    Retorna a linha mais recente, considerando primeiro TimeStamp (ALT) e depois Timestamp.
+    """
+    if relevant_records.empty:
+        return None
+
+    df = relevant_records.copy()
+    # Converte ambas as colunas para datetime (considera formatos comuns)
+    df["TS_dt_alt"] = pd.to_datetime(df.get(ATTENDANCE_TIMESTAMP_ALT_COL, ""), format="%d/%m/%Y %H:%M:%S", errors="coerce")
+    df["TS_dt"] = pd.to_datetime(df.get(ATTENDANCE_TIMESTAMP_COL, ""), errors="coerce", dayfirst=True)
+
+    # Usa a melhor disponível
+    df["TS_best"] = df["TS_dt_alt"].where(df["TS_dt_alt"].notna(), df["TS_dt"])
+
+    # Ordena do mais recente para o mais antigo (NaT por último)
+    df = df.sort_values(by=["TS_best"], ascending=False, na_position="last")
+    return df.iloc[0] if not df.empty else None
+
+
+def get_task_status(athlete_id: str, task_name: str, event_name: str, df_attendance: pd.DataFrame) -> dict:
+    """
+    Retorna um dict com {class, text} para colorir a célula no grid.
+    """
+    if (
+        df_attendance.empty
+        or not str(athlete_id).strip()
+        or not str(task_name).strip()
+        or not str(event_name).strip()
+    ):
         return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
 
-    relevant_records = df_attendance[
-        (df_attendance[ATTENDANCE_ATHLETE_ID_COL].astype(str).str.strip() == str(athlete_id).strip()) &
-        (df_attendance[ATTENDANCE_TASK_COL].astype(str).str.strip() == str(task_name).strip()) &
-        (df_attendance[ATTENDANCE_EVENT_COL].astype(str).str.strip() == str(event_name).strip())
-    ]
-    
-    if relevant_records.empty: return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
-    
-    latest_status_str = relevant_records.iloc[-1][ATTENDANCE_STATUS_COL]
-    if ATTENDANCE_TIMESTAMP_COL in relevant_records.columns:
-        try:
-            rel_sorted = relevant_records.copy()
-            rel_sorted["Timestamp_dt"]=pd.to_datetime(rel_sorted[ATTENDANCE_TIMESTAMP_COL], format="%d/%m/%Y %H:%M:%S", errors='coerce')
-            if rel_sorted["Timestamp_dt"].notna().any():
-                latest_status_str = rel_sorted.sort_values(by="Timestamp_dt", ascending=False, na_position='last').iloc[0][ATTENDANCE_STATUS_COL]
-        except: pass
-    return STATUS_INFO.get(str(latest_status_str).strip(), {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
+    mask = (
+        (df_attendance[ATTENDANCE_ATHLETE_ID_COL] == str(athlete_id).strip())
+        & (df_attendance[ATTENDANCE_TASK_COL] == str(task_name).strip())
+        & (df_attendance[ATTENDANCE_EVENT_COL] == str(event_name).strip())
+    )
+    relevant = df_attendance.loc[mask]
+    if relevant.empty:
+        return STATUS_INFO.get("Pending", {"class": DEFAULT_STATUS_CLASS, "text": "Pending"})
 
-# --- Geração da Interface (HTML & CSS) ---
-def generate_mirrored_html_dashboard(df_processed, task_list):
+    last_row = _latest_status_row(relevant)
+    latest_status_str = str(last_row[ATTENDANCE_STATUS_COL]).strip() if last_row is not None else "Pending"
+    return STATUS_INFO.get(latest_status_str, {"class": DEFAULT_STATUS_CLASS, "text": latest_status_str})
+
+
+# ------------------------------------------------------------------------------
+# HTML/CSS
+# ------------------------------------------------------------------------------
+def generate_mirrored_html_dashboard(df_processed: pd.DataFrame, task_list: list[str]) -> str:
     num_tasks = len(task_list)
-    html = "<div class='dashboard-grid'>"
+    html_out = "<div class='dashboard-grid'>"
+
     if num_tasks > 0:
-        html += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
-        html += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
-        html += f"<div class='grid-item grid-header red-corner-header' style='grid-column: {num_tasks + 4} / span {num_tasks + 2};'>RED CORNER</div>"
+        html_out += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
+        html_out += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
+        html_out += f"<div class='grid-item grid-header red-corner-header' style='grid-column: {num_tasks + 4} / span {num_tasks + 2};'>RED CORNER</div>"
         for task in reversed(task_list):
-            emoji = TASK_EMOJI_MAP.get(task, task[0])
-            html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
+            emoji = TASK_EMOJI_MAP.get(task, (task[:1] if task else "•"))
+            html_out += f"<div class='grid-item grid-header task-header' title='{html.escape(task)}'>{emoji}</div>"
     else:
-        html += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span 2;'>BLUE CORNER</div>"
-        html += f"<div class='grid-item grid-header center-col-header' style='grid-column: 3; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
-        html += f"<div class='grid-item grid-header red-corner-header' style='grid-column: 4 / span 2;'>RED CORNER</div>"
+        html_out += "<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span 2;'>BLUE CORNER</div>"
+        html_out += "<div class='grid-item grid-header center-col-header' style='grid-column: 3; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
+        html_out += "<div class='grid-item grid-header red-corner-header' style='grid-column: 4 / span 2;'>RED CORNER</div>"
 
-    html += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
-    html += "<div class='grid-item grid-header photo-header'>Photo</div>"
-    html += "<div class='grid-item grid-header photo-header'>Photo</div>"
-    html += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
+    # Segunda linha (rótulos)
+    html_out += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
+    html_out += "<div class='grid-item grid-header photo-header'>Photo</div>"
+    html_out += "<div class='grid-item grid-header photo-header'>Photo</div>"
+    html_out += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
     if num_tasks > 0:
         for task in task_list:
-            emoji = TASK_EMOJI_MAP.get(task, task[0])
-            html += f"<div class='grid-item grid-header task-header' title='{task}'>{emoji}</div>"
+            emoji = TASK_EMOJI_MAP.get(task, (task[:1] if task else "•"))
+            html_out += f"<div class='grid-item grid-header task-header' title='{html.escape(task)}'>{emoji}</div>"
 
+    # Linhas das lutas
     for _, row in df_processed.iterrows():
+        # esquerda (Azul) – tarefas invertidas na esquerda
         for task in reversed(task_list):
-            status = row.get(f'{task} (Azul)', STATUS_INFO.get("Pending"))
-            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
-        html += f"<div class='grid-item fighter-name fighter-name-blue'>{row.get('Lutador Azul', 'N/A')}</div>"
-        html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
-        fight_info_html = f"<div class='fight-info-number'>{row.get('Fight #', '')}</div><div class='fight-info-event'>{row.get('Event', '')}</div><div class='fight-info-division'>{row.get('Division', '')}</div>"
-        html += f"<div class='grid-item center-info-cell'>{fight_info_html}</div>"
-        html += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')}'/></div>"
-        html += f"<div class='grid-item fighter-name fighter-name-red'>{row.get('Lutador Vermelho', 'N/A')}</div>"
-        for task in task_list:
-            status = row.get(f'{task} (Vermelho)', STATUS_INFO.get("Pending"))
-            html += f"<div class='grid-item status-cell {status['class']}' title='{status['text']}'></div>"
-    html += "</div>"
-    return html
+            status = row.get(f"{task} (Azul)", STATUS_INFO.get("Pending"))
+            html_out += f"<div class='grid-item status-cell {status['class']}' title='{html.escape(status['text'])}'></div>"
 
-def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_width_pc, division_font_size_px):
+        html_out += f"<div class='grid-item fighter-name fighter-name-blue'>{html.escape(str(row.get('Lutador Azul', 'N/A')))}</div>"
+        html_out += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{html.escape(str(row.get('Foto Azul', 'https://via.placeholder.com/50?text=N/A')))}'/></div>"
+
+        fight_info_html = (
+            f"<div class='fight-info-number'>{html.escape(str(row.get('Fight #', '')))}</div>"
+            f"<div class='fight-info-event'>{html.escape(str(row.get('Event', '')))}</div>"
+            f"<div class='fight-info-division'>{html.escape(str(row.get('Division', '')))}</div>"
+        )
+        html_out += f"<div class='grid-item center-info-cell'>{fight_info_html}</div>"
+
+        html_out += f"<div class='grid-item photo-cell'><img class='fighter-img' src='{html.escape(str(row.get('Foto Vermelho', 'https://via.placeholder.com/50?text=N/A')))}'/></div>"
+        html_out += f"<div class='grid-item fighter-name fighter-name-red'>{html.escape(str(row.get('Lutador Vermelho', 'N/A')))}</div>"
+
+        # direita (Vermelho)
+        for task in task_list:
+            status = row.get(f"{task} (Vermelho)", STATUS_INFO.get("Pending"))
+            html_out += f"<div class='grid-item status-cell {status['class']}' title='{html.escape(status['text'])}'></div>"
+
+    html_out += "</div>"
+    return html_out
+
+
+def get_dashboard_style(font_size_px: int, num_tasks: int, fighter_width_pc: int, division_width_pc: int, division_font_size_px: int) -> str:
     img_size = font_size_px * 3.5
     cell_padding = font_size_px * 0.5
     fighter_font_size = font_size_px * 1.8
     photo_pc = 6.0
-    
+
     if num_tasks > 0:
         used_space = (fighter_width_pc * 2) + division_width_pc + (photo_pc * 2)
-        remaining_space_for_tasks = 100 - used_space
-        num_total_task_cols = num_tasks * 2
-        task_pc = (remaining_space_for_tasks / num_total_task_cols) if num_total_task_cols > 0 else 0
-        if task_pc < 0: task_pc = 0
+        remaining = max(0.0, 100.0 - used_space)
+        num_task_cols = max(1, num_tasks * 2)
+        task_pc = remaining / num_task_cols
         grid_template_columns = " ".join(
-            [f"{task_pc}%"] * num_tasks +
-            [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"] +
             [f"{task_pc}%"] * num_tasks
+            + [f"{fighter_width_pc}%", f"{photo_pc}%", f"{division_width_pc}%", f"{photo_pc}%", f"{fighter_width_pc}%"]
+            + [f"{task_pc}%"] * num_tasks
         )
     else:
         fighter_width_no_tasks = 35
@@ -245,19 +271,16 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
         }}
         .grid-item {{
             background-color: #2a2a2e; color: #e1e1e1;
-            padding: {cell_padding}px 8px; display: flex; align-items: center; justify-content: center;
+            padding: {cell_padding}px 8px;
+            display: flex; align-items: center; justify-content: center;
             min-height: {img_size + (cell_padding * 2)}px; word-break: break-word;
         }}
         .grid-item:hover {{ background-color: #38383c; }}
-        .grid-header {{
-            background-color: #1c1c1f; font-weight: 600; font-size: 1rem; min-height: auto;
-        }}
+        .grid-header {{ background-color: #1c1c1f; font-weight: 600; font-size: 1rem; min-height: auto; }}
         .blue-corner-header {{ background-color: #0d2e4e !important; }}
         .red-corner-header {{ background-color: #5a1d1d !important; }}
         .center-col-header {{ background-color: #111 !important; }}
-        .fighter-name {{
-            font-weight: 700; font-size: {fighter_font_size}px !important;
-        }}
+        .fighter-name {{ font-weight: 700; font-size: {fighter_font_size}px !important; }}
         .fighter-name-blue {{ justify-content: flex-end !important; text-align: right; padding-right: 15px; }}
         .fighter-name-red {{ justify-content: flex-start !important; text-align: left; padding-left: 15px; }}
         .center-info-cell {{ flex-direction: column; line-height: 1.3; background-color: #333; }}
@@ -270,27 +293,31 @@ def get_dashboard_style(font_size_px, num_tasks, fighter_width_pc, division_widt
             width: {img_size}px; height: {img_size}px;
             border-radius: 50%; object-fit: cover; border: 2px solid #666;
         }}
-        .fight-info-number, .fight-info-event, .fight-info-division {{
-            font-size: {division_font_size_px}px !important;
-        }}
+        .fight-info-number, .fight-info-event, .fight-info-division {{ font-size: {division_font_size_px}px !important; }}
         .fight-info-number {{ font-weight: bold; color: #fff; }}
         .fight-info-event {{ font-style: italic; color: #ccc; }}
-        .fight-info-division {{ font-style: normal; color: #ddd; }}
+        .fight-info-division {{ color: #ddd; }}
     </style>
     """
 
-# --- Aplicação Principal do Streamlit ---
 
-st_autorefresh(interval=60000, key="dash_auto_refresh_v14")
+# ------------------------------------------------------------------------------
+# App
+# ------------------------------------------------------------------------------
+# Auto-refresh a cada 60s
+st_autorefresh(interval=60_000, key="dash_auto_refresh_v15")
 
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
     df_att = load_attendance_data()
     all_tsks = get_task_list()
 
-# --- Controles da Barra Lateral (Sidebar) ---
+# Sidebar
 st.sidebar.title("Dashboard Controls")
-if st.sidebar.button("🔄 Refresh Now", use_container_width=True): st.cache_data.clear(); st.toast("Data refreshed!", icon="🎉"); st.rerun()
+if st.sidebar.button("🔄 Refresh Now", use_container_width=True):
+    st.cache_data.clear()
+    st.toast("Data refreshed!", icon="🎉")
+    st.rerun()
 
 avail_evs = sorted(df_fc[FC_EVENT_COL].dropna().unique().tolist(), reverse=True) if not df_fc.empty else []
 sel_ev_opt = st.sidebar.selectbox("Select Event:", options=["All Events"] + avail_evs)
@@ -301,99 +328,110 @@ selected_tasks = st.sidebar.multiselect("Selecione as tarefas para monitorar:", 
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Configurações de Exibição")
-is_wide_mode = st.sidebar.toggle(
-    "Modo Tela Cheia (Wide)",
-    value=(st.session_state.layout_mode == "wide"),
-    key="layout_toggle"
-)
-new_layout = "wide" if is_wide_mode else "centered"
-if new_layout != st.session_state.layout_mode:
-    st.session_state.layout_mode = new_layout
-    st.rerun()
 
-if 'table_font_size' not in st.session_state: st.session_state.table_font_size = 18
-st.session_state.table_font_size = st.sidebar.slider(
-    "Tamanho Geral da Fonte (px)", min_value=10, max_value=30, value=st.session_state.table_font_size, step=1
-)
-st.sidebar.subheader("Ajustes Finos de Layout")
-if 'fighter_width' not in st.session_state: st.session_state.fighter_width = 25
-if 'division_width' not in st.session_state: st.session_state.division_width = 10
-if 'division_font_size' not in st.session_state: st.session_state.division_font_size = 16
+# Guarda preferências simples na sessão
+if "table_font_size" not in st.session_state:
+    st.session_state.table_font_size = 18
+if "fighter_width" not in st.session_state:
+    st.session_state.fighter_width = 25
+if "division_width" not in st.session_state:
+    st.session_state.division_width = 10
+if "division_font_size" not in st.session_state:
+    st.session_state.division_font_size = 16
+
+st.session_state.table_font_size = st.sidebar.slider("Tamanho Geral da Fonte (px)", 10, 30, st.session_state.table_font_size, 1)
 disable_sliders = len(selected_tasks) == 0
-st.session_state.fighter_width = st.sidebar.slider(
-    "Largura Nome do Lutador (%)", min_value=10, max_value=40, value=st.session_state.fighter_width, step=1,
-    disabled=disable_sliders
-)
-st.session_state.division_width = st.sidebar.slider(
-    "Largura Info da Luta (%)", min_value=5, max_value=25, value=st.session_state.division_width, step=1,
-    disabled=disable_sliders
-)
-st.session_state.division_font_size = st.sidebar.slider(
-    "Fonte Info da Luta (px)", min_value=10, max_value=30, value=st.session_state.division_font_size, step=1
-)
+st.session_state.fighter_width = st.sidebar.slider("Largura Nome do Lutador (%)", 10, 40, st.session_state.fighter_width, 1, disabled=disable_sliders)
+st.session_state.division_width = st.sidebar.slider("Largura Info da Luta (%)", 5, 25, st.session_state.division_width, 1, disabled=disable_sliders)
+st.session_state.division_font_size = st.sidebar.slider("Fonte Info da Luta (px)", 10, 30, st.session_state.division_font_size, 1)
+
 st.sidebar.markdown("---")
 
-
-# --- Lógica Principal do Dashboard ---
+# Conteúdo
 if df_fc.empty:
     st.warning("Could not load Fightcard data. Please check the spreadsheet or filters.")
     st.stop()
 
-st.markdown(get_dashboard_style(st.session_state.table_font_size, len(selected_tasks), st.session_state.fighter_width, st.session_state.division_width, st.session_state.division_font_size), unsafe_allow_html=True)
+st.markdown(
+    get_dashboard_style(
+        st.session_state.table_font_size,
+        len(selected_tasks),
+        st.session_state.fighter_width,
+        st.session_state.division_width,
+        st.session_state.division_font_size,
+    ),
+    unsafe_allow_html=True,
+)
 
 df_fc_disp = df_fc.copy()
 if sel_ev_opt != "All Events":
-    df_fc_disp = df_fc[df_fc[FC_EVENT_COL] == sel_ev_opt]
+    df_fc_disp = df_fc_disp[df_fc_disp[FC_EVENT_COL] == sel_ev_opt]
 
 if df_fc_disp.empty:
     st.info(f"No fights found for event '{sel_ev_opt}'.")
     st.stop()
 
-dash_data_list = []
-for order, group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL]).groupby([FC_EVENT_COL, FC_ORDER_COL]):
-    ev, f_ord = order
-    
-    # Extração segura e explícita dos dados de cada canto
+dash_rows = []
+# Ordena por Evento e FightOrder asc (NaN por último)
+for (ev, f_ord), group in df_fc_disp.sort_values(by=[FC_EVENT_COL, FC_ORDER_COL], na_position="last").groupby([FC_EVENT_COL, FC_ORDER_COL]):
+    # Corner Azul
     blue_df = group[group[FC_CORNER_COL] == "blue"]
-    if not blue_df.empty:
-        bl_s = blue_df.iloc[0]
-        if len(blue_df) > 1: st.warning(f"Atenção: Múltiplas entradas para o canto Azul na luta {f_ord} (Evento: {ev}). Usando a primeira.")
-    else:
-        bl_s = pd.Series()
+    bl_s = blue_df.iloc[0] if not blue_df.empty else pd.Series()
 
+    # Corner Vermelho
     red_df = group[group[FC_CORNER_COL] == "red"]
-    if not red_df.empty:
-        rd_s = red_df.iloc[0]
-        if len(red_df) > 1: st.warning(f"Atenção: Múltiplas entradas para o canto Vermelho na luta {f_ord} (Evento: {ev}). Usando a primeira.")
-    else:
-        rd_s = pd.Series()
+    rd_s = red_df.iloc[0] if not red_df.empty else pd.Series()
 
-    fight_number_display = int(f_ord) if f_ord != 999 else "N/A"
+    if not blue_df.empty and len(blue_df) > 1:
+        st.warning(f"Atenção: múltiplas entradas para o canto Azul na luta {f_ord} (Evento: {ev}). Usando a primeira.")
+    if not red_df.empty and len(red_df) > 1:
+        st.warning(f"Atenção: múltiplas entradas para o canto Vermelho na luta {f_ord} (Evento: {ev}). Usando a primeira.")
+
+    fight_number_display = (int(f_ord) if pd.notna(f_ord) else "N/A")
+
     row_d = {"Event": ev, "Fight #": fight_number_display}
-    
-    for prefix, series in [("Azul", bl_s), ("Vermelho", rd_s)]:
-        if isinstance(series, pd.Series) and not series.empty:
-            name = series.get(FC_FIGHTER_COL, "N/A")
-            athlete_id = series.get(FC_ATHLETE_ID_COL, "")
-            pic = series.get(FC_PICTURE_COL, "")
-            row_d[f"Foto {prefix}"] = pic if isinstance(pic, str) and pic.startswith("http") else ""
-            row_d[f"Lutador {prefix}"] = f"{name}"
-            for task in selected_tasks:
-                row_d[f"{task} ({prefix})"] = get_task_status(athlete_id, task, ev, df_att)
-        else:
-            row_d[f"Foto {prefix}"] = ""
-            row_d[f"Lutador {prefix}"] = "N/A"
-            for task in selected_tasks:
-                row_d[f"{task} ({prefix})"] = get_task_status(None, task, ev, df_att)
-                
-    row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A"))
-    dash_data_list.append(row_d)
+    # Azul
+    if isinstance(bl_s, pd.Series) and not bl_s.empty:
+        name = bl_s.get(FC_FIGHTER_COL, "N/A")
+        athlete_id = bl_s.get(FC_ATHLETE_ID_COL, "")
+        pic = bl_s.get(FC_PICTURE_COL, "")
+        row_d["Foto Azul"] = pic if isinstance(pic, str) and pic.startswith(("http://", "https://")) else "https://via.placeholder.com/50?text=N/A"
+        row_d["Lutador Azul"] = f"{name}"
+        for task in selected_tasks:
+            row_d[f"{task} (Azul)"] = get_task_status(athlete_id, task, ev, df_att)
+    else:
+        row_d["Foto Azul"] = "https://via.placeholder.com/50?text=N/A"
+        row_d["Lutador Azul"] = "N/A"
+        for task in selected_tasks:
+            row_d[f"{task} (Azul)"] = STATUS_INFO.get("Pending")
 
-if dash_data_list:
-    df_dash_processed = pd.DataFrame(dash_data_list)
+    # Vermelho
+    if isinstance(rd_s, pd.Series) and not rd_s.empty:
+        name = rd_s.get(FC_FIGHTER_COL, "N/A")
+        athlete_id = rd_s.get(FC_ATHLETE_ID_COL, "")
+        pic = rd_s.get(FC_PICTURE_COL, "")
+        row_d["Foto Vermelho"] = pic if isinstance(pic, str) and pic.startswith(("http://", "https://")) else "https://via.placeholder.com/50?text=N/A"
+        row_d["Lutador Vermelho"] = f"{name}"
+        for task in selected_tasks:
+            row_d[f"{task} (Vermelho)"] = get_task_status(athlete_id, task, ev, df_att)
+    else:
+        row_d["Foto Vermelho"] = "https://via.placeholder.com/50?text=N/A"
+        row_d["Lutador Vermelho"] = "N/A"
+        for task in selected_tasks:
+            row_d[f"{task} (Vermelho)"] = STATUS_INFO.get("Pending")
+
+    # Division (prioriza do azul; se vazio usa vermelho)
+    row_d["Division"] = bl_s.get(FC_DIVISION_COL, rd_s.get(FC_DIVISION_COL, "N/A")) if isinstance(bl_s, pd.Series) else rd_s.get(FC_DIVISION_COL, "N/A")
+    dash_rows.append(row_d)
+
+if dash_rows:
+    df_dash_processed = pd.DataFrame(dash_rows)
     html_grid = generate_mirrored_html_dashboard(df_dash_processed, selected_tasks)
     st.markdown(html_grid, unsafe_allow_html=True)
 else:
     st.info(f"No fights processed for '{sel_ev_opt}'.")
 
-st.markdown(f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>", unsafe_allow_html=True, help="This page auto-refreshes every 60 seconds.")
+st.markdown(
+    f"<p style='font-size: 0.8em; text-align: center; color: #888;'>*Dashboard updated at: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*</p>",
+    unsafe_allow_html=True,
+)

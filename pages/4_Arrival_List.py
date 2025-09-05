@@ -89,8 +89,19 @@ else:
         elif filtro == "Cars with request" and 'transfer_arrival_car' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['transfer_arrival_car'].astype(str).str.strip() != ""]
 
-        modo_cards = st.toggle("View as cards", value=True)
+        # === Toggles lado a lado ===
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            modo_cards = st.toggle("View as cards", value=True, key="view_as_cards")
+        with col_t2:
+            hide_resident = st.toggle(
+                "Hide airport: Resident",
+                value=False,
+                key="hide_resident_cards",
+                help="When ON, hides cards where ArrivalAirport = Resident"
+            )
 
+        # Search box para ambas visões
         search = st.text_input("Search in any column:")
         df_search = df_filtrado.copy()
         if search:
@@ -99,6 +110,7 @@ else:
                 mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
             df_search = df_search[mask]
 
+    # Métricas (sempre com base no df_search — não afetam o toggle de esconder cards)
     total_filtered = len(df_search)
     total_all = len(df_arrivals)
     planned_count = df_search[df_search.get('transfer_arrival_status', pd.Series(dtype=str)).astype(str).str.strip().str.upper() == "PLANNED"].shape[0]
@@ -112,6 +124,11 @@ else:
     st.markdown(summary_html, unsafe_allow_html=True)
 
     if modo_cards:
+        # Aplica o "hide resident" apenas nos cards
+        df_cards = df_search.copy()
+        if hide_resident and 'ArrivalAirport' in df_cards.columns:
+            df_cards = df_cards[~df_cards['ArrivalAirport'].astype(str).str.strip().str.lower().eq('resident')]
+
         now = datetime.datetime.now()
         today_str = now.strftime('%d/%m')
         
@@ -124,7 +141,7 @@ else:
             "WHITE": "#f8f9fa"
         }
 
-        groups = df_search.groupby('ArrivalDate') if 'ArrivalDate' in df_search.columns else [(None, df_search)]
+        groups = df_cards.groupby('ArrivalDate') if 'ArrivalDate' in df_cards.columns else [(None, df_cards)]
 
         for arrival_date, group in groups:
             st.subheader(f"Arrivals on {arrival_date} ({len(group)})")

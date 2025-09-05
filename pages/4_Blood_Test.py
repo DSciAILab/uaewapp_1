@@ -342,7 +342,7 @@ if not df_athletes.empty:
     df_athletes[["current_task_status","latest_task_user","latest_task_timestamp"]] = df_athletes.apply(_row_status, axis=1)
 
 # --- Filtros e ordenação ---
-with st.expander("⚙️ Filtros e Ordenação", expanded=True):
+with st.expander("Settings", expanded=True):
     col_status, col_sort = st.columns(2)
     with col_status:
         STATUS_FILTER_LABELS = { "Todos": "Todos", STATUS_BASE: "Pendente", STATUS_REQUESTED: "Requisitado", STATUS_DONE: "Concluído"}

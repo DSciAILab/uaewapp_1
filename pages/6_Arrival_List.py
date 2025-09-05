@@ -81,7 +81,7 @@ if 'INACTIVE' in df_arrivals.columns:
 if df_arrivals.empty:
     st.info("No arrival records found with a filled name.")
 else:
-    with st.expander("⚙️ Filtros e Pesquisa", expanded=True):
+    with st.expander("Settings", expanded=True):
         filtro = st.segmented_control(
             "Filter arrivals:",
             options=["All", "Only Fighters", "Cars with request"]

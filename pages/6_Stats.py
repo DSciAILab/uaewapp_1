@@ -1,34 +1,26 @@
 # ==============================================================================
 # UAEW Operations App — Stats Page
 # ------------------------------------------------------------------------------
-# Versão:        1.5.0
+# Versão:        1.6.0
 # Gerado em:     2025-09-07
 # Autor:         Assistente (GPT)
 #
 # RESUMO
-# - Página "Stats" para coleta/edição de dados de estatísticas dos atletas.
-# - Cards por atleta + formulário de Stats (labels vermelhas quando vazias) e
-#   botões Confirm/ Edit/ Save.
-# - Integração com 3 abas do Google Sheet:
-#     * df (lista de atletas)
-#     * Attendance (log padronizado de mudanças)
-#     * df [Stats] (snapshot das estatísticas por atualização)
+# - Cards por atleta com formulário de Stats.
+# - “Last Stats” é calculado PELO NOME (fighter_norm) no Attendance.
+# - Chips das OUTRAS tarefas (dinâmico a partir do Attendance) voltaram e
+#   são exibidos apenas se o status mais recente for Done ou Requested.
+# - Filtros (Status/Event/Search/Sort) estão dentro do expander.
 #
 # CHANGELOG
+# 1.6.0
+#   - Reintroduz chips de outras tarefas (somente Done/Requested).
+#   - Correções menores em normalização e robustez.
 # 1.5.0
-#   - Linha "Last Stats" corrige busca: agora usa NOME (fighter_norm) e pega o
-#     DONE mais recente em qualquer evento (inclui o atual).
-#   - Filtro + busca estão dentro do expander. Chips removidos.
+#   - “Last Stats” por nome (fighter_norm) incluindo evento atual.
+#   - Chips extras estavam removidos; agora reativados.
 # 1.4.0
-#   - registrar_log alinha ao cabeçalho real da aba Attendance (evita colunas trocadas).
-# 1.3.0
-#   - Labels do formulário ficam vermelhas quando o campo está vazio.
-# 1.2.0
-#   - Cálculo do status atual "Stats" (Done/Pending) por atleta.
-# 1.1.0
-#   - Append em "df [Stats]" alinhando ao header existente (cria se faltar).
-# 1.0.0
-#   - Primeira versão funcional.
+#   - Append no Attendance alinhado ao cabeçalho real (ordem correta).
 # ==============================================================================
 
 from components.layout import bootstrap_page
@@ -52,36 +44,27 @@ from utils import get_gspread_client, connect_gsheet_tab
 # CONSTANTES & CONFIG
 # ==============================================================================
 class Config:
-    """Centraliza nomes de colunas e valores constantes usados na página."""
-    # Sheets / Tabs
     MAIN_SHEET_NAME = "UAEW_App"
     ATHLETES_TAB_NAME = "df"
     ATTENDANCE_TAB_NAME = "Attendance"
     STATS_TAB_NAME = "df [Stats]"
 
-    # Tarefa fixa desta página
     FIXED_TASK = "Stats"
-
-    # Aliases da tarefa (para buscas históricas no Attendance)
     TASK_ALIASES = [r"\bstats?\b", r"\bstatistic(s)?\b"]
 
-    # Status lógicos para o fluxo de STATS (Done ou Pending)
-    STATUS_PENDING = ""           # sem confirmação ainda
+    STATUS_PENDING = ""
     STATUS_DONE = "Done"
+    STATUS_REQUESTED = "Requested"
+    STATUS_NOT_REQUESTED = "---"
 
-    # Cores de fundo dos cards
     STATUS_COLOR_MAP = {
         STATUS_DONE: "#143d14",
         STATUS_PENDING: "#1e1e1e",
-        # Fallbacks visuais para outros rótulos brutos (mantidos escuros)
-        "Requested": "#1e1e1e",
-        "---": "#1e1e1e",
-        "Pending": "#1e1e1e",
-        "Not Registred": "#1e1e1e",
-        "Issue": "#1e1e1e",
+        STATUS_REQUESTED: "#1e1e1e",
+        STATUS_NOT_REQUESTED: "#1e1e1e",
     }
 
-    # Colunas do DF de atletas (snake_case)
+    # Atleta (snake case)
     COL_ID = "id"
     COL_NAME = "name"
     COL_EVENT = "event"
@@ -96,7 +79,7 @@ class Config:
 
     DEFAULT_EVENT_PLACEHOLDER = "Z"
 
-    # Colunas Attendance (nomes exatos da planilha)
+    # Attendance (nomes exatos)
     ATT_COL_ROWID = "#"
     ATT_COL_EVENT = "Event"
     ATT_COL_ATHLETE_ID = "Athlete ID"
@@ -105,59 +88,59 @@ class Config:
     ATT_COL_TASK = "Task"
     ATT_COL_STATUS = "Status"
     ATT_COL_USER = "User"
-    ATT_COL_TIMESTAMP = "Timestamp"       # mantido vazio
-    ATT_COL_TIMESTAMP_ALT = "TimeStamp"   # onde gravamos data/hora
+    ATT_COL_TIMESTAMP = "Timestamp"
+    ATT_COL_TIMESTAMP_ALT = "TimeStamp"
     ATT_COL_NOTES = "Notes"
 
-    # Campos suportados em "df [Stats]"
+    # df [Stats]
     STATS_FIELDS = [
         'weight_kg', 'height_cm', 'reach_cm', 'fight_style',
         'country_of_representation', 'residence_city', 'team_name',
         'tshirt_size', 'tshirt_size_c1', 'tshirt_size_c2', 'tshirt_size_c3'
     ]
 
-    # Opções de dropdown
     T_SHIRT_SIZES = ["-- Select --", "S", "M", "L", "XL", "XXL", "3XL"]
     COUNTRY_LIST = [
         "-- Select --", "Afghanistan", "Albania", "Algeria", "Andorra", "Angola",
         "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria",
         "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus",
-        "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina",
-        "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
-        "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic",
-        "Chad", "Chile", "China", "Colombia", "Comoros",
+        "Belgium", "Belize", "Benin", "Bhutan", "Bolivia",
+        "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria",
+        "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada",
+        "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros",
         "Congo, Democratic Republic of the", "Congo, Republic of the",
         "Costa Rica", "Cote d'Ivoire", "Croatia", "Cuba", "Cyprus", "Czechia",
         "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt",
-        "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia",
-        "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana",
-        "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti",
-        "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq",
-        "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan",
-        "Kenya", "Kiribati", "Kosovo", "Kuwait", "Kyrgyzstan", "Laos", "Latvia",
-        "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania",
-        "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta",
-        "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova",
-        "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar",
-        "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger",
-        "Nigeria", "North Korea", "North Macedonia", "Norway", "Oman", "Pakistan",
-        "Palau", "Palestine State", "Panama", "Papua New Guinea", "Paraguay", "Peru",
-        "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Russia", "Rwanda",
-        "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines",
-        "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal",
-        "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia",
-        "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan",
-        "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
-        "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga",
-        "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda",
-        "Ukraine", "United Arab Emirates", "United Kingdom", "United States of America",
-        "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam",
-        "Yemen", "Zambia", "Zimbabwe"
+        "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini",
+        "Ethiopia", "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia",
+        "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea",
+        "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hungary", "Iceland",
+        "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy",
+        "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kosovo",
+        "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia",
+        "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi",
+        "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania",
+        "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia",
+        "Montenegro", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru",
+        "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria",
+        "North Korea", "North Macedonia", "Norway", "Oman", "Pakistan", "Palau",
+        "Palestine State", "Panama", "Papua New Guinea", "Paraguay", "Peru",
+        "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Russia",
+        "Rwanda", "Saint Kitts and Nevis", "Saint Lucia",
+        "Saint Vincent and the Grenadines", "Samoa", "San Marino",
+        "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles",
+        "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands",
+        "Somalia", "South Africa", "South Korea", "South Sudan", "Spain",
+        "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
+        "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo",
+        "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan",
+        "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom",
+        "United States of America", "Uruguay", "Uzbekistan", "Vanuatu",
+        "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
     ]
 
     @staticmethod
     def map_raw_status_stats(raw_status: str) -> str:
-        """Para STATS, apenas 'Done' conta como Done; resto vira Pending."""
         s = "" if raw_status is None else str(raw_status).strip()
         return Config.STATUS_DONE if s.lower() == "done" else Config.STATUS_PENDING
 
@@ -167,7 +150,6 @@ class Config:
 _INVALID_STRS = {"", "none", "None", "null", "NULL", "nan", "NaN", "<NA>"}
 
 def clean_and_normalize(text: str) -> str:
-    """Lowercase, remove acentos e espaços duplicados."""
     if not isinstance(text, str):
         return ""
     text = text.strip().lower()
@@ -176,7 +158,6 @@ def clean_and_normalize(text: str) -> str:
     return " ".join(text.split())
 
 def parse_ts_series(raw: pd.Series) -> pd.Series:
-    """Converte série para datetime testando múltiplos formatos."""
     if raw is None or raw.empty:
         return pd.Series([], dtype='datetime64[ns]')
     tries = [
@@ -192,14 +173,12 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
     return ts_final
 
 def _clean_str_series(s: pd.Series) -> pd.Series:
-    """Limpa série string e remove placeholders inválidos."""
     if s is None or s.empty:
         return pd.Series([], dtype=str)
     s = s.fillna("").astype(str).str.strip()
     return s.replace({k: "" for k in _INVALID_STRS})
 
 def _fmt_date_from_text(s: str) -> str:
-    """Formata texto de data em dd/mm/yyyy; caso contrário 'N/A'."""
     if s is None:
         return "N/A"
     s = str(s).strip()
@@ -209,14 +188,12 @@ def _fmt_date_from_text(s: str) -> str:
     return dt.strftime("%d/%m/%Y") if pd.notna(dt) else "N/A"
 
 def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: list[str] = None) -> pd.Series:
-    """Cria máscara booleana para a tarefa fixa (aceita aliases/regex)."""
     t = task_series.fillna("").astype(str).str.lower()
     pats = [re.escape(fixed_task.lower())] + list(aliases or [])
     regex = "(" + "|".join(pats) + ")"
-    return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
+    return t.str.contains(regex, regex=True, na=False)
 
 def field_is_empty(value) -> bool:
-    """Heurística de vazio para destacar labels em vermelho."""
     if value is None:
         return True
     if isinstance(value, str):
@@ -234,7 +211,6 @@ def field_is_empty(value) -> bool:
 # ==============================================================================
 @st.cache_data(ttl=600)
 def load_athletes() -> pd.DataFrame:
-    """Lê a aba 'df', filtra lutadores ativos e normaliza colunas."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATHLETES_TAB_NAME)
@@ -243,12 +219,10 @@ def load_athletes() -> pd.DataFrame:
             return pd.DataFrame()
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
 
-        # Checks básicos
         if Config.COL_ROLE not in df.columns or Config.COL_INACTIVE not in df.columns:
             st.error("Columns 'ROLE'/'INACTIVE' not found in athletes sheet.", icon="🚨")
             return pd.DataFrame()
 
-        # Normalização de 'inactive'
         if df[Config.COL_INACTIVE].dtype == "object":
             df[Config.COL_INACTIVE] = df[Config.COL_INACTIVE].astype(str).str.upper().map(
                 {"FALSE": False, "TRUE": True, "": True}
@@ -256,10 +230,8 @@ def load_athletes() -> pd.DataFrame:
         elif pd.api.types.is_numeric_dtype(df[Config.COL_INACTIVE]):
             df[Config.COL_INACTIVE] = df[Config.COL_INACTIVE].map({0: False, 1: True}).fillna(True)
 
-        # Apenas lutadores ativos
         df = df[(df[Config.COL_ROLE] == "1 - Fighter") & (df[Config.COL_INACTIVE] == False)].copy()
 
-        # Completa colunas
         df[Config.COL_EVENT] = df.get(Config.COL_EVENT, "").fillna(Config.DEFAULT_EVENT_PLACEHOLDER)
         for col in [Config.COL_IMAGE, Config.COL_MOBILE, Config.COL_FIGHT_NUMBER, Config.COL_CORNER,
                     Config.COL_PASSPORT_IMAGE, Config.COL_ROOM]:
@@ -279,7 +251,6 @@ def load_athletes() -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def load_attendance() -> pd.DataFrame:
-    """Lê a aba 'Attendance' e garante colunas obrigatórias."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATTENDANCE_TAB_NAME)
@@ -305,7 +276,6 @@ def load_attendance() -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def preprocess_attendance(df_attendance: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza colunas auxiliares e resolve timestamps."""
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
@@ -314,9 +284,8 @@ def preprocess_attendance(df_attendance: pd.DataFrame) -> pd.DataFrame:
     df["task_norm"]    = df.get(Config.ATT_COL_TASK, "").astype(str).str.strip().str.lower()
     df["status_norm"]  = df.get(Config.ATT_COL_STATUS, "").astype(str).str.strip().str.lower()
 
-    # TimeStamp (preferido) vs Timestamp (fallback)
-    t2 = df.get(Config.ATT_COL_TIMESTAMP_ALT)  # TimeStamp
-    t1 = df.get(Config.ATT_COL_TIMESTAMP)      # Timestamp
+    t2 = df.get(Config.ATT_COL_TIMESTAMP_ALT)
+    t1 = df.get(Config.ATT_COL_TIMESTAMP)
     if t2 is None and t1 is None:
         df["TS_raw"] = ""
     else:
@@ -329,7 +298,6 @@ def preprocess_attendance(df_attendance: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=600)
 def load_stats() -> pd.DataFrame:
-    """Lê a aba 'df [Stats]'."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.STATS_TAB_NAME)
@@ -340,7 +308,7 @@ def load_stats() -> pd.DataFrame:
         return pd.DataFrame()
 
 # ==============================================================================
-# “LAST DONE” — PELO NOME (fighter_norm)
+# “LAST DONE” — PELO NOME (fighter_norm) para a tarefa fixa
 # ==============================================================================
 @st.cache_data(ttl=600, show_spinner=False)
 def last_done_for_task_by_name(
@@ -349,11 +317,6 @@ def last_done_for_task_by_name(
     fixed_task: str,
     aliases: list[str],
 ) -> tuple[str, str]:
-    """
-    Retorna (date_str, event_name) do registro mais recente com Status = Done
-    para a tarefa 'fixed_task', procurando por **NOME** normalizado (fighter_norm).
-    Inclui o evento atual (não filtra por evento).
-    """
     if df_attendance is None or df_attendance.empty:
         return "N/A", ""
 
@@ -381,10 +344,68 @@ def last_done_for_task_by_name(
     return (dt_str if dt_str else "N/A"), event_label
 
 # ==============================================================================
+# OUTRAS TAREFAS — chips (apenas Done/Requested)
+# ==============================================================================
+def chips_for_other_tasks(
+    df_attendance: pd.DataFrame,
+    athlete_name: str,
+    athlete_event: str,
+    fixed_task: str
+) -> str:
+    """
+    Gera HTML com chips das OUTRAS tarefas (todas distintas no Attendance,
+    exceto a fixed_task). Mostra apenas as cujo último status é Done ou Requested
+    para este atleta + evento.
+    """
+    if df_attendance is None or df_attendance.empty:
+        return ""
+
+    name_n = clean_and_normalize(athlete_name)
+    evt_n  = clean_and_normalize(athlete_event)
+
+    if not name_n or not evt_n:
+        return ""
+
+    df = df_attendance.copy()
+    # filtra atleta + evento
+    df = df[(df["fighter_norm"] == name_n) & (df["event_norm"] == evt_n)]
+    if df.empty:
+        return ""
+
+    # pega última linha por tarefa (mais recente TS_dt / ordem)
+    df["__idx__"] = np.arange(len(df))
+    df = df.sort_values(by=["task_norm", "TS_dt", "__idx__"], ascending=[True, False, False])
+    latest = df.drop_duplicates(subset=["task_norm"], keep="first")
+
+    # cores dos chips
+    color_map = {
+        "done":  "#1E8449",   # verde
+        "requested": "#D35400"  # laranja
+    }
+    chips = []
+    for _, r in latest.iterrows():
+        tname = str(r.get(Config.ATT_COL_TASK, "")).strip()
+        if not tname:
+            continue
+        if re.fullmatch(r"(?i)" + Config.FIXED_TASK, tname, flags=re.I):
+            continue  # não mostrar o próprio Stats aqui; tem seção própria
+
+        st_norm = str(r.get("status_norm", "")).lower()
+        if st_norm not in ("done", "requested"):
+            continue
+
+        color = color_map.get(st_norm, "#34495E")
+        chips.append(
+            f"<span style='background-color:{color}; color:#fff; padding:4px 10px; border-radius:12px; "
+            f"font-size:12px; font-weight:700; display:inline-block; margin-right:8px; margin-bottom:6px;'>{html.escape(tname)}</span>"
+        )
+
+    return "".join(chips)
+
+# ==============================================================================
 # APPENDS (df [Stats] e Attendance)
 # ==============================================================================
 def add_stats_record(row_dict: dict) -> bool:
-    """Append em 'df [Stats]' alinhando ao header existente (cria se faltar)."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.STATS_TAB_NAME)
@@ -398,7 +419,6 @@ def add_stats_record(row_dict: dict) -> bool:
             'tshirt_size_c1', 'tshirt_size_c2', 'tshirt_size_c3', 'operation'
         ]
 
-        # Garante cabeçalho
         if not all_vals:
             ws.append_row(default_header, value_input_option="USER_ENTERED")
             header = default_header
@@ -407,15 +427,13 @@ def add_stats_record(row_dict: dict) -> bool:
             header = all_vals[0]
             if set(default_header) - set(header):
                 header = header + [c for c in default_header if c not in header]
-                last_col_letter = chr(64 + len(header))  # simples (A..Z)
+                last_col_letter = chr(64 + len(header))
                 ws.update(f"A1:{last_col_letter}1", [header])
-            next_id = len(all_vals)  # header + linhas existentes
+            next_id = len(all_vals)
 
-        # Alinha valores por nome
         row_dict = dict(row_dict)
         row_dict['stats_record_id'] = row_dict.get('stats_record_id', next_id)
         aligned = [row_dict.get(c, "") for c in header]
-
         ws.append_row(aligned, value_input_option="USER_ENTERED")
         st.success("Stats saved.", icon="💾")
         load_stats.clear()
@@ -433,17 +451,10 @@ def registrar_log(
     user_log_id: str,
     notes: str = ""
 ) -> bool:
-    """
-    Grava uma linha na aba Attendance alinhando pela ORDEM REAL do cabeçalho.
-    Campos esperados:
-    ["#", "Event", "Athlete ID", "Name", "Fighter", "Task", "Status",
-     "User", "Timestamp", "TimeStamp", "Notes"]
-    """
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATTENDANCE_TAB_NAME)
 
-        # 1) Header real
         header: list[str] = ws.row_values(1)
         if not header:
             header = [
@@ -453,26 +464,20 @@ def registrar_log(
             ]
             ws.append_row(header, value_input_option="USER_ENTERED")
 
-        # 2) Próximo número da coluna "#"
         next_num = ""
         if Config.ATT_COL_ROWID in header:
             col_idx = header.index(Config.ATT_COL_ROWID) + 1
-            col_vals = ws.col_values(col_idx)  # inclui header
+            col_vals = ws.col_values(col_idx)
             if len(col_vals) > 1:
                 last = None
                 for v in reversed(col_vals[1:]):
-                    vv = str(v).strip()
-                    if vv:
-                        last = vv
+                    if str(v).strip():
+                        last = str(v).strip()
                         break
-                if last and last.isdigit():
-                    next_num = str(int(last) + 1)
-                else:
-                    next_num = str(len(col_vals))
+                next_num = str(int(last) + 1) if (last and last.isdigit()) else str(len(col_vals))
             else:
                 next_num = "1"
 
-        # 3) Monta os valores por nome
         ts_now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name', user_log_id)
 
@@ -490,13 +495,8 @@ def registrar_log(
             Config.ATT_COL_NOTES: notes
         }
 
-        # 4) Alinha com a ordem do cabeçalho real
         row_to_append = [values_by_name.get(col_name, "") for col_name in header]
-
-        # 5) Append
         ws.append_row(row_to_append, value_input_option="USER_ENTERED")
-
-        # 6) Limpa cache
         load_attendance.clear()
         return True
 
@@ -505,9 +505,8 @@ def registrar_log(
         return False
 
 # ==============================================================================
-# UI & LÓGICA — Página
+# UI & LÓGICA
 # ==============================================================================
-# Defaults simples no Session State
 default_ss = {
     "selected_status": "All",
     "selected_event": "All Events",
@@ -518,16 +517,14 @@ for k, v in default_ss.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# Load
 with st.spinner("Loading data..."):
     df_athletes = load_athletes()
-    df_att_raw = load_attendance()
-    df_stats = load_stats()
+    df_att_raw  = load_attendance()
+    df_stats    = load_stats()
 
 df_att = preprocess_attendance(df_att_raw)
 
 def compute_task_status_for_athletes(df_athletes, df_attendance, fixed_task: str) -> pd.DataFrame:
-    """Status atual (Done/Pending) por atleta+evento para a tarefa fixa."""
     if df_athletes is None or df_athletes.empty:
         return pd.DataFrame(columns=[Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
 
@@ -569,7 +566,6 @@ def compute_task_status_for_athletes(df_athletes, df_attendance, fixed_task: str
     latest['latest_task_user'] = latest[Config.ATT_COL_USER].fillna('N/A')
     return latest[[Config.COL_NAME, Config.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
-# Enriquecimento com status atual da tarefa "Stats"
 if not df_athletes.empty:
     st_status = compute_task_status_for_athletes(df_athletes, df_att, Config.FIXED_TASK)
     df_athletes = pd.merge(df_athletes, st_status, on=[Config.COL_NAME, Config.COL_EVENT], how='left')
@@ -648,57 +644,26 @@ st.divider()
 # --- CSS dos cards e formulários ---
 st.markdown("""
 <style>
-    .card-container {
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: flex-start;
-        gap: 15px;
-    }
-    .card-img {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        object-fit: cover;
-        flex-shrink: 0;
-    }
-    .card-info {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .info-line {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 10px;
-    }
-    .fighter-name {
-        font-size: 1.25rem;
-        font-weight: bold;
-        margin: 0;
-        color: white;
-    }
-    .button-group-row {
-        display: flex;
-        gap: 10px;
-        margin-top: 10px;
-        width: 100%;
-    }
+    .card-container { padding: 15px; border-radius: 10px; margin-bottom: 10px;
+        display: flex; align-items: flex-start; gap: 15px; }
+    .card-img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .card-info { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+    .info-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .fighter-name { font-size: 1.25rem; font-weight: bold; margin: 0; color: white; }
+    .event-badge { background-color: #2b6cb0; color: #fff; padding: 3px 8px;
+        border-radius: 8px; font-size: 0.75rem; font-weight: 700; display: inline-block; }
+    .button-group-row { display: flex; gap: 10px; margin-top: 10px; width: 100%; }
     .button-group-row > div { flex: 1; }
     div.stButton > button { width: 100%; }
     .green-button button { background-color: #28a745; color: white !important; border: 1px solid #28a745; }
     .green-button button:hover { background-color: #218838; color: white !important; border: 1px solid #218838; }
     .red-button button { background-color: #dc3545; color: white !important; border: 1px solid #dc3545; }
     .red-button button:hover { background-color: #c82333; color: white !important; border: 1px solid #c82333; }
-    .event-badge { background-color: #2b6cb0; color: #fff; padding: 3px 8px; border-radius: 8px; font-size: 0.75rem; font-weight: 700; display: inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- Render: cards + formulário de Stats ---
-for i_l, row in df_filtered.iterrows():
+for _, row in df_filtered.iterrows():
     ath_id = str(row.get(Config.COL_ID, ""))
     ath_name = str(row.get(Config.COL_NAME, ""))
     ath_event = str(row.get(Config.COL_EVENT, ""))
@@ -744,11 +709,14 @@ for i_l, row in df_filtered.iterrows():
         if passport_url and passport_url.startswith("http") else ""
     )
 
-    # Linha de status (Stats: Done/Pending + última atualização)
+    # Linha de status da tarefa fixa
     stat_text = "Done" if curr_status == Config.STATUS_DONE else "Pending"
     latest_user = row.get("latest_task_user", "N/A") or "N/A"
     latest_dt = row.get("latest_task_timestamp", "N/A") or "N/A"
     task_status_html = f"<small style='color:#ccc;'>{html.escape(Config.FIXED_TASK)}: <b>{html.escape(stat_text)}</b> <i>({html.escape(latest_dt)} • {html.escape(latest_user)})</i></small>"
+
+    # Chips de OUTRAS tarefas (somente Done/Requested)
+    other_chips_html = chips_for_other_tasks(df_att, ath_name, ath_event, Config.FIXED_TASK)
 
     # “Last Stats” (pelo NOME)
     last_dt_str, last_event_str = last_done_for_task_by_name(
@@ -769,18 +737,18 @@ for i_l, row in df_filtered.iterrows():
             <div class='info-line'>{whatsapp_tag_html}{passport_tag_html}</div>
             <div class='info-line'>{task_status_html}</div>
             <hr style='border-color: #444; margin: 6px 0; width: 100%;'>
-            <div class='info-line'><small style='color:#ccc;'>{last_label}: <b>{last_html}</b></small></div>
+            <div class='info-line'>{other_chips_html}</div>
+            <div class='info-line' style='margin-top:6px;'><small style='color:#ccc;'>{last_label}: <b>{last_html}</b></small></div>
         </div>
     </div>"""
 
-    # Duas colunas: Card (esq) + coluna de ações (dir, vazia por simetria)
     col_card, col_actions = st.columns([2.5, 1])
 
     # --- Esquerda: Card + Formulário de Stats ---
     with col_card:
         st.markdown(card_html, unsafe_allow_html=True)
 
-        # Busca o último snapshot de stats do atleta na aba 'df [Stats]'
+        # Snapshot mais recente em df [Stats] (por nome)
         latest_stats = None
         if not df_stats.empty and 'fighter_event_name' in df_stats.columns:
             df_one = df_stats[df_stats['fighter_event_name'].astype(str).str.lower() == ath_name.lower()].copy()
@@ -788,13 +756,13 @@ for i_l, row in df_filtered.iterrows():
                 df_one['__ts__'] = pd.to_datetime(df_one['updated_at'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
                 latest_stats = df_one.sort_values('__ts__', ascending=False).iloc[0]
 
-        # Toggle de edição por atleta
+        # Toggle edição
         edit_mode_key = f"edit_mode_{ath_id}"
         if edit_mode_key not in st.session_state:
             st.session_state[edit_mode_key] = False
         is_editing = st.session_state[edit_mode_key]
 
-        # Inicializa defaults no session_state a partir do último snapshot
+        # Defaults do form
         if latest_stats is not None:
             for f in Config.STATS_FIELDS:
                 k = f"stat_{f}_{ath_id}"
@@ -813,7 +781,7 @@ for i_l, row in df_filtered.iterrows():
                 if k not in st.session_state:
                     st.session_state[k] = 0.0 if f in ['weight_kg', 'height_cm', 'reach_cm'] else ("-- Select --" if "tshirt" in f or "country" in f else "")
 
-        # Botões superiores (Confirmar / Editar)
+        # Botões Confirm/Edit
         btn_row = st.columns([0.66, 0.17, 0.17])
         with btn_row[1]:
             if st.button("Confirm Data", key=f"confirm_{ath_id}", use_container_width=True):
@@ -855,7 +823,6 @@ for i_l, row in df_filtered.iterrows():
         disabled = not is_editing
 
         def label_html(text: str, empty: bool) -> str:
-            """Gera label com cor vermelha quando o campo estiver 'vazio'."""
             return f"<div style='margin-top:8px; margin-bottom:4px; font-weight:600; color:{'#ff4d4f' if empty else '#ddd'};'>{html.escape(text)}</div>"
 
         i = 0
@@ -867,41 +834,18 @@ for i_l, row in df_filtered.iterrows():
                 st.markdown(label_html(field_labels.get(f, f), empty), unsafe_allow_html=True)
 
                 if f in ['weight_kg', 'height_cm', 'reach_cm']:
-                    st.number_input(
-                        label="",
-                        key=key,
-                        min_value=0.0,
-                        step=0.10,
-                        format="%.2f",
-                        disabled=disabled,
-                        label_visibility="collapsed"
-                    )
+                    st.number_input("", key=key, min_value=0.0, step=0.10, format="%.2f",
+                                    disabled=disabled, label_visibility="collapsed")
                 elif f == 'country_of_representation':
-                    st.selectbox(
-                        label="",
-                        options=Config.COUNTRY_LIST,
-                        key=key,
-                        disabled=disabled,
-                        label_visibility="collapsed"
-                    )
+                    st.selectbox("", options=Config.COUNTRY_LIST, key=key,
+                                 disabled=disabled, label_visibility="collapsed")
                 elif 'tshirt' in f:
-                    st.selectbox(
-                        label="",
-                        options=Config.T_SHIRT_SIZES,
-                        key=key,
-                        disabled=disabled,
-                        label_visibility="collapsed"
-                    )
+                    st.selectbox("", options=Config.T_SHIRT_SIZES, key=key,
+                                 disabled=disabled, label_visibility="collapsed")
                 else:
-                    st.text_input(
-                        label="",
-                        key=key,
-                        disabled=disabled,
-                        label_visibility="collapsed"
-                    )
+                    st.text_input("", key=key, disabled=disabled, label_visibility="collapsed")
             i += 1
 
-        # Botão Salvar (em modo edição)
         if is_editing:
             if st.button(f"Save Changes for {ath_name}", key=f"save_stats_{ath_id}", type="primary", use_container_width=True):
                 new_data = {
@@ -920,7 +864,7 @@ for i_l, row in df_filtered.iterrows():
                         st.session_state[edit_mode_key] = False
                         time.sleep(1); st.rerun()
 
-    # --- Direita: reservado (simetria visual) ---
+    # --- Direita: reservado (simetria) ---
     with col_actions:
         st.empty()
 

@@ -1,18 +1,11 @@
 # ==============================================================================
-# TASK MANAGEMENT CORE - REUSABLE STREAMLIT MODULE (OTIMIZADO)
-# ==============================================================================
-# Principais melhorias:
-# - Gravação em lote via spreadsheets.values.append (sem get_all_values)
-# - Buffer local (write-behind) + atualização otimista de status (sem st.rerun)
-# - Botões "Salvar tudo" e "Descartar fila"
-# - Paginação para reduzir re-render pesado
-# - Recarregar dados sob demanda (sem limpar cache a cada clique)
-# - Cache de recursos (Worksheet) separado do cache de dados
-# - **FIX**: Alinhamento de colunas com cabeçalho real da planilha
-# - **NOVO**: Filtro para mostrar somente Done / Requested / Pending (toggle)
+# TASK MANAGEMENT CORE - REUSABLE STREAMLIT MODULE (ATUALIZADO)
+# - Chips de tarefas em cada card mostram apenas statuses Done/Requested
+# - Buffer local para gravação em lote
+# - Paginação + filtros
 # ==============================================================================
 
-# --- 0. Import Libraries ---
+# --- 0. Imports ---
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,9 +14,9 @@ import html
 import time
 import unicodedata
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
-# --- Project Imports (helpers existentes) ---
+# Helpers do projeto
 from utils import (
     get_gspread_client, connect_gsheet_tab,
     load_users_data, get_valid_user_info, load_config_data
@@ -53,15 +46,15 @@ class BaseConfig:
     STATUS_COLOR_MAP = {
         STATUS_DONE: "#143d14",
         STATUS_REQUESTED: "#B08D00",
-        STATUS_PENDING: "#1e1e1e",        # pending (no request)
-        STATUS_NOT_REQUESTED: "#6c757d",  # explicitly not requested
-        # extra fallbacks
+        STATUS_PENDING: "#1e1e1e",
+        STATUS_NOT_REQUESTED: "#6c757d",
+        # fallbacks
         "Pending": "#1e1e1e",
         "Not Registred": "#1e1e1e",
         "Issue": "#1e1e1e"
     }
 
-    # Column names
+    # Column names (athletes)
     COL_ID = "id"
     COL_NAME = "name"
     COL_EVENT = "event"
@@ -87,11 +80,11 @@ class BaseConfig:
     ATT_COL_NOTES = "Notes"
     ATT_COL_ID = "#"
 
-    DEFAULT_EVENT_PLACEHOLDER = "Z"  # default value for missing events
+    DEFAULT_EVENT_PLACEHOLDER = "Z"
 
     @staticmethod
     def map_raw_status_to_logical(raw_status: str) -> str:
-        """Map a raw sheet status to our logical set."""
+        """Map sheet value to logical set."""
         raw_status = "" if raw_status is None else str(raw_status).strip()
         low = raw_status.lower()
         if low == BaseConfig.STATUS_DONE.lower():
@@ -103,12 +96,15 @@ class BaseConfig:
         return BaseConfig.STATUS_PENDING
 
 
-# Ordem fixa sugerida (usada apenas se precisarmos criar o header)
+# ordem fixa (caso precise criar header)
 ATT_HEADER_ORDER = [
     BaseConfig.ATT_COL_ID, BaseConfig.ATT_COL_EVENT, BaseConfig.ATT_COL_NAME, BaseConfig.ATT_COL_FIGHTER,
     BaseConfig.ATT_COL_ATHLETE_ID, BaseConfig.ATT_COL_TASK, BaseConfig.ATT_COL_STATUS, BaseConfig.ATT_COL_USER,
     BaseConfig.ATT_COL_TIMESTAMP, BaseConfig.ATT_COL_TIMESTAMP_ALT, BaseConfig.ATT_COL_NOTES
 ]
+
+# Mostrar chips SOMENTE para estes statuses:
+BADGE_ALLOWED_STATUSES = {BaseConfig.STATUS_DONE, BaseConfig.STATUS_REQUESTED}
 
 
 # ==============================================================================
@@ -117,7 +113,6 @@ ATT_HEADER_ORDER = [
 _INVALID_STRS = {"", "none", "None", "null", "NULL", "nan", "NaN", "<NA>"}
 
 def clean_and_normalize(text: str) -> str:
-    """Lowercase, trim, remove accents, collapse spaces."""
     if not isinstance(text, str):
         return ""
     text = text.strip().lower()
@@ -126,7 +121,6 @@ def clean_and_normalize(text: str) -> str:
     return " ".join(text.split())
 
 def parse_ts_series(raw: pd.Series) -> pd.Series:
-    """Try multiple datetime formats; return datetime series."""
     if raw is None or raw.empty:
         return pd.Series([], dtype='datetime64[ns]')
     tries = [
@@ -134,7 +128,7 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
         pd.to_datetime(raw, format="%d/%m/%Y", errors="coerce"),
         pd.to_datetime(raw, format="%d-%m-%Y %H:%M:%S", errors="coerce"),
         pd.to_datetime(raw, format="%d-%m-%Y", errors="coerce"),
-        pd.to_datetime(raw, errors="coerce"),  # ISO fallback
+        pd.to_datetime(raw, errors="coerce"),
     ]
     out = tries[0]
     for cand in tries[1:]:
@@ -142,14 +136,12 @@ def parse_ts_series(raw: pd.Series) -> pd.Series:
     return out
 
 def _clean_str_series(s: pd.Series) -> pd.Series:
-    """Clean string series and remove invalid placeholders."""
     if s is None or s.empty:
         return pd.Series([], dtype=str)
     s = s.fillna("").astype(str).str.strip()
     return s.replace({k: "" for k in _INVALID_STRS})
 
 def _fmt_date_from_text(s: str) -> str:
-    """Format any date-ish text to dd/mm/yyyy; else 'N/A'."""
     if s is None:
         return "N/A"
     s = str(s).strip()
@@ -159,43 +151,36 @@ def _fmt_date_from_text(s: str) -> str:
     return dt.strftime("%d/%m/%Y") if pd.notna(dt) else "N/A"
 
 def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: List[str] = None) -> pd.Series:
-    """Boolean mask to match task name (with aliases)."""
     t = task_series.fillna("").astype(str).str.lower()
     pats = [re.escape((fixed_task or "").lower())] + [re.escape(x.lower()) for x in (aliases or [])]
     regex = "(" + "|".join(pats) + ")"
     return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
 
 def _slugify(s: str) -> str:
-    """Cria um prefixo estável para keys do session_state a partir do título da página."""
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
     s = re.sub(r'[^a-zA-Z0-9]+', '_', s).strip('_').lower()
     return s or "page"
 
 def _safe_display_user_sidebar():
-    """Renderiza o header do usuário no sidebar apenas se o sidebar unificado não foi desenhado."""
     if not st.session_state.get("_unified_sidebar_rendered", False):
         display_user_sidebar()
 
 
 # ==============================================================================
-# CACHED RESOURCES (CLIENT/WORKSHEET)
+# CACHED RESOURCES
 # ==============================================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_attendance_ws(sheet_name: str, tab_name: str):
     gc = get_gspread_client()
     return connect_gsheet_tab(gc, sheet_name, tab_name)
 
-
-# === Header real da planilha + alinhamento ====================================
 @st.cache_data(ttl=300, show_spinner=False)
 def get_attendance_header(sheet_name: str, tab_name: str) -> list:
-    """Lê apenas a linha 1 (header real) da aba de Attendance."""
     ws = get_attendance_ws(sheet_name, tab_name)
-    header = ws.row_values(1)  # barato e direto
+    header = ws.row_values(1)
     return header or []
 
 def ensure_header_exists(ws, cfg: BaseConfig) -> list:
-    """Garante que o header exista; se vazio, cria com ATT_HEADER_ORDER."""
     header = ws.row_values(1)
     if not header:
         ws.update("A1", [ATT_HEADER_ORDER])
@@ -203,29 +188,22 @@ def ensure_header_exists(ws, cfg: BaseConfig) -> list:
     return header
 
 def align_rows_to_header(header: list, dict_rows: list, cfg: BaseConfig) -> list:
-    """
-    Constrói uma lista de listas na ordem exata do 'header' real da planilha.
-    - 'header': lista de nomes das colunas (como estão na linha 1)
-    - 'dict_rows': lista de dicts com chaves = nomes de colunas (padrão cfg)
-    """
     if not header:
         header = ATT_HEADER_ORDER
     out = []
     for v in dict_rows:
         vv = dict(v)
-        vv.setdefault(cfg.ATT_COL_ID, str(int(time.time())))  # fallback
+        vv.setdefault(cfg.ATT_COL_ID, str(int(time.time())))
         row = [vv.get(h, "") for h in header]
         out.append(row)
     return out
-# ==============================================================================
 
 
 # ==============================================================================
-# DATA LOADING (CACHED)
+# DATA LOADING
 # ==============================================================================
 @st.cache_data(ttl=600, show_spinner=False)
 def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) -> pd.DataFrame:
-    """Load athletes sheet, apply filters and normalizations."""
     try:
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
@@ -235,6 +213,7 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
         df = pd.DataFrame(data)
         if df.empty:
             return pd.DataFrame()
+
         df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
         if cfg.COL_ROLE not in df.columns or cfg.COL_INACTIVE not in df.columns:
@@ -246,6 +225,7 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
             st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
+        # active fighters
         if df[cfg.COL_INACTIVE].dtype == 'object':
             df[cfg.COL_INACTIVE] = (
                 df[cfg.COL_INACTIVE]
@@ -275,7 +255,6 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
 
 @st.cache_data(ttl=120, show_spinner=False)
 def load_attendance_data(sheet_name: str, attendance_tab_name: str, cfg: BaseConfig) -> pd.DataFrame:
-    """Load attendance sheet and ensure required columns exist."""
     try:
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
@@ -305,21 +284,17 @@ def load_attendance_data(sheet_name: str, attendance_tab_name: str, cfg: BaseCon
 # ==============================================================================
 @st.cache_data(ttl=120, show_spinner=False)
 def preprocess_attendance(df_attendance: pd.DataFrame, cfg: BaseConfig) -> pd.DataFrame:
-    """Normalize columns and parse timestamps."""
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
-
     df["fighter_norm"] = df[cfg.ATT_COL_FIGHTER].astype(str).apply(clean_and_normalize)
     df["event_norm"]   = df[cfg.ATT_COL_EVENT].astype(str).apply(clean_and_normalize)
     df["task_norm"]    = df[cfg.ATT_COL_TASK].astype(str).str.strip().str.lower()
     df["status_norm"]  = df[cfg.ATT_COL_STATUS].astype(str).str.strip().str.lower()
 
-    # Prefer TimeStamp then fallback to Timestamp
     s2 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP_ALT])
     s1 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP])
     df["TS_raw"] = s2.where(s2 != "", s1)
-
     df["TS_dt"] = parse_ts_series(df["TS_raw"])
     return df
 
@@ -331,7 +306,6 @@ def get_all_athletes_status(
     aliases: List[str],
     cfg: BaseConfig
 ) -> pd.DataFrame:
-    """Compute current fixed-task status for each athlete+event."""
     if df_athletes is None or df_athletes.empty:
         return pd.DataFrame(columns=[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
 
@@ -387,7 +361,6 @@ def last_task_other_event_by_name(
     cfg: BaseConfig,
     fallback_any_event: bool = True
 ) -> Tuple[str, str]:
-    """Return (date_str, event_name) of the last DONE record for the fixed task in a different event."""
     if df_attendance is None or df_attendance.empty:
         return "N/A", ""
 
@@ -422,35 +395,27 @@ def last_task_other_event_by_name(
 
 
 # ==============================================================================
-# WRITE BUFFER + APPEND RÁPIDO
+# WRITE BUFFER + APPEND
 # ==============================================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def _get_ws_for_fast_append() -> object:
     return get_attendance_ws(BaseConfig.MAIN_SHEET_NAME, BaseConfig.ATTENDANCE_TAB_NAME)
 
 def fast_values_append(ws, rows: list):
-    """
-    Usa spreadsheets.values.append (INSERT_ROWS) com USER_ENTERED.
-    rows: lista de listas (já ALINHADAS ao header real).
-    """
     if not rows:
         return
     body = {"values": rows}
     ws.spreadsheet.values_append(
         f"{ws.title}!A1",
-        params={
-            "valueInputOption": "USER_ENTERED",
-            "insertDataOption": "INSERT_ROWS"
-        },
+        params={"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
         body=body
     )
 
-# Estado global da página (buffer e overrides)
 def _ensure_buffer_state():
     if "write_buffer" not in st.session_state:
-        st.session_state["write_buffer"] = []  # lista de dicts (campos de uma linha do Attendance)
+        st.session_state["write_buffer"] = []
     if "pending_local_updates" not in st.session_state:
-        st.session_state["pending_local_updates"] = {}  # (athlete_id, event) -> status
+        st.session_state["pending_local_updates"] = {}
 
 def queue_log(values: dict):
     _ensure_buffer_state()
@@ -466,12 +431,9 @@ def flush_buffer(cfg: BaseConfig):
         return
     ws = _get_ws_for_fast_append()
 
-    # 1) garante header real
     header_real = ensure_header_exists(ws, cfg)
-    # 2) alinha cada dict ao header real
     rows = align_rows_to_header(header_real, st.session_state["write_buffer"], cfg)
 
-    # 3) Envia em lotes
     BATCH = 100
     for i in range(0, len(rows), BATCH):
         fast_values_append(ws, rows[i:i+BATCH])
@@ -489,9 +451,6 @@ def registrar_log(
     user_log_id: str,
     cfg: BaseConfig
 ) -> bool:
-    """
-    Enfileira uma linha no buffer (write-behind). Não força refresh.
-    """
     try:
         ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get('current_user_name') or st.session_state.get('current_user_id') or user_log_id
@@ -517,10 +476,9 @@ def registrar_log(
 
 
 # ==============================================================================
-# UI RENDERING
+# UI HELPERS
 # ==============================================================================
 def render_athlete_card(row: pd.Series, last_info: Tuple[str, str], badges_html: str, fixed_task: str, cfg: BaseConfig) -> str:
-    """Return HTML card for an athlete."""
     ath_id_d = str(row.get(cfg.COL_ID, ""))
     ath_name_d = str(row.get(cfg.COL_NAME, ""))
     ath_event_d = str(row.get(cfg.COL_EVENT, ""))
@@ -603,13 +561,12 @@ def render_athlete_card(row: pd.Series, last_info: Tuple[str, str], badges_html:
 # ==============================================================================
 def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     st.title(page_title)
-    cfg = BaseConfig  # alias
+    cfg = BaseConfig
     _ensure_buffer_state()
 
-    # Prefixo para keys
     _kpref = _slugify(page_title)
 
-    # Global CSS
+    # CSS global
     st.markdown("""
     <style>
         .card-container { padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 15px; }
@@ -627,14 +584,13 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     </style>
     """, unsafe_allow_html=True)
 
-    # Chaves de estado únicas
+    # Keys
     K_STATUS = f"{_kpref}_selected_status"
     K_EVENT  = f"{_kpref}_selected_event"
     K_SEARCH = f"{_kpref}_fighter_search_query"
     K_SORT   = f"{_kpref}_sort_by"
     K_PAGE   = f"{_kpref}_page"
     K_PSIZE  = f"{_kpref}_pagesize"
-    K_ONLY_DRP = f"{_kpref}_only_done_req_pend"  # NOVO toggle
 
     # Defaults
     st.session_state.setdefault(K_STATUS, "All")
@@ -643,9 +599,8 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     st.session_state.setdefault(K_SORT, "Name")
     st.session_state.setdefault(K_PAGE, 1)
     st.session_state.setdefault(K_PSIZE, 20)
-    st.session_state.setdefault(K_ONLY_DRP, True)  # por padrão filtra para Done/Requested/Pending
 
-    # Barra de ações superiores (gravação/refresh)
+    # Barra de ações
     a1, a2, a3, a4 = st.columns([1,1,1,3])
     with a1:
         if st.button("💾 Salvar tudo"):
@@ -657,22 +612,19 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             st.info("Fila limpa.")
     with a3:
         if st.button("🔄 Recarregar dados (forçado)"):
-            load_attendance_data.clear()
-            preprocess_attendance.clear()
-            load_athlete_data.clear()
+            load_attendance_data.clear(); preprocess_attendance.clear(); load_athlete_data.clear()
             st.toast("Caches limpos. Role a página para atualizar.", icon="🔄")
 
-    # Load data
+    # Dados
     with st.spinner("Loading data..."):
         df_athletes = load_athlete_data(cfg.MAIN_SHEET_NAME, cfg.ATHLETES_TAB_NAME, cfg)
         df_attendance_raw = load_attendance_data(cfg.MAIN_SHEET_NAME, cfg.ATTENDANCE_TAB_NAME, cfg)
         tasks_raw, _ = load_config_data()
         tasks_raw = [str(x) for x in (tasks_raw or [])]
 
-    # Preprocess
     df_attendance = preprocess_attendance(df_attendance_raw, cfg)
 
-    # Status per athlete
+    # Status por atleta (tarefa fixa)
     if not df_athletes.empty:
         athletes_status = get_all_athletes_status(df_athletes, df_attendance, fixed_task, task_aliases, cfg)
         df_athletes = pd.merge(df_athletes, athletes_status, on=[cfg.COL_NAME, cfg.COL_EVENT], how='left')
@@ -682,14 +634,13 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             'latest_task_timestamp': 'N/A'
         }, inplace=True)
 
-        # Sobreposição otimista (sem recarregar)
         def _apply_pending(row):
             key = (str(row.get(cfg.COL_ID, "")), str(row.get(cfg.COL_EVENT, "")))
             pend = st.session_state["pending_local_updates"].get(key)
             return pend if pend is not None else row.get("current_task_status", cfg.STATUS_PENDING)
         df_athletes["current_task_status"] = df_athletes.apply(_apply_pending, axis=1)
 
-    # Filters & sorting
+    # Filtros
     with st.expander("Settings", expanded=True):
         col_status, col_sort = st.columns(2)
         with col_status:
@@ -707,14 +658,8 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
                 key=K_STATUS
             )
         with col_sort:
-            st.segmented_control(
-                "Sort by:",
-                options=["Name", "Fight Order"],
-                key=K_SORT,
-                help="Choose how to sort the athletes list."
-            )
+            st.segmented_control("Sort by:", options=["Name", "Fight Order"], key=K_SORT)
 
-        # Eventos disponíveis
         event_options = ["All Events"] + (
             sorted([evt for evt in df_athletes[cfg.COL_EVENT].unique() if evt != cfg.DEFAULT_EVENT_PLACEHOLDER])
             if not df_athletes.empty else []
@@ -724,22 +669,15 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
         st.selectbox("Filter by Event:", options=event_options, key=K_EVENT)
         st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key=K_SEARCH)
+        st.session_state[K_PSIZE] = st.selectbox("Page size", options=[10, 20, 50, 100],
+                                                 index=[10,20,50,100].index(st.session_state[K_PSIZE]))
 
-        # Page size
-        st.session_state[K_PSIZE] = st.selectbox("Page size", options=[10, 20, 50, 100], index=[10,20,50,100].index(st.session_state[K_PSIZE]))
-
-        # NOVO toggle para exibir somente Done/Requested/Pending
-        st.checkbox("Mostrar apenas Done / Requested / Pending", key=K_ONLY_DRP, value=st.session_state[K_ONLY_DRP])
-
-    # Valores atuais dos filtros
     selected_status = st.session_state[K_STATUS]
     selected_event  = st.session_state[K_EVENT]
     search_query    = st.session_state[K_SEARCH]
     sort_by         = st.session_state[K_SORT]
     page_size       = st.session_state[K_PSIZE]
-    only_drp        = st.session_state[K_ONLY_DRP]
 
-    # Apply filters
     df_filtered = df_athletes.copy()
     if not df_filtered.empty:
         if selected_event != "All Events":
@@ -755,11 +693,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
         if selected_status != "All":
             df_filtered = df_filtered[df_filtered['current_task_status'] == selected_status]
 
-        # NOVO: filtro de conjunto permitido (opcional)
-        if only_drp:
-            allowed = {cfg.STATUS_DONE, cfg.STATUS_REQUESTED, cfg.STATUS_PENDING}
-            df_filtered = df_filtered[df_filtered['current_task_status'].isin(allowed)]
-
         if sort_by == 'Fight Order':
             df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered[cfg.COL_FIGHT_NUMBER], errors='coerce').fillna(999)
             df_filtered['CORNER_SORT'] = df_filtered[cfg.COL_CORNER].str.lower().map({'blue': 0, 'red': 1}).fillna(2)
@@ -767,24 +700,23 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
         else:
             df_filtered = df_filtered.sort_values(by=cfg.COL_NAME, ascending=True)
 
-    # Status summary
+    # Summary
     if not df_filtered.empty:
         done_count = (df_filtered['current_task_status'] == cfg.STATUS_DONE).sum()
         requested_count = (df_filtered['current_task_status'] == cfg.STATUS_REQUESTED).sum()
         pending_count = (df_filtered['current_task_status'] == cfg.STATUS_PENDING).sum()
         notreq_count = (df_filtered['current_task_status'] == cfg.STATUS_NOT_REQUESTED).sum()
-        summary_html = f'''<div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 10px; margin-top: 10px;">
-            <span style="font-weight: bold;">Showing {len(df_filtered)} of {len(df_athletes)} athletes:</span>
-            <span style="background-color: {cfg.STATUS_COLOR_MAP[cfg.STATUS_DONE]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Done: {done_count}</span>
-            <span style="background-color: {cfg.STATUS_COLOR_MAP[cfg.STATUS_REQUESTED]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Requested: {requested_count}</span>
-            <span style="background-color: {cfg.STATUS_COLOR_MAP[cfg.STATUS_PENDING]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Pending: {pending_count}</span>
-            <span style="background-color: {cfg.STATUS_COLOR_MAP[cfg.STATUS_NOT_REQUESTED]}; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.9em; font-weight: bold;">Not Requested: {notreq_count}</span>
+        summary_html = f'''<div style="display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin:10px 0;">
+            <span style="font-weight:bold;">Showing {len(df_filtered)} of {len(df_athletes)} athletes:</span>
+            <span style="background-color:{cfg.STATUS_COLOR_MAP[cfg.STATUS_DONE]};color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Done: {done_count}</span>
+            <span style="background-color:{cfg.STATUS_COLOR_MAP[cfg.STATUS_REQUESTED]};color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Requested: {requested_count}</span>
+            <span style="background-color:{cfg.STATUS_COLOR_MAP[cfg.STATUS_PENDING]};color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Pending: {pending_count}</span>
+            <span style="background-color:{cfg.STATUS_COLOR_MAP[cfg.STATUS_NOT_REQUESTED]};color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Not Requested: {notreq_count}</span>
         </div>'''
         st.markdown(summary_html, unsafe_allow_html=True)
 
     st.divider()
 
-    # Paginação
     total = len(df_filtered)
     if total == 0:
         st.info("Nenhum atleta encontrado.")
@@ -792,7 +724,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     max_page = max(1, (total + page_size - 1) // page_size)
     st.session_state[K_PAGE] = min(max(1, st.session_state[K_PAGE]), max_page)
-
     start = (st.session_state[K_PAGE] - 1) * page_size
     end = min(start + page_size, total)
     page_df = df_filtered.iloc[start:end].copy()
@@ -809,46 +740,55 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     st.divider()
 
-    # Render athlete cards (somente da janela)
+    # Render cards
     for i_l, row in page_df.iterrows():
-        # Last fixed-task info em outro evento
         last_dt_str, last_event_str = last_task_other_event_by_name(
             df_attendance, row[cfg.COL_NAME], row[cfg.COL_EVENT], fixed_task, task_aliases, cfg, fallback_any_event=True
         )
 
-        # Badges para outras tasks
+        # >>> Badges para outras tasks (SOMENTE Done/Requested)
         badges_html = ""
         if tasks_raw:
-            status_color_map_badge = {
-                cfg.STATUS_REQUESTED: "#D35400",
-                cfg.STATUS_DONE: "#1E8449",
-                cfg.STATUS_NOT_REQUESTED: "#6c757d",
-                cfg.STATUS_PENDING: "#34495E"
+            badge_color = {
+                cfg.STATUS_REQUESTED: "#D35400",  # laranja
+                cfg.STATUS_DONE: "#1E8449",       # verde
             }
-            default_color = "#34495E"
             name_n = clean_and_normalize(row[cfg.COL_NAME])
             evt_n  = clean_and_normalize(row[cfg.COL_EVENT])
+
             for task_name in tasks_raw:
                 if str(task_name).strip().lower() == fixed_task.lower():
                     continue
+
                 status_for_badge = cfg.STATUS_PENDING
+
                 if not df_attendance.empty:
                     t_norm = str(task_name).strip().lower()
                     mask_t = (df_attendance["task_norm"] == t_norm)
-                    mask = (df_attendance["fighter_norm"] == name_n) & (df_attendance["event_norm"] == evt_n) & mask_t
+                    mask = (
+                        (df_attendance["fighter_norm"] == name_n) &
+                        (df_attendance["event_norm"] == evt_n) &
+                        mask_t
+                    )
                     task_records = df_attendance.loc[mask].copy()
                     if not task_records.empty:
                         task_records["__idx__"] = np.arange(len(task_records))
                         task_records = task_records.sort_values(by=["TS_dt", "__idx__"], ascending=[False, False])
-                        status_for_badge = cfg.map_raw_status_to_logical(str(task_records.iloc[0].get(cfg.ATT_COL_STATUS, cfg.STATUS_PENDING)))
+                        status_for_badge = cfg.map_raw_status_to_logical(
+                            str(task_records.iloc[0].get(cfg.ATT_COL_STATUS, cfg.STATUS_PENDING))
+                        )
 
-                color = status_color_map_badge.get(status_for_badge, default_color)
-                badges_html += (
-                    f"<span style='background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; "
-                    f"font-size: 12px; font-weight: bold;'>{html.escape(task_name)}</span>"
-                )
+                # só renderiza se for Done/Requested
+                if status_for_badge in BADGE_ALLOWED_STATUSES:
+                    color = badge_color.get(status_for_badge, "#34495E")
+                    badges_html += (
+                        f"<span style='background-color:{color};color:#fff;"
+                        f"padding:3px 10px;border-radius:12px;font-size:12px;"
+                        f"font-weight:bold;margin-right:6px;'>"
+                        f"{html.escape(task_name)}</span>"
+                    )
 
-        # Card
+        # Card + botões
         card_html = render_athlete_card(row, (last_dt_str, last_event_str), badges_html, fixed_task, cfg)
         col_card, col_buttons = st.columns([2.5, 1])
         with col_card:
@@ -859,13 +799,11 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             curr = row.get('current_task_status', cfg.STATUS_PENDING)
             athlete_id_val = row.get(cfg.COL_ID, "")
 
-            # Form por atleta para evitar re-render a cada tecla
             with st.form(key=f"form_{_kpref}_{i_l}"):
                 notes_key = f"notes_input_{_kpref}_{i_l}"
                 st.text_area("Notes", key=notes_key, placeholder="Add notes here...", height=50)
                 current_notes = st.session_state.get(notes_key, "")
 
-                # Lógica de botões conforme status atual
                 if curr == cfg.STATUS_REQUESTED:
                     c1, c2 = st.columns(2)
                     with c1:
@@ -892,9 +830,10 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
                             if submit_not:
                                 registrar_log(athlete_id_val, row[cfg.COL_NAME], row[cfg.COL_EVENT], fixed_task,
                                               cfg.STATUS_NOT_REQUESTED, current_notes, uid_l, cfg)
+
         st.divider()
 
-    # Auto-flush opcional (ex.: a cada 30 ações enfileiradas)
+    # Auto-flush opcional
     AUTO_FLUSH_EVERY = 30
     if len(st.session_state["write_buffer"]) >= AUTO_FLUSH_EVERY:
         flush_buffer(cfg)

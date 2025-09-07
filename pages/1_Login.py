@@ -31,7 +31,7 @@ def _nav_home(label: str = "🏠 Go to Home"):
     Mostra um link/botão para a Home com fallback.
     """
     if hasattr(st, "page_link"):
-        st.page_link("Home.py", label=label, use_container_width=True)
+        st.page_link("app.py", label=label, use_container_width=True)
     else:
         if st.button(label, use_container_width=True):
             _safe_switch_page("Home.py")
@@ -100,6 +100,6 @@ if st.button("Login", key="login_button", use_container_width=True, type="primar
                 warning_message=None,
             )
             st.toast(f"Bem-vindo, {st.session_state.current_user_name}!", icon="🎉")
-            _safe_switch_page("Home.py")
+            _safe_switch_page("app.py")
         else:
             st.error(f"Usuário '{u_in}' não encontrado ou inválido.", icon="🚨")

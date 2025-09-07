@@ -4,7 +4,7 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 import html
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 # Helpers centralizados (evita duplicar código de credenciais e conexão)
 from utils import get_gspread_client, connect_gsheet_tab
@@ -150,7 +150,6 @@ def get_task_list(sheet_name=MAIN_SHEET_NAME, config_tab=CONFIG_TAB_NAME) -> Lis
         st.error(f"Error loading TaskList from Config: {e}", icon="🚨")
         return []
 
-
 # ------------------------------------------------------------------------------
 # Lógica
 # ------------------------------------------------------------------------------
@@ -199,9 +198,7 @@ def get_task_status(athlete_id: str, task_name: str, event_name: str, df_attenda
     last_row = _latest_status_row(relevant)
     latest_status_str = str(last_row[ATTENDANCE_STATUS_COL]).strip() if last_row is not None else "Pending"
     key = _normalize_status_key(latest_status_str)
-
     return STATUS_INFO_NORM.get(key, STATUS_INFO_NORM["pending"])
-
 
 # ------------------------------------------------------------------------------
 # Contagem de "Requested" por tarefa e por lado
@@ -228,7 +225,6 @@ def count_requested_by_task_side(df_processed: pd.DataFrame, task_list: List[str
         right_counts[task] = int(df_processed[col_r].apply(is_requested).sum()) if col_r in df_processed.columns else 0
     return left_counts, right_counts
 
-
 # ------------------------------------------------------------------------------
 # HTML/CSS
 # ------------------------------------------------------------------------------
@@ -237,6 +233,7 @@ def get_dashboard_style(font_size_px: int, num_tasks: int, fighter_width_pc: int
     cell_padding = font_size_px * 0.5
     fighter_font_size = font_size_px * 1.8
     photo_pc = 6.0
+    emoji_px = max(12, int(font_size_px * 1.2))
 
     if num_tasks > 0:
         used_space = (fighter_width_pc * 2) + division_width_pc + (photo_pc * 2)
@@ -300,38 +297,31 @@ def get_dashboard_style(font_size_px: int, num_tasks: int, fighter_width_pc: int
         .fight-info-event {{ font-style: italic; color: #ccc; }}
         .fight-info-division {{ color: #ddd; }}
 
-        /* Cabeçalhos de tarefa com contador */
-        .task-header {{ position: relative; line-height: 1.1; }}
-        .task-emoji {{ font-size: {max(12, int(font_size_px*1.2))}px; display: block; }}
+        /* Cabeçalhos de tarefa com contador (linha 2 do grid) */
+        .task-header {{ position: relative; line-height: 1.1; min-width: 28px; }}
+        .task-emoji {{ font-size: {emoji_px}px; display: block; }}
         .task-count {{
-            position: absolute; bottom: 4px; right: 6px;
-            background: #444; color: #fff; border-radius: 10px;
-            padding: 1px 6px; font-size: 0.75rem; font-weight: 700;
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            background: #444;
+            color: #fff;
+            border-radius: 10px;
+            padding: 2px 7px;
+            font-size: 0.85rem;
+            font-weight: 800;
         }}
     </style>
     """
-
 
 def generate_mirrored_html_dashboard(df_processed: pd.DataFrame, task_list: List[str],
                                      left_counts: Dict[str, int], right_counts: Dict[str, int]) -> str:
     num_tasks = len(task_list)
     html_out = "<div class='dashboard-grid'>"
 
-    # Linha 1 do cabeçalho
+    # Linha 1 do cabeçalho (faixas Blue/Center/Red)
     if num_tasks > 0:
-        # Cabeçalho do Blue Corner (espalha pela área das tarefas da esquerda + colunas do blue)
         html_out += f"<div class='grid-item grid-header blue-corner-header' style='grid-column: 1 / span {num_tasks + 2};'>BLUE CORNER</div>"
-        # Task headers (lado AZUL) – invertidos para espelhar
-        for task in reversed(task_list):
-            emoji = TASK_EMOJI_MAP.get(task, (task[:1] if task else "•"))
-            cnt = left_counts.get(task, 0)
-            html_out += (
-                f"<div class='grid-item grid-header task-header' title='{html.escape(task)}'>"
-                f"<span class='task-emoji'>{html.escape(emoji)}</span>"
-                f"<span class='task-count'>{cnt}</span>"
-                f"</div>"
-            )
-        # Centro e Red Corner
         html_out += f"<div class='grid-item grid-header center-col-header' style='grid-column: {num_tasks + 3}; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
         html_out += f"<div class='grid-item grid-header red-corner-header' style='grid-column: {num_tasks + 4} / span {num_tasks + 2};'>RED CORNER</div>"
     else:
@@ -339,19 +329,29 @@ def generate_mirrored_html_dashboard(df_processed: pd.DataFrame, task_list: List
         html_out += "<div class='grid-item grid-header center-col-header' style='grid-column: 3; grid-row: 1 / span 2;'>FIGHT<br>INFO</div>"
         html_out += "<div class='grid-item grid-header red-corner-header' style='grid-column: 4 / span 2;'>RED CORNER</div>"
 
-    # Linha 2 do cabeçalho (rótulos fixos + tarefas do lado direito)
-    html_out += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
-    html_out += "<div class='grid-item grid-header photo-header'>Photo</div>"
-    html_out += "<div class='grid-item grid-header photo-header'>Photo</div>"
-    html_out += "<div class='grid-item grid-header fighter-header'>Fighter</div>"
+    # Linha 2 do cabeçalho (rótulos fixos + headers de tarefa)
+    html_out += "<div class='grid-item grid-header fighter-header' style='grid-row: 2;'>Fighter</div>"
+    html_out += "<div class='grid-item grid-header photo-header' style='grid-row: 2;'>Photo</div>"
+    html_out += "<div class='grid-item grid-header photo-header' style='grid-row: 2;'>Photo</div>"
+    html_out += "<div class='grid-item grid-header fighter-header' style='grid-row: 2;'>Fighter</div>"
 
     if num_tasks > 0:
-        # Task headers (lado VERMELHO)
+        # Headers de tarefa do lado AZUL (colunas à esquerda, linha 2)
+        for task in reversed(task_list):
+            emoji = TASK_EMOJI_MAP.get(task, (task[:1] if task else "•"))
+            cnt = left_counts.get(task, 0)
+            html_out += (
+                f"<div class='grid-item grid-header task-header' style='grid-row: 2;' title='{html.escape(task)}'>"
+                f"<span class='task-emoji'>{html.escape(emoji)}</span>"
+                f"<span class='task-count'>{cnt}</span>"
+                f"</div>"
+            )
+        # Headers de tarefa do lado VERMELHO (colunas à direita, linha 2)
         for task in task_list:
             emoji = TASK_EMOJI_MAP.get(task, (task[:1] if task else "•"))
             cnt = right_counts.get(task, 0)
             html_out += (
-                f"<div class='grid-item grid-header task-header' title='{html.escape(task)}'>"
+                f"<div class='grid-item grid-header task-header' style='grid-row: 2;' title='{html.escape(task)}'>"
                 f"<span class='task-emoji'>{html.escape(emoji)}</span>"
                 f"<span class='task-count'>{cnt}</span>"
                 f"</div>"
@@ -385,12 +385,11 @@ def generate_mirrored_html_dashboard(df_processed: pd.DataFrame, task_list: List
     html_out += "</div>"
     return html_out
 
-
 # ------------------------------------------------------------------------------
 # App
 # ------------------------------------------------------------------------------
 # Auto-refresh a cada 60s
-st_autorefresh(interval=60_000, key="dash_auto_refresh_v15")
+st_autorefresh(interval=60_000, key="dash_auto_refresh_v16")
 
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()
@@ -515,7 +514,7 @@ if dash_rows:
     # Conta "Requested" por tarefa em cada lado
     left_counts, right_counts = count_requested_by_task_side(df_dash_processed, selected_tasks)
 
-    # Gera o grid com os contadores no cabeçalho
+    # Gera o grid com os contadores no cabeçalho (linha 2)
     html_grid = generate_mirrored_html_dashboard(
         df_dash_processed,
         selected_tasks,

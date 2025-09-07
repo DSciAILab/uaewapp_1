@@ -8,6 +8,7 @@
 # - Paginação para reduzir re-render pesado
 # - Recarregar dados sob demanda (sem limpar cache a cada clique)
 # - Cache de recursos (Worksheet) separado do cache de dados
+# - **FIX**: Alinhamento de colunas com cabeçalho real da planilha
 # ==============================================================================
 
 # --- 0. Import Libraries ---
@@ -101,7 +102,7 @@ class BaseConfig:
         return BaseConfig.STATUS_PENDING
 
 
-# Ordem fixa de colunas no Attendance (alinha o append sem baixar cabeçalho)
+# Ordem fixa sugerida (usada apenas se precisarmos criar o header)
 ATT_HEADER_ORDER = [
     BaseConfig.ATT_COL_ID, BaseConfig.ATT_COL_EVENT, BaseConfig.ATT_COL_NAME, BaseConfig.ATT_COL_FIGHTER,
     BaseConfig.ATT_COL_ATHLETE_ID, BaseConfig.ATT_COL_TASK, BaseConfig.ATT_COL_STATUS, BaseConfig.ATT_COL_USER,
@@ -182,6 +183,43 @@ def _safe_display_user_sidebar():
 def get_attendance_ws(sheet_name: str, tab_name: str):
     gc = get_gspread_client()
     return connect_gsheet_tab(gc, sheet_name, tab_name)
+
+
+# === NOVO: header real da planilha + alinhamento =================================
+@st.cache_data(ttl=300, show_spinner=False)
+def get_attendance_header(sheet_name: str, tab_name: str) -> list:
+    """Lê apenas a linha 1 (header real) da aba de Attendance."""
+    ws = get_attendance_ws(sheet_name, tab_name)
+    header = ws.row_values(1)  # barato e direto
+    return header or []
+
+def ensure_header_exists(ws, cfg: BaseConfig) -> list:
+    """Garante que o header exista; se vazio, cria com ATT_HEADER_ORDER."""
+    header = ws.row_values(1)
+    if not header:
+        ws.update("A1", [ATT_HEADER_ORDER])
+        # retornamos a ordem que acabamos de criar
+        return ATT_HEADER_ORDER
+    return header
+
+def align_rows_to_header(header: list, dict_rows: list, cfg: BaseConfig) -> list:
+    """
+    Constrói uma lista de listas na ordem exata do 'header' real da planilha.
+    - 'header': lista de nomes das colunas (como estão na linha 1)
+    - 'dict_rows': lista de dicts com chaves = nomes de colunas (padrão cfg)
+    """
+    if not header:
+        # fallback seguro (não deve acontecer se chamarmos ensure_header_exists)
+        header = ATT_HEADER_ORDER
+    out = []
+    for v in dict_rows:
+        vv = dict(v)
+        # Garante um ID se não veio
+        vv.setdefault(cfg.ATT_COL_ID, str(int(time.time())))
+        row = [vv.get(h, "") for h in header]
+        out.append(row)
+    return out
+# ==============================================================================
 
 
 # ==============================================================================
@@ -401,13 +439,13 @@ def _get_ws_for_fast_append() -> object:
 def fast_values_append(ws, rows: list):
     """
     Usa spreadsheets.values.append (INSERT_ROWS) com USER_ENTERED.
-    rows: lista de listas (já no ATT_HEADER_ORDER).
+    rows: lista de listas (já ALINHADAS ao header real).
     """
     if not rows:
         return
     body = {"values": rows}
     ws.spreadsheet.values_append(
-        f"{ws.title}!A:Z",
+        f"{ws.title}!A1",
         params={
             "valueInputOption": "USER_ENTERED",
             "insertDataOption": "INSERT_ROWS"
@@ -436,16 +474,12 @@ def flush_buffer(cfg: BaseConfig):
         return
     ws = _get_ws_for_fast_append()
 
-    # Monta linhas na ordem fixa; ID local simbólico
-    rows = []
-    base_id_start = int(time.time())
-    for i, v in enumerate(st.session_state["write_buffer"], start=1):
-        vv = dict(v)
-        vv.setdefault(cfg.ATT_COL_ID, str(base_id_start + i))
-        row = [vv.get(h, "") for h in ATT_HEADER_ORDER]
-        rows.append(row)
+    # 1) garante header real
+    header_real = ensure_header_exists(ws, cfg)
+    # 2) alinha cada dict ao header real
+    rows = align_rows_to_header(header_real, st.session_state["write_buffer"], cfg)
 
-    # Envia em lotes
+    # 3) Envia em lotes
     BATCH = 100
     for i in range(0, len(rows), BATCH):
         fast_values_append(ws, rows[i:i+BATCH])
@@ -831,7 +865,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
                 current_notes = st.session_state.get(notes_key, "")
 
                 # Lógica de botões conforme status atual
-                actions = []
                 if curr == cfg.STATUS_REQUESTED:
                     c1, c2 = st.columns(2)
                     with c1:

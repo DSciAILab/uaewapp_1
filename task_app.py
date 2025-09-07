@@ -2,7 +2,7 @@
 # TASK MANAGEMENT CORE - STREAMLIT (SEM PAGINAÇÃO)
 # - Chips/labels em cada card aparecem somente para statuses Done/Requested
 # - Buffer local (write-behind) para gravar Attendance em lote
-# - Botões: Salvar tudo / Descartar fila / Recarregar dados
+# - Botões: Salvar tudo / Descartar fila / Recarregar dados (dentro do expander)
 # - SEM paginação: sempre renderiza todos os atletas filtrados
 # ==============================================================================
 
@@ -155,7 +155,7 @@ def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: List[str] =
     t = task_series.fillna("").astype(str).str.lower()
     pats = [re.escape((fixed_task or "").lower())] + [re.escape(x.lower()) for x in (aliases or [])]
     regex = "(" + "|".join(pats) + ")"
-    return t.str.contains(regex, regex=True, na=False)
+    return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
 
 def _slugify(s: str) -> str:
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
@@ -567,7 +567,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     _kpref = _slugify(page_title)
 
-    # CSS
+    # CSS básico
     st.markdown("""
     <style>
         .card-container { padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 15px; }
@@ -597,20 +597,55 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     st.session_state.setdefault(K_SEARCH, "")
     st.session_state.setdefault(K_SORT, "Name")
 
-    # Barra de ações
-    a1, a2, a3, a4 = st.columns([1,1,1,3])
-    with a1:
-        if st.button("💾 Salvar tudo"):
-            flush_buffer(cfg)
-    with a2:
-        if st.button("🗑️ Descartar fila"):
-            st.session_state["write_buffer"].clear()
-            st.session_state["pending_local_updates"].clear()
-            st.info("Fila limpa.")
-    with a3:
-        if st.button("🔄 Recarregar dados (forçado)"):
-            load_attendance_data.clear(); preprocess_attendance.clear(); load_athlete_data.clear()
-            st.toast("Caches limpos. Role a página para atualizar.", icon="🔄")
+    # Filtros + botões (dentro do expander)
+    with st.expander("Settings", expanded=True):
+        # --- Linha dos 3 botões, lado a lado (sem emojis) ---
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            if st.button("Salvar tudo", use_container_width=True):
+                flush_buffer(cfg)
+        with b2:
+            if st.button("Descartar fila", use_container_width=True):
+                st.session_state["write_buffer"].clear()
+                st.session_state["pending_local_updates"].clear()
+                st.info("Fila limpa.")
+        with b3:
+            if st.button("Recarregar dados (forçado)", use_container_width=True):
+                load_attendance_data.clear(); preprocess_attendance.clear(); load_athlete_data.clear()
+                st.toast("Caches limpos. Role a página para atualizar.", icon="🔄")
+
+        st.markdown("---")
+
+        col_status, col_sort = st.columns(2)
+        with col_status:
+            STATUS_FILTER_LABELS = {
+                "All": "All",
+                cfg.STATUS_PENDING: "Pending",
+                cfg.STATUS_REQUESTED: "Requested",
+                cfg.STATUS_DONE: "Done",
+                cfg.STATUS_NOT_REQUESTED: "Not Requested (---)"
+            }
+            st.segmented_control(
+                "Filter by Status:",
+                options=["All", cfg.STATUS_PENDING, cfg.STATUS_REQUESTED, cfg.STATUS_DONE, cfg.STATUS_NOT_REQUESTED],
+                format_func=lambda x: STATUS_FILTER_LABELS.get(x, x if x else "Pending"),
+                key=K_STATUS
+            )
+        with col_sort:
+            st.segmented_control("Sort by:", options=["Name", "Fight Order"], key=K_SORT)
+
+        # Eventos disponíveis
+        # (precisamos carregar os dados base para montar a lista, por isso leia rapidinho)
+        temp_df_ath = load_athlete_data(cfg.MAIN_SHEET_NAME, cfg.ATHLETES_TAB_NAME, cfg)
+        event_options = ["All Events"] + (
+            sorted([evt for evt in temp_df_ath[cfg.COL_EVENT].unique() if evt != cfg.DEFAULT_EVENT_PLACEHOLDER])
+            if not temp_df_ath.empty else []
+        )
+        if st.session_state[K_EVENT] not in event_options:
+            st.session_state[K_EVENT] = "All Events"
+
+        st.selectbox("Filter by Event:", options=event_options, key=K_EVENT)
+        st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key=K_SEARCH)
 
     # Dados
     with st.spinner("Loading data..."):
@@ -638,36 +673,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             return pend if pend is not None else row.get("current_task_status", cfg.STATUS_PENDING)
         df_athletes["current_task_status"] = df_athletes.apply(_apply_pending, axis=1)
 
-    # Filtros
-    with st.expander("Settings", expanded=True):
-        col_status, col_sort = st.columns(2)
-        with col_status:
-            STATUS_FILTER_LABELS = {
-                "All": "All",
-                cfg.STATUS_PENDING: "Pending",
-                cfg.STATUS_REQUESTED: "Requested",
-                cfg.STATUS_DONE: "Done",
-                cfg.STATUS_NOT_REQUESTED: "Not Requested (---)"
-            }
-            st.segmented_control(
-                "Filter by Status:",
-                options=["All", cfg.STATUS_PENDING, cfg.STATUS_REQUESTED, cfg.STATUS_DONE, cfg.STATUS_NOT_REQUESTED],
-                format_func=lambda x: STATUS_FILTER_LABELS.get(x, x if x else "Pending"),
-                key=K_STATUS
-            )
-        with col_sort:
-            st.segmented_control("Sort by:", options=["Name", "Fight Order"], key=K_SORT)
-
-        event_options = ["All Events"] + (
-            sorted([evt for evt in df_athletes[cfg.COL_EVENT].unique() if evt != cfg.DEFAULT_EVENT_PLACEHOLDER])
-            if not df_athletes.empty else []
-        )
-        if st.session_state[K_EVENT] not in event_options:
-            st.session_state[K_EVENT] = "All Events"
-
-        st.selectbox("Filter by Event:", options=event_options, key=K_EVENT)
-        st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key=K_SEARCH)
-
+    # Aplicar filtros
     selected_status = st.session_state[K_STATUS]
     selected_event  = st.session_state[K_EVENT]
     search_query    = st.session_state[K_SEARCH]

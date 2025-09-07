@@ -9,6 +9,7 @@
 # - Recarregar dados sob demanda (sem limpar cache a cada clique)
 # - Cache de recursos (Worksheet) separado do cache de dados
 # - **FIX**: Alinhamento de colunas com cabeçalho real da planilha
+# - **NOVO**: Filtro para mostrar somente Done / Requested / Pending (toggle)
 # ==============================================================================
 
 # --- 0. Import Libraries ---
@@ -162,7 +163,7 @@ def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: List[str] =
     t = task_series.fillna("").astype(str).str.lower()
     pats = [re.escape((fixed_task or "").lower())] + [re.escape(x.lower()) for x in (aliases or [])]
     regex = "(" + "|".join(pats) + ")"
-    return t.str.contains(regex, regex=True, na=False)
+    return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
 
 def _slugify(s: str) -> str:
     """Cria um prefixo estável para keys do session_state a partir do título da página."""
@@ -185,7 +186,7 @@ def get_attendance_ws(sheet_name: str, tab_name: str):
     return connect_gsheet_tab(gc, sheet_name, tab_name)
 
 
-# === NOVO: header real da planilha + alinhamento =================================
+# === Header real da planilha + alinhamento ====================================
 @st.cache_data(ttl=300, show_spinner=False)
 def get_attendance_header(sheet_name: str, tab_name: str) -> list:
     """Lê apenas a linha 1 (header real) da aba de Attendance."""
@@ -198,7 +199,6 @@ def ensure_header_exists(ws, cfg: BaseConfig) -> list:
     header = ws.row_values(1)
     if not header:
         ws.update("A1", [ATT_HEADER_ORDER])
-        # retornamos a ordem que acabamos de criar
         return ATT_HEADER_ORDER
     return header
 
@@ -209,13 +209,11 @@ def align_rows_to_header(header: list, dict_rows: list, cfg: BaseConfig) -> list
     - 'dict_rows': lista de dicts com chaves = nomes de colunas (padrão cfg)
     """
     if not header:
-        # fallback seguro (não deve acontecer se chamarmos ensure_header_exists)
         header = ATT_HEADER_ORDER
     out = []
     for v in dict_rows:
         vv = dict(v)
-        # Garante um ID se não veio
-        vv.setdefault(cfg.ATT_COL_ID, str(int(time.time())))
+        vv.setdefault(cfg.ATT_COL_ID, str(int(time.time())))  # fallback
         row = [vv.get(h, "") for h in header]
         out.append(row)
     return out
@@ -237,20 +235,17 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
         df = pd.DataFrame(data)
         if df.empty:
             return pd.DataFrame()
-        # normaliza colunas (snake case minúsculo)
         df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
-        # garante colunas essenciais
         if cfg.COL_ROLE not in df.columns or cfg.COL_INACTIVE not in df.columns:
             st.error(f"Columns '{cfg.COL_ROLE.upper()}'/'{cfg.COL_INACTIVE.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
         if cfg.COL_ID not in df.columns:
-            df[cfg.COL_ID] = ""  # evita KeyError
+            df[cfg.COL_ID] = ""
         if cfg.COL_NAME not in df.columns:
             st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
-        # inativos
         if df[cfg.COL_INACTIVE].dtype == 'object':
             df[cfg.COL_INACTIVE] = (
                 df[cfg.COL_INACTIVE]
@@ -263,10 +258,8 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
         else:
             df[cfg.COL_INACTIVE] = False
 
-        # somente lutadores ativos
         df = df[(df[cfg.COL_ROLE] == "1 - Fighter") & (df[cfg.COL_INACTIVE] == False)].copy()
 
-        # completa colunas usadas na UI
         df[cfg.COL_EVENT] = df[cfg.COL_EVENT].fillna(cfg.DEFAULT_EVENT_PLACEHOLDER) if cfg.COL_EVENT in df.columns else cfg.DEFAULT_EVENT_PLACEHOLDER
         for col_check in [cfg.COL_IMAGE, cfg.COL_MOBILE, cfg.COL_FIGHT_NUMBER, cfg.COL_CORNER, cfg.COL_PASSPORT_IMAGE, cfg.COL_ROOM]:
             if col_check not in df.columns:
@@ -287,7 +280,6 @@ def load_attendance_data(sheet_name: str, attendance_tab_name: str, cfg: BaseCon
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
         df_att = pd.DataFrame(ws.get_all_records())
-        # garante colunas esperadas
         required_cols = [
             cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
             cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
@@ -642,6 +634,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     K_SORT   = f"{_kpref}_sort_by"
     K_PAGE   = f"{_kpref}_page"
     K_PSIZE  = f"{_kpref}_pagesize"
+    K_ONLY_DRP = f"{_kpref}_only_done_req_pend"  # NOVO toggle
 
     # Defaults
     st.session_state.setdefault(K_STATUS, "All")
@@ -649,7 +642,8 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     st.session_state.setdefault(K_SEARCH, "")
     st.session_state.setdefault(K_SORT, "Name")
     st.session_state.setdefault(K_PAGE, 1)
-    st.session_state.setdefault(K_PSIZE, 20)  # page size default
+    st.session_state.setdefault(K_PSIZE, 20)
+    st.session_state.setdefault(K_ONLY_DRP, True)  # por padrão filtra para Done/Requested/Pending
 
     # Barra de ações superiores (gravação/refresh)
     a1, a2, a3, a4 = st.columns([1,1,1,3])
@@ -663,7 +657,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             st.info("Fila limpa.")
     with a3:
         if st.button("🔄 Recarregar dados (forçado)"):
-            # limpa caches de dados (não recursos)
             load_attendance_data.clear()
             preprocess_attendance.clear()
             load_athlete_data.clear()
@@ -735,12 +728,16 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
         # Page size
         st.session_state[K_PSIZE] = st.selectbox("Page size", options=[10, 20, 50, 100], index=[10,20,50,100].index(st.session_state[K_PSIZE]))
 
+        # NOVO toggle para exibir somente Done/Requested/Pending
+        st.checkbox("Mostrar apenas Done / Requested / Pending", key=K_ONLY_DRP, value=st.session_state[K_ONLY_DRP])
+
     # Valores atuais dos filtros
     selected_status = st.session_state[K_STATUS]
     selected_event  = st.session_state[K_EVENT]
     search_query    = st.session_state[K_SEARCH]
     sort_by         = st.session_state[K_SORT]
     page_size       = st.session_state[K_PSIZE]
+    only_drp        = st.session_state[K_ONLY_DRP]
 
     # Apply filters
     df_filtered = df_athletes.copy()
@@ -757,6 +754,11 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
         if selected_status != "All":
             df_filtered = df_filtered[df_filtered['current_task_status'] == selected_status]
+
+        # NOVO: filtro de conjunto permitido (opcional)
+        if only_drp:
+            allowed = {cfg.STATUS_DONE, cfg.STATUS_REQUESTED, cfg.STATUS_PENDING}
+            df_filtered = df_filtered[df_filtered['current_task_status'].isin(allowed)]
 
         if sort_by == 'Fight Order':
             df_filtered['FIGHT_NUMBER_NUM'] = pd.to_numeric(df_filtered[cfg.COL_FIGHT_NUMBER], errors='coerce').fillna(999)
@@ -788,7 +790,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
         st.info("Nenhum atleta encontrado.")
         return
 
-    # Corrige página se necessário
     max_page = max(1, (total + page_size - 1) // page_size)
     st.session_state[K_PAGE] = min(max(1, st.session_state[K_PAGE]), max_page)
 

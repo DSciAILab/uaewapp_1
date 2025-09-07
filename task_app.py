@@ -1,8 +1,9 @@
 # ==============================================================================
-# TASK MANAGEMENT CORE - REUSABLE STREAMLIT MODULE (ATUALIZADO)
-# - Chips de tarefas em cada card mostram apenas statuses Done/Requested
-# - Buffer local para gravação em lote
-# - Paginação + filtros
+# TASK MANAGEMENT CORE - STREAMLIT (SEM PAGINAÇÃO)
+# - Chips/labels em cada card aparecem somente para statuses Done/Requested
+# - Buffer local (write-behind) para gravar Attendance em lote
+# - Botões: Salvar tudo / Descartar fila / Recarregar dados
+# - SEM paginação: sempre renderiza todos os atletas filtrados
 # ==============================================================================
 
 # --- 0. Imports ---
@@ -28,14 +29,14 @@ from auth import check_authentication, display_user_sidebar
 # CONSTANTS & CONFIG
 # ==============================================================================
 class BaseConfig:
-    """Centralized application constants shared by all tasks."""
+    """Constantes centrais do app."""
     MAIN_SHEET_NAME = "UAEW_App"
     ATHLETES_TAB_NAME = "df"
     ATTENDANCE_TAB_NAME = "Attendance"
 
-    # Logical statuses:
-    STATUS_PENDING = ""             # no request in current event
-    STATUS_NOT_REQUESTED = "---"    # explicitly not required
+    # Status lógicos:
+    STATUS_PENDING = ""             # sem registro para o evento atual
+    STATUS_NOT_REQUESTED = "---"    # explicitamente não solicitado
     STATUS_REQUESTED = "Requested"
     STATUS_DONE = "Done"
 
@@ -54,7 +55,7 @@ class BaseConfig:
         "Issue": "#1e1e1e"
     }
 
-    # Column names (athletes)
+    # Colunas (Athletes)
     COL_ID = "id"
     COL_NAME = "name"
     COL_EVENT = "event"
@@ -67,7 +68,7 @@ class BaseConfig:
     COL_PASSPORT_IMAGE = "passport_image"
     COL_ROOM = "room"
 
-    # Attendance columns
+    # Colunas (Attendance)
     ATT_COL_EVENT = "Event"
     ATT_COL_NAME = "Name"
     ATT_COL_FIGHTER = "Fighter"
@@ -84,26 +85,26 @@ class BaseConfig:
 
     @staticmethod
     def map_raw_status_to_logical(raw_status: str) -> str:
-        """Map sheet value to logical set."""
+        """Normaliza valor de status para o conjunto lógico."""
         raw_status = "" if raw_status is None else str(raw_status).strip()
         low = raw_status.lower()
         if low == BaseConfig.STATUS_DONE.lower():
             return BaseConfig.STATUS_DONE
         if low == BaseConfig.STATUS_REQUESTED.lower():
             return BaseConfig.STATUS_REQUESTED
-        if raw_status == BaseConfig.STATUS_NOT_REQUESTED:  # exact '---'
+        if raw_status == BaseConfig.STATUS_NOT_REQUESTED:  # exatamente '---'
             return BaseConfig.STATUS_NOT_REQUESTED
         return BaseConfig.STATUS_PENDING
 
 
-# ordem fixa (caso precise criar header)
+# Ordem do header (caso precise criar)
 ATT_HEADER_ORDER = [
     BaseConfig.ATT_COL_ID, BaseConfig.ATT_COL_EVENT, BaseConfig.ATT_COL_NAME, BaseConfig.ATT_COL_FIGHTER,
     BaseConfig.ATT_COL_ATHLETE_ID, BaseConfig.ATT_COL_TASK, BaseConfig.ATT_COL_STATUS, BaseConfig.ATT_COL_USER,
     BaseConfig.ATT_COL_TIMESTAMP, BaseConfig.ATT_COL_TIMESTAMP_ALT, BaseConfig.ATT_COL_NOTES
 ]
 
-# Mostrar chips SOMENTE para estes statuses:
+# Chips só para estes statuses:
 BADGE_ALLOWED_STATUSES = {BaseConfig.STATUS_DONE, BaseConfig.STATUS_REQUESTED}
 
 
@@ -154,7 +155,7 @@ def make_task_mask(task_series: pd.Series, fixed_task: str, aliases: List[str] =
     t = task_series.fillna("").astype(str).str.lower()
     pats = [re.escape((fixed_task or "").lower())] + [re.escape(x.lower()) for x in (aliases or [])]
     regex = "(" + "|".join(pats) + ")"
-    return t.str_contains(regex, regex=True, na=False) if hasattr(t, "str_contains") else t.str.contains(regex, regex=True, na=False)
+    return t.str.contains(regex, regex=True, na=False)
 
 def _slugify(s: str) -> str:
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
@@ -167,7 +168,7 @@ def _safe_display_user_sidebar():
 
 
 # ==============================================================================
-# CACHED RESOURCES
+# CACHED RESOURCES (CLIENT/WS)
 # ==============================================================================
 @st.cache_resource(ttl=3600, show_spinner=False)
 def get_attendance_ws(sheet_name: str, tab_name: str):
@@ -225,7 +226,7 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
             st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
-        # active fighters
+        # ativos
         if df[cfg.COL_INACTIVE].dtype == 'object':
             df[cfg.COL_INACTIVE] = (
                 df[cfg.COL_INACTIVE]
@@ -566,7 +567,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     _kpref = _slugify(page_title)
 
-    # CSS global
+    # CSS
     st.markdown("""
     <style>
         .card-container { padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 15px; }
@@ -584,21 +585,17 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
     </style>
     """, unsafe_allow_html=True)
 
-    # Keys
+    # Keys de filtro
     K_STATUS = f"{_kpref}_selected_status"
     K_EVENT  = f"{_kpref}_selected_event"
     K_SEARCH = f"{_kpref}_fighter_search_query"
     K_SORT   = f"{_kpref}_sort_by"
-    K_PAGE   = f"{_kpref}_page"
-    K_PSIZE  = f"{_kpref}_pagesize"
 
     # Defaults
     st.session_state.setdefault(K_STATUS, "All")
     st.session_state.setdefault(K_EVENT, "All Events")
     st.session_state.setdefault(K_SEARCH, "")
     st.session_state.setdefault(K_SORT, "Name")
-    st.session_state.setdefault(K_PAGE, 1)
-    st.session_state.setdefault(K_PSIZE, 20)
 
     # Barra de ações
     a1, a2, a3, a4 = st.columns([1,1,1,3])
@@ -634,6 +631,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
             'latest_task_timestamp': 'N/A'
         }, inplace=True)
 
+        # sobreposição otimista (sem recarregar)
         def _apply_pending(row):
             key = (str(row.get(cfg.COL_ID, "")), str(row.get(cfg.COL_EVENT, "")))
             pend = st.session_state["pending_local_updates"].get(key)
@@ -669,14 +667,11 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
         st.selectbox("Filter by Event:", options=event_options, key=K_EVENT)
         st.text_input("Search Athlete:", placeholder="Type athlete name or ID...", key=K_SEARCH)
-        st.session_state[K_PSIZE] = st.selectbox("Page size", options=[10, 20, 50, 100],
-                                                 index=[10,20,50,100].index(st.session_state[K_PSIZE]))
 
     selected_status = st.session_state[K_STATUS]
     selected_event  = st.session_state[K_EVENT]
     search_query    = st.session_state[K_SEARCH]
     sort_by         = st.session_state[K_SORT]
-    page_size       = st.session_state[K_PSIZE]
 
     df_filtered = df_athletes.copy()
     if not df_filtered.empty:
@@ -717,36 +712,17 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     st.divider()
 
-    total = len(df_filtered)
-    if total == 0:
+    # --- SEM PAGINAÇÃO: renderiza todos os atletas filtrados ---
+    if len(df_filtered) == 0:
         st.info("Nenhum atleta encontrado.")
         return
 
-    max_page = max(1, (total + page_size - 1) // page_size)
-    st.session_state[K_PAGE] = min(max(1, st.session_state[K_PAGE]), max_page)
-    start = (st.session_state[K_PAGE] - 1) * page_size
-    end = min(start + page_size, total)
-    page_df = df_filtered.iloc[start:end].copy()
-
-    cprev, cinfo, cnext = st.columns([1,2,1])
-    with cprev:
-        if st.button("⬅️ Prev", disabled=st.session_state[K_PAGE] <= 1):
-            st.session_state[K_PAGE] = max(1, st.session_state[K_PAGE]-1)
-    with cinfo:
-        st.markdown(f"**{start+1}–{end} / {total}**  |  Page {st.session_state[K_PAGE]} / {max_page}")
-    with cnext:
-        if st.button("Next ➡️", disabled=st.session_state[K_PAGE] >= max_page):
-            st.session_state[K_PAGE] = min(max_page, st.session_state[K_PAGE]+1)
-
-    st.divider()
-
-    # Render cards
-    for i_l, row in page_df.iterrows():
+    for i_l, row in df_filtered.iterrows():
         last_dt_str, last_event_str = last_task_other_event_by_name(
             df_attendance, row[cfg.COL_NAME], row[cfg.COL_EVENT], fixed_task, task_aliases, cfg, fallback_any_event=True
         )
 
-        # >>> Badges para outras tasks (SOMENTE Done/Requested)
+        # Chips para outras tasks (SOMENTE Done/Requested)
         badges_html = ""
         if tasks_raw:
             badge_color = {
@@ -778,7 +754,6 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
                             str(task_records.iloc[0].get(cfg.ATT_COL_STATUS, cfg.STATUS_PENDING))
                         )
 
-                # só renderiza se for Done/Requested
                 if status_for_badge in BADGE_ALLOWED_STATUSES:
                     color = badge_color.get(status_for_badge, "#34495E")
                     badges_html += (

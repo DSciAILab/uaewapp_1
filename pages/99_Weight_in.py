@@ -2,7 +2,9 @@
 # =============================================================================
 # UAEW Operations App — Weight-in
 # -----------------------------------------------------------------------------
-# Versão: 1.8.1 (fix segmented_control state set)
+# Versão: 1.8.2
+# - FIX: chaves únicas para botões (evita StreamlitDuplicateElementId)
+# - Cards “Checked out” no Running Order não criam botão (somente visual)
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -66,8 +68,7 @@ st.session_state.setdefault("coltitle_size", 22)
 # Helpers (dados)
 # =============================================================================
 def _norm(s: str) -> str:
-    s = (s or "").strip().lower()
-    return re.sub(r"\s+", " ", s)
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 @st.cache_data(ttl=600)
 def load_athletes() -> pd.DataFrame:
@@ -112,7 +113,6 @@ def _attendance_with_overlay() -> pd.DataFrame:
     base = load_attendance().copy()
     ov = st.session_state["weighin_overlay"]
     if not ov.empty:
-        # garante colunas
         for c in Config.ATT_COLS:
             if c not in ov.columns: ov[c] = ""
         base = pd.concat([base, ov[Config.ATT_COLS]], ignore_index=True)
@@ -248,7 +248,8 @@ def _corner_chip(ev: str, fight: str, corner: str) -> str:
     txt = f"{ev} | FIGHT {fight or '?'} | {corner.upper() or '?'}"
     return f"<span style='background:{bg};color:#fff;padding:6px 10px;border-radius:10px;font-weight:700;font-size:12px;'>{html.escape(txt)}</span>"
 
-def render_card(row: pd.Series, label_btn: str, on_click, bg_color=None, disabled=False, show_number=None, dimmed=False):
+def render_card(row: pd.Series, label_btn: str | None, on_click, bg_color=None, disabled=False, show_number=None, dimmed=False, context_key: str = ""):
+    """Se label_btn=None, não cria botão (somente visual)."""
     aid = str(row.get(Config.COL_ID,""))
     name = str(row.get(Config.COL_NAME,""))
     event = str(row.get(Config.COL_EVENT,""))
@@ -278,9 +279,12 @@ def render_card(row: pd.Series, label_btn: str, on_click, bg_color=None, disable
     c1, c2 = st.columns([4,1])
     with c1: st.markdown(card, unsafe_allow_html=True)
     with c2:
-        btn = st.button(label_btn, use_container_width=True, disabled=disabled)
-        if btn:
-            on_click(aid, name, event)
+        if label_btn is not None:
+            # key único por label + atleta + evento + contexto
+            key = f"btn_{context_key}_{label_btn.replace(' ','_')}_{aid}_{event}"
+            btn = st.button(label_btn, key=key, use_container_width=True, disabled=disabled)
+            if btn:
+                on_click(aid, name, event)
 
 # =============================================================================
 # Handlers
@@ -353,10 +357,8 @@ events = _events_from_athletes(df_ath)
 # =============================================================================
 def _settings_expander_top():
     with st.expander("Settings", expanded=True):
-        # NÃO atribuir a st.session_state aqui; apenas declarar o widget com o key
         st.segmented_control("Mode:", options=["Check in","Check out","Running Order"], key="weighin_mode")
 
-        # Evento apenas no Check in
         if st.session_state.get("weighin_mode") == "Check in":
             if not events:
                 st.warning("No events found for athletes.")
@@ -370,7 +372,6 @@ def _settings_expander_top():
 
 def _settings_expander_bottom():
     with st.expander("Settings", expanded=False):
-        # Em Running Order, permitir trocar de modo aqui (mesmo key, sem conflito)
         st.segmented_control("Mode:", options=["Check in","Check out","Running Order"], key="weighin_mode")
         if st.button("Sync data", use_container_width=True):
             sync_data()
@@ -381,11 +382,9 @@ def _settings_expander_bottom():
 # =============================================================================
 mode = st.session_state.get("weighin_mode", "Check in")
 
-# Top expander só para IN/OUT
 if mode in ("Check in","Check out"):
     _settings_expander_top()
 
-# Define evento: se ainda não setado (ex.: direto em Running Order), assume primeiro
 if st.session_state.get("weighin_event_selected") is None and events:
     st.session_state["weighin_event_selected"] = events[0]
 
@@ -419,7 +418,8 @@ if mode == "Check in":
             on_check_in,
             bg_color=Config.CARD_BG_IN if already_in else None,
             disabled=already_in,
-            show_number=(r["__order__"] if already_in else None)
+            show_number=(r["__order__"] if already_in else None),
+            context_key="in"
         )
         st.divider()
 
@@ -436,7 +436,7 @@ elif mode == "Check out":
     if listing.empty:
         st.info("No athletes currently checked in.")
     for _, r in listing.iterrows():
-        render_card(r, "Check out", on_check_out, bg_color=Config.CARD_BG_IN)
+        render_card(r, "Check out", on_check_out, bg_color=Config.CARD_BG_IN, context_key="out")
         st.divider()
 
 # ----------------- Running Order -----------------
@@ -450,7 +450,7 @@ else:
         if df_in.empty:
             st.info("No one checked in yet.")
         for _, r in df_in.iterrows():
-            render_card(r, "Check out", on_check_out, bg_color=Config.CARD_BG_IN, show_number=r["__order__"])
+            render_card(r, "Check out", on_check_out, bg_color=Config.CARD_BG_IN, show_number=r["__order__"], context_key="ro_in")
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     with cM:
@@ -470,7 +470,8 @@ else:
         if df_out.empty:
             st.info("No one checked out yet.")
         for _, r in df_out.iterrows():
-            render_card(r, "Checked out", lambda *args, **kwargs: None, bg_color=Config.CARD_BG_OUT, disabled=True, dimmed=True)
+            # Somente visual: label_btn=None (não cria botão, evita duplicidade)
+            render_card(r, None, lambda *args, **kwargs: None, bg_color=Config.CARD_BG_OUT, disabled=True, dimmed=True, context_key="ro_out")
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     _settings_expander_bottom()

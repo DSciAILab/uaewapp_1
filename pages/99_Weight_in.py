@@ -2,12 +2,13 @@
 # =============================================================================
 # UAEW Operations App — Weigh-in
 # -----------------------------------------------------------------------------
-# Versão: 2.2.0
+# Versão: 2.3.0
+# - Slider na sidebar controla o intervalo de auto-refresh do Running Order.
 # - Cards no template solicitado (número | avatar | nome/ID | chip por corner).
-# - Local mode (batch save) restaurado com buffer/overlay.
-# - Check in/out em tempo real (quando Local mode OFF) com cache clear + rerun.
+# - Local mode (batch save) com overlay/buffer; Save all publica para a planilha.
+# - Check in/out em tempo real (Local mode OFF) com cache clear + rerun.
 # - Running Order: 3 colunas (Checked in | Clock | Checked out), sem botões.
-# - Settings no topo (Check in / Check out) e no rodapé (Running Order).
+# - Settings no topo (Check in/Check out) e no rodapé (Running Order).
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -62,10 +63,11 @@ st.session_state.setdefault("weighin_local_mode", False)     # Batch save ON/OFF
 st.session_state.setdefault("weighin_buffer", [])            # lista de dicts aguardando flush
 st.session_state.setdefault("weighin_overlay", pd.DataFrame())  # DataFrame com linhas *locais* (visual)
 
-# Sliders (sidebar) para o Running Order
+# Sliders (sidebar) — display do Running Order
 st.session_state.setdefault("title_size", 56)
 st.session_state.setdefault("clock_size", 160)
 st.session_state.setdefault("coltitle_size", 24)
+st.session_state.setdefault("ro_refresh_sec", 10)  # novo: intervalo de auto-refresh
 
 # =============================================================================
 # Helpers
@@ -196,7 +198,6 @@ def _append_attendance_row(values: dict):
         col_idx = header.index("#") + 1
         col_vals = ws.col_values(col_idx)  # inclui header
         if len(col_vals) > 1:
-            # pega o último valor numérico
             last = None
             for v in reversed(col_vals[1:]):
                 vv = str(v).strip()
@@ -303,7 +304,6 @@ def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=Non
         st.markdown(card_html, unsafe_allow_html=True)
     if label_btn:
         with right:
-            # chave única por botão
             key = f"btn_{context_key}_{label_btn.replace(' ','_')}_{aid}_{event}"
             if st.button(label_btn, key=key, use_container_width=True):
                 on_click(aid, name, event)
@@ -337,7 +337,6 @@ def _settings_expander_top(events: list[str]):
                 flush_buffer()
         with c2:
             if st.button("Sync data", use_container_width=True):
-                # descarta overlay e recarrega
                 st.session_state["weighin_overlay"] = pd.DataFrame()
                 st.session_state["weighin_buffer"].clear()
                 load_attendance.clear()
@@ -354,13 +353,14 @@ def _settings_expander_bottom():
             st.rerun()
 
 # =============================================================================
-# Sidebar controls (tamanhos do Running Order)
+# Sidebar controls (display + auto-refresh)
 # =============================================================================
 with st.sidebar:
     st.markdown("### Display settings")
     st.session_state["title_size"] = st.slider("Title size", 36, 96, st.session_state["title_size"])
     st.session_state["clock_size"] = st.slider("Clock size", 80, 220, st.session_state["clock_size"])
     st.session_state["coltitle_size"] = st.slider("Column title size", 16, 40, st.session_state["coltitle_size"])
+    st.session_state["ro_refresh_sec"] = st.slider("Running Order refresh (sec)", 3, 60, st.session_state["ro_refresh_sec"], help="Intervalo de atualização automática da tela pública.")
 
 # =============================================================================
 # MAIN
@@ -393,7 +393,6 @@ df_in, df_out, df_rest = _checked_partitions(df_ath, df_att_full, selected_event
 
 # Callbacks
 def on_check_in(aid, name, event):
-    # se já IN, não duplica; se OUT, vira IN com nova ordem; se NONE, IN c/ ordem nova
     order_num = _next_checkin_order(_attendance_with_overlay(), event)
     _log_action(aid, name, event, Config.STATUS_IN, str(order_num))
 
@@ -402,7 +401,6 @@ def on_check_out(aid, name, event):
 
 # ----------------- Check in -----------------
 if mode == "Check in":
-    # Primeiro os que já estão IN (verdes) com número; depois os demais (neutros)
     for _, r in pd.concat([df_in, df_rest]).iterrows():
         already_in = r["__st__"] == "IN"
         render_card(
@@ -416,7 +414,6 @@ if mode == "Check in":
 
 # ----------------- Check out -----------------
 elif mode == "Check out":
-    # Só quem está IN aparece com botão "Check out"
     for _, r in df_in.iterrows():
         render_card(
             r,
@@ -429,6 +426,12 @@ elif mode == "Check out":
 
 # ----------------- Running Order (display-only) -----------------
 else:
+    # Auto-refresh no intervalo escolhido
+    from streamlit.runtime.scriptrunner import add_script_run_ctx  # safe import; no-op if unused
+    st_autorefresh = getattr(st, "autorefresh", None) or getattr(st, "experimental_rerun", None)
+    if hasattr(st, "autorefresh"):
+        st.autorefresh(interval=st.session_state["ro_refresh_sec"] * 1000, key="weighin_ro_autorefresh")
+
     cL, cM, cR = st.columns([1.2, 1, 1.2])
     col_title_css = f"font-size:{st.session_state['coltitle_size']}px;text-align:center;margin:10px 0 14px 0;font-weight:800;color:#ddd;"
 

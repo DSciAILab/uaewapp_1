@@ -2,11 +2,12 @@
 # =============================================================================
 # UAEW Operations App — Weigh-in
 # -----------------------------------------------------------------------------
-# Versão: 2.3.1
-# - Running Order: settings no rodapé (fechado) e sem "Sync data".
-# - Auto-refresh da Running Order via <meta refresh> obedecendo o slider.
-# - Relógio em horário de Dubai (Asia/Dubai), fallback UTC+4.
-# (Demais estruturas preservadas)
+# Versão: 2.3.3
+# - Evita voltar ao Login no Running Order:
+#   * bootstrap_page(..., require_auth=False)
+#   * Gate de autenticação só nos modos "Check in" e "Check out"
+# - Mantido: auto-refresh com st_autorefresh, relógio Dubai, settings,
+#   buffer local, Sync Data, títulos e sliders na sidebar.
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -14,6 +15,8 @@ import streamlit as st
 import pandas as pd
 import re, html
 from datetime import datetime, timezone, timedelta
+from streamlit_autorefresh import st_autorefresh
+
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
@@ -21,7 +24,8 @@ except Exception:
 
 from utils import get_gspread_client, connect_gsheet_tab
 
-bootstrap_page("Weight-in")
+# >>> Importante: não exigir auth aqui para não derrubar a Running Order
+bootstrap_page("Weight-in", require_auth=False)
 
 # =============================================================================
 # Config
@@ -49,13 +53,13 @@ class Config:
     DEFAULT_EVENT = "Z"
 
     CARD_BG_DEFAULT = "#1e1e1e"
-    CARD_BG_IN = "#1f5f2b"
-    CARD_BG_OUT = "#5a5a5a"
+    CARD_BG_IN = "#1f5f2b"   # verde (checked-in)
+    CARD_BG_OUT = "#5a5a5a"  # cinza (checked-out)
     CORNER_RED = "#d9534f"
     CORNER_BLUE = "#428bca"
 
 # =============================================================================
-# State default
+# State defaults
 # =============================================================================
 st.session_state.setdefault("weighin_mode", "Check in")  # "Check in" | "Check out" | "Running Order"
 st.session_state.setdefault("weighin_event_selected", None)
@@ -128,7 +132,9 @@ def _attendance_with_overlay() -> pd.DataFrame:
 
 def _events_from_athletes(df_ath: pd.DataFrame) -> list[str]:
     evts = [x for x in df_ath[Config.COL_EVENT].unique() if x and x != Config.DEFAULT_EVENT]
-    return sorted(evts, key=_extract_event_num)
+    # regra: quando houver 2 eventos, o menor número vira seleção principal
+    evts_sorted = sorted(evts, key=_extract_event_num)
+    return evts_sorted
 
 def _last_status_for_event(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
     if df_att.empty: return pd.DataFrame(columns=["Athlete ID","Status","Notes","TS","Fighter"])
@@ -299,6 +305,7 @@ def _settings_expander_top(events: list[str]):
             if not events:
                 st.warning("No events found.")
             else:
+                # sem "All Events"; se houver 2 eventos, o de menor número é o padrão
                 default_event = events[0]
                 st.session_state.setdefault("weighin_event_selected", default_event)
                 if st.session_state["weighin_event_selected"] not in events:
@@ -322,7 +329,7 @@ def _settings_expander_bottom():
     """Somente no Running Order: no rodapé, fechado e sem 'Sync data'."""
     with st.expander("Settings", expanded=False):
         st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
-        # (sem botão 'Sync data' aqui por solicitação)
+        # intencionalmente sem Sync data aqui
 
 # =============================================================================
 # Sidebar controls
@@ -344,11 +351,16 @@ df_ath = load_athletes()
 events = _events_from_athletes(df_ath)
 
 mode = st.session_state.get("weighin_mode","Check in")
+
+# >>> Gate de autenticação só para modos com ação
+if mode in ("Check in", "Check out") and not st.session_state.get("user_confirmed", False):
+    st.error("Você precisa estar logado para usar Check in / Check out. Abra a página **Login** neste dispositivo, faça login e retorne.")
+    st.stop()
+# <<<
+
 if mode in ("Check in","Check out"):
     _settings_expander_top(events)
-else:
-    # Settings aparecerá no rodapé após o conteúdo
-    pass
+# (no Running Order o settings fica no rodapé)
 
 if st.session_state.get("weighin_event_selected") is None and events:
     st.session_state["weighin_event_selected"] = events[0]
@@ -397,9 +409,9 @@ elif mode == "Check out":
 
 # ----------------- Running Order (display-only) -----------------
 else:
-    # Auto-refresh obedecendo o slider (meta refresh)
+    # Auto-refresh suave que mantém a mesma sessão (não derruba o login)
     sec = int(st.session_state["ro_refresh_sec"])
-    st.markdown(f"<meta http-equiv='refresh' content='{sec}'>", unsafe_allow_html=True)
+    st_autorefresh(interval=max(1, sec) * 1000, key="weighin_ro_autorefresh_v3")
 
     cL, cM, cR = st.columns([1.2, 1, 1.2])
     col_title_css = f"font-size:{st.session_state['coltitle_size']}px;text-align:center;margin:10px 0 14px 0;font-weight:800;color:#ddd;"

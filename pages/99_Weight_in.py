@@ -1,17 +1,14 @@
 # ==============================================================================
 # UAEW Operations App — Weigh-in Page
 # ------------------------------------------------------------------------------
-# Versão:        1.6.0
+# Versão:        1.7.0
 # Atualizado:    2025-09-08
 #
-# 1.6.0
-# - Sliders na sidebar para tamanhos: Título da página, Relógio (HH:MM) e
-#   títulos das colunas (centralizados).
-# - Running Order: 3 colunas (Checked in | Clock | Checked out). Relógio HH:MM.
-# - Settings no rodapé (fechado por padrão).
-# - (Opcional) Modo "Local buffer (batch save)" para operar sem escrever
-#   na planilha a cada clique; UI reflete o buffer; botões Save all/Discard.
-# - Em qualquer clique (in/out): st.rerun().
+# 1.7.0
+# - Settings no topo para Check in / Check out; no rodapé (fechado) para Running Order.
+# - Botão "Sync data" (limpa caches e recarrega dados) em ambos os Settings.
+# - Mantém o modo selecionado após cliques (não volta para Check in).
+# - Ajustes gerais de UX e estabilidade.
 # ==============================================================================
 
 from components.layout import bootstrap_page
@@ -26,7 +23,7 @@ import unicodedata
 # Bootstrap
 bootstrap_page("Weigh-in")
 
-# Auto-refresh opcional p/ o relógio (se lib existir)
+# Auto-refresh opcional p/ o relógio
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
@@ -164,6 +161,16 @@ def load_attendance() -> pd.DataFrame:
     except Exception as e:
         st.error(f"Error loading Attendance: {e}", icon="🚨")
         return pd.DataFrame()
+
+def sync_data():
+    """Limpa caches e recarrega dados (sem mexer no buffer local)."""
+    try:
+        load_athletes.clear()
+        load_attendance.clear()
+    except Exception:
+        pass
+    st.toast("Data synced from Google Sheets.", icon="🔄")
+    st.rerun()
 
 
 # ==============================================================================
@@ -330,7 +337,7 @@ with st.sidebar:
 # === Leitura bases ===
 df_ath_all = load_athletes()
 
-# Eventos válidos
+# Eventos válidos (sem "All Events")
 valid_events = []
 if not df_ath_all.empty:
     valid_events = sorted(
@@ -338,6 +345,7 @@ if not df_ath_all.empty:
         key=_event_number_key
     )
 
+# evento escolhido: primeiro (menor número) por padrão
 if st.session_state["weighin_event"] is None and valid_events:
     st.session_state["weighin_event"] = valid_events[0]
 
@@ -379,7 +387,6 @@ def _apply_buffer_overlays(event: str, last_status: dict[str, str], order_by_id:
             except Exception:
                 pass
         elif status == Config.STATUS_CHECKOUT.lower():
-            # no running order number for checked out
             pass
     return ls, ob
 
@@ -419,19 +426,23 @@ def _queue_buffer(event, athlete_id, fighter, status, notes=""):
     })
 
 def on_check_in(aid: str, name: str, event: str):
+    # preserve current mode across rerun
+    st.session_state["weighin_mode"] = "Check in" if st.session_state.get("weighin_mode") is None else st.session_state["weighin_mode"]
     if use_local:
         order_num = _next_checkin_order_overlay(df_att, event)
         _queue_buffer(event, aid, name, Config.STATUS_CHECKIN, order_num)
-        st.toast(f"Check in (local) — ordem {order_num}.", icon="✅")
+        st.toast(f"Check in (local) — order {order_num}.", icon="✅")
         st.rerun()
     else:
         order_num = next_checkin_order(load_attendance(), event)
         if append_attendance_row(event=event, athlete_id=aid, fighter=name,
                                  status=Config.STATUS_CHECKIN, notes=order_num):
-            st.toast(f"Check in registrado (ordem {order_num}).", icon="✅")
+            st.toast(f"Check in saved (order {order_num}).", icon="✅")
             st.rerun()
 
 def on_check_out(aid: str, name: str, event: str):
+    # preserve current mode across rerun (stay in Check out)
+    st.session_state["weighin_mode"] = "Check out"
     # precisa estar IN (considerando overlay local)
     if aid not in checked_in_now:
         st.warning("Only athletes currently checked in can be checked out.", icon="⚠️")
@@ -443,7 +454,7 @@ def on_check_out(aid: str, name: str, event: str):
     else:
         if append_attendance_row(event=event, athlete_id=aid, fighter=name,
                                  status=Config.STATUS_CHECKOUT, notes=""):
-            st.toast("Check out registrado.", icon="✅")
+            st.toast("Check out saved.", icon="✅")
             st.rerun()
 
 
@@ -523,6 +534,83 @@ def col_title(text: str, size_px: int):
 # ==============================================================================
 mode = st.session_state["weighin_mode"]
 
+# ----------------------------- SETTINGS (TOPO) --------------------------------
+def top_settings():
+    with st.expander("Settings", expanded=True):
+        st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
+        if st.session_state["weighin_mode"] == "Check in" and valid_events:
+            st.session_state["weighin_event"] = st.segmented_control("Event:", options=valid_events, key="weighin_event_segmented_header")
+        c1, c2 = st.columns([1,1])
+        with c1:
+            st.checkbox("Local mode (batch save)", key="weighin_local_mode", help="Acumula alterações em memória e salva depois.")
+        with c2:
+            if st.button("Sync data", use_container_width=True):
+                sync_data()
+        if st.session_state["weighin_local_mode"]:
+            c3, c4, c5 = st.columns([1,1,2])
+            with c3:
+                if st.button("Save all", use_container_width=True):
+                    pending = list(st.session_state["weighin_buffer"])
+                    ok = True
+                    for row in pending:
+                        if not append_attendance_row(
+                            event=row["Event"], athlete_id=row["Athlete ID"], fighter=row["Fighter"],
+                            status=row["Status"], notes=row["Notes"]
+                        ):
+                            ok = False
+                            break
+                    if ok:
+                        st.session_state["weighin_buffer"].clear()
+                        st.success("All buffered rows saved.", icon="✅")
+                        st.rerun()
+            with c4:
+                if st.button("Discard", use_container_width=True):
+                    st.session_state["weighin_buffer"].clear()
+                    st.info("Buffer discarded.")
+                    st.rerun()
+            with c5:
+                st.write(f"Buffered rows: **{len(st.session_state['weighin_buffer'])}**")
+
+# ---------------------------- SETTINGS (RODAPÉ) -------------------------------
+def bottom_settings():
+    with st.expander("Settings", expanded=False):
+        st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
+        # Running Order segue o evento do Check in; sem seletor aqui
+        c1, c2 = st.columns([1,1])
+        with c1:
+            st.checkbox("Local mode (batch save)", key="weighin_local_mode")
+        with c2:
+            if st.button("Sync data", use_container_width=True):
+                sync_data()
+        if st.session_state["weighin_local_mode"]:
+            c3, c4, c5 = st.columns([1,1,2])
+            with c3:
+                if st.button("Save all", use_container_width=True):
+                    pending = list(st.session_state["weighin_buffer"])
+                    ok = True
+                    for row in pending:
+                        if not append_attendance_row(
+                            event=row["Event"], athlete_id=row["Athlete ID"], fighter=row["Fighter"],
+                            status=row["Status"], notes=row["Notes"]
+                        ):
+                            ok = False
+                            break
+                    if ok:
+                        st.session_state["weighin_buffer"].clear()
+                        st.success("All buffered rows saved.", icon="✅")
+                        st.rerun()
+            with c4:
+                if st.button("Discard", use_container_width=True):
+                    st.session_state["weighin_buffer"].clear()
+                    st.info("Buffer discarded.")
+                    st.rerun()
+            with c5:
+                st.write(f"Buffered rows: **{len(st.session_state['weighin_buffer'])}**")
+
+# ------------------------------------------------------------------------------
+if mode in ("Check in", "Check out"):
+    top_settings()
+
 if mode == "Running Order":
     if st_autorefresh:
         st_autorefresh(interval=1000, key="weighin_clock_tick")
@@ -562,6 +650,9 @@ if mode == "Running Order":
             for _, r in right_df.iterrows():
                 render_board_card(r, order_num=None, bg_color=Config.CARD_BG_CHECKEDOUT)
 
+    # Settings no rodapé
+    bottom_settings()
+
 elif mode == "Check out":
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
@@ -582,9 +673,21 @@ else:  # Check in
         st.session_state["weighin_event"] = st.segmented_control(
             "Event:",
             options=valid_events,
-            key="weighin_event_segmented_header",
+            key="weighin_event_segmented_main",
         )
         sel_event = st.session_state["weighin_event"]  # refletir possível troca
+        # Refiltra caso o usuário tenha trocado aqui
+        df_ath = df_ath_all[df_ath_all[Config.COL_EVENT] == sel_event].copy().sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
+        df_att = load_attendance()
+        last_status_sheet = latest_status_map(df_att, sel_event)
+        order_by_id_sheet = last_checkin_order_by_id(df_att, sel_event)
+        if use_local:
+            last_status, order_by_id = _apply_buffer_overlays(sel_event, last_status_sheet, order_by_id_sheet)
+        else:
+            last_status, order_by_id = last_status_sheet, order_by_id_sheet
+        checked_in_now  = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKIN.lower()}
+        checked_out_now = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKOUT.lower()}
+
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
     q = (st.session_state.get("weighin_search","") or "").strip().lower()
@@ -604,52 +707,3 @@ else:  # Check in
         else:
             bg = Config.CARD_BG_DEFAULT
         render_card_action(r, "Check in", on_check_in, bg_color=bg)
-
-
-# ==============================================================================
-# SETTINGS — RODAPÉ (fechado)
-# ==============================================================================
-with st.expander("Settings", expanded=False):
-    st.segmented_control(
-        "Mode:",
-        options=["Check in", "Check out", "Running Order"],
-        key="weighin_mode",
-    )
-
-    # Evento apenas em Check in (como combinado)
-    if st.session_state["weighin_mode"] == "Check in" and valid_events:
-        st.session_state["weighin_event"] = st.segmented_control(
-            "Event:",
-            options=valid_events,
-            key="weighin_event_segmented_footer",
-        )
-
-    st.checkbox("Local mode (batch save)", key="weighin_local_mode", help="Acumula alterações em memória e salva depois.")
-    if st.session_state["weighin_local_mode"]:
-        c1, c2, c3 = st.columns([1,1,3])
-        with c1:
-            if st.button("Save all", use_container_width=True):
-                # grava todas as linhas do buffer
-                pending = list(st.session_state["weighin_buffer"])
-                ok = True
-                for row in pending:
-                    if not append_attendance_row(
-                        event=row["Event"],
-                        athlete_id=row["Athlete ID"],
-                        fighter=row["Fighter"],
-                        status=row["Status"],
-                        notes=row["Notes"]
-                    ):
-                        ok = False
-                        break
-                if ok:
-                    st.session_state["weighin_buffer"].clear()
-                    st.success("All buffered rows saved.", icon="✅")
-                    st.rerun()
-        with c2:
-            if st.button("Discard", use_container_width=True):
-                st.session_state["weighin_buffer"].clear()
-                st.info("Buffer discarded.")
-                st.rerun()
-        with c3:
-            st.write(f"Buffered rows: **{len(st.session_state['weighin_buffer'])}**")

@@ -2,20 +2,23 @@
 # =============================================================================
 # UAEW Operations App — Weigh-in
 # -----------------------------------------------------------------------------
-# Versão: 2.3.0
-# - Slider na sidebar controla o intervalo de auto-refresh do Running Order.
-# - Cards no template solicitado (número | avatar | nome/ID | chip por corner).
-# - Local mode (batch save) com overlay/buffer; Save all publica para a planilha.
-# - Check in/out em tempo real (Local mode OFF) com cache clear + rerun.
-# - Running Order: 3 colunas (Checked in | Clock | Checked out), sem botões.
-# - Settings no topo (Check in/Check out) e no rodapé (Running Order).
+# Versão: 2.3.1
+# - Running Order: settings no rodapé (fechado) e sem "Sync data".
+# - Auto-refresh da Running Order via <meta refresh> obedecendo o slider.
+# - Relógio em horário de Dubai (Asia/Dubai), fallback UTC+4.
+# (Demais estruturas preservadas)
 # =============================================================================
 
 from components.layout import bootstrap_page
 import streamlit as st
 import pandas as pd
 import re, html
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except Exception:
+    ZoneInfo = None
+
 from utils import get_gspread_client, connect_gsheet_tab
 
 bootstrap_page("Weight-in")
@@ -28,14 +31,12 @@ class Config:
     ATHLETES_TAB = "df"
     ATT_TAB = "Attendance"
 
-    TASK_NAME = "Weigh-in"        # nome exato da Task
-    STATUS_IN = "Check in"        # status normalize
+    TASK_NAME = "Weigh-in"
+    STATUS_IN = "Check in"
     STATUS_OUT = "Check out"
 
-    # Colunas da aba Attendance (nomes exatos)
     ATT_COLS = ["#", "Event", "Athlete ID", "Fighter", "Task", "Status", "User", "TimeStamp", "Notes"]
 
-    # Colunas no df de atletas (snake case)
     COL_ID = "id"
     COL_NAME = "name"
     COL_EVENT = "event"
@@ -47,10 +48,9 @@ class Config:
 
     DEFAULT_EVENT = "Z"
 
-    # Cores
     CARD_BG_DEFAULT = "#1e1e1e"
-    CARD_BG_IN = "#1f5f2b"     # verde
-    CARD_BG_OUT = "#5a5a5a"    # cinza
+    CARD_BG_IN = "#1f5f2b"
+    CARD_BG_OUT = "#5a5a5a"
     CORNER_RED = "#d9534f"
     CORNER_BLUE = "#428bca"
 
@@ -59,15 +59,15 @@ class Config:
 # =============================================================================
 st.session_state.setdefault("weighin_mode", "Check in")  # "Check in" | "Check out" | "Running Order"
 st.session_state.setdefault("weighin_event_selected", None)
-st.session_state.setdefault("weighin_local_mode", False)     # Batch save ON/OFF
-st.session_state.setdefault("weighin_buffer", [])            # lista de dicts aguardando flush
-st.session_state.setdefault("weighin_overlay", pd.DataFrame())  # DataFrame com linhas *locais* (visual)
+st.session_state.setdefault("weighin_local_mode", False)
+st.session_state.setdefault("weighin_buffer", [])
+st.session_state.setdefault("weighin_overlay", pd.DataFrame())
 
 # Sliders (sidebar) — display do Running Order
 st.session_state.setdefault("title_size", 56)
 st.session_state.setdefault("clock_size", 160)
 st.session_state.setdefault("coltitle_size", 24)
-st.session_state.setdefault("ro_refresh_sec", 10)  # novo: intervalo de auto-refresh
+st.session_state.setdefault("ro_refresh_sec", 10)
 
 # =============================================================================
 # Helpers
@@ -81,7 +81,6 @@ def _extract_event_num(ev: str) -> int:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_athletes() -> pd.DataFrame:
-    """Carrega aba df, filtra lutadores ativos e normaliza colunas básicas."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET, Config.ATHLETES_TAB)
@@ -108,7 +107,6 @@ def load_athletes() -> pd.DataFrame:
 
 @st.cache_data(ttl=120, show_spinner=False)
 def load_attendance() -> pd.DataFrame:
-    """Carrega Attendance garantindo colunas padrão."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET, Config.ATT_TAB)
@@ -120,7 +118,6 @@ def load_attendance() -> pd.DataFrame:
         return pd.DataFrame(columns=Config.ATT_COLS)
 
 def _attendance_with_overlay() -> pd.DataFrame:
-    """Concatena Attendance real com overlay local (se existir)."""
     base = load_attendance().copy()
     ov = st.session_state["weighin_overlay"]
     if not ov.empty:
@@ -130,17 +127,14 @@ def _attendance_with_overlay() -> pd.DataFrame:
     return base
 
 def _events_from_athletes(df_ath: pd.DataFrame) -> list[str]:
-    """Lista de eventos disponíveis, sem 'Z', ordenados pelo menor número no sufixo."""
     evts = [x for x in df_ath[Config.COL_EVENT].unique() if x and x != Config.DEFAULT_EVENT]
     return sorted(evts, key=_extract_event_num)
 
 def _last_status_for_event(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
-    """Último status por atleta para o evento da task Weigh-in."""
     if df_att.empty: return pd.DataFrame(columns=["Athlete ID","Status","Notes","TS","Fighter"])
     df = df_att.copy()
     df = df[(df["Event"].astype(str)==str(event)) & (df["Task"].astype(str)==Config.TASK_NAME)]
     if df.empty: return pd.DataFrame(columns=["Athlete ID","Status","Notes","TS","Fighter"])
-
     ts = pd.to_datetime(df["TimeStamp"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
     df = df.assign(_ts=ts).sort_values(by=["Athlete ID","_ts"], ascending=[True, True])
     latest = df.groupby("Athlete ID", as_index=False).tail(1)
@@ -152,7 +146,6 @@ def _order_from_notes(x):
     except Exception: return None
 
 def _checked_partitions(df_ath: pd.DataFrame, df_att: pd.DataFrame, event: str):
-    """Retorna (df_in, df_out, df_rest) para o evento."""
     last = _last_status_for_event(df_att, event)
     last.index = last["Athlete ID"].astype(str)
 
@@ -177,13 +170,11 @@ def _checked_partitions(df_ath: pd.DataFrame, df_att: pd.DataFrame, event: str):
     return df_in, df_out, df_rest
 
 def _next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
-    """Próxima ordem para Check-in = count(Status==IN)+1."""
     last = _last_status_for_event(df_att, event)
     return 1 if last.empty else int((last["Status"]==Config.STATUS_IN).sum()) + 1
 
 # ---------------- Append helpers ----------------
 def _append_attendance_row(values: dict):
-    """Append único na aba Attendance (ordem alinhada ao header real)."""
     gc = get_gspread_client()
     ws = connect_gsheet_tab(gc, Config.MAIN_SHEET, Config.ATT_TAB)
 
@@ -192,55 +183,44 @@ def _append_attendance_row(values: dict):
         header = Config.ATT_COLS[:]
         ws.append_row(header, value_input_option="USER_ENTERED")
 
-    # calcula próximo "#"
     next_num = ""
     if "#" in header:
         col_idx = header.index("#") + 1
-        col_vals = ws.col_values(col_idx)  # inclui header
+        col_vals = ws.col_values(col_idx)
         if len(col_vals) > 1:
             last = None
             for v in reversed(col_vals[1:]):
                 vv = str(v).strip()
                 if vv:
-                    last = vv
-                    break
-            if last and last.isdigit():
-                next_num = str(int(last) + 1)
-            else:
-                next_num = str(len(col_vals))
+                    last = vv; break
+            next_num = str(int(last) + 1) if (last and last.isdigit()) else str(len(col_vals))
         else:
             next_num = "1"
 
     values = dict(values)
     values["#"] = next_num
-
     row = [values.get(col, "") for col in header]
     ws.append_row(row, value_input_option="USER_ENTERED")
 
 def _queue_overlay(values: dict):
-    """Acrescenta uma linha no overlay local e no buffer (para Save all)."""
     df = st.session_state["weighin_overlay"]
     new = pd.DataFrame([values], columns=Config.ATT_COLS)
     st.session_state["weighin_overlay"] = pd.concat([df, new], ignore_index=True)
     st.session_state["weighin_buffer"].append(values)
 
 def flush_buffer():
-    """Envia o buffer local para a planilha."""
     if not st.session_state["weighin_buffer"]:
         st.info("No pending rows to save.")
         return
     for row in st.session_state["weighin_buffer"]:
         _append_attendance_row(row)
-    # limpa overlay/buffer
     st.session_state["weighin_buffer"].clear()
     st.session_state["weighin_overlay"] = pd.DataFrame()
-    # sincroniza todo mundo
     load_attendance.clear()
     st.success("Buffered rows saved.", icon="✅")
     st.rerun()
 
 def _log_action(athlete_id: str, fighter_name: str, event: str, status: str, notes: str):
-    """Registra ação no modo atual (local/online)."""
     ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     user_ident = st.session_state.get("current_user_name") or st.session_state.get("current_user_id") or "System"
 
@@ -257,11 +237,11 @@ def _log_action(athlete_id: str, fighter_name: str, event: str, status: str, not
     }
 
     if st.session_state["weighin_local_mode"]:
-        _queue_overlay(payload)              # só visual local
+        _queue_overlay(payload)
         st.toast("Added to local buffer.", icon="📝")
     else:
-        _append_attendance_row(payload)      # grava de verdade
-        load_attendance.clear()              # sincroniza instâncias
+        _append_attendance_row(payload)
+        load_attendance.clear()
         st.toast("Saved to sheet.", icon="💾")
     st.rerun()
 
@@ -275,7 +255,6 @@ def _corner_chip(ev: str, fight: str, corner: str) -> str:
     return f"<span style='background:{bg};color:#fff;padding:6px 10px;border-radius:10px;font-weight:700;font-size:12px;'>{html.escape(txt)}</span>"
 
 def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=None, show_number=None, dimmed=False, context_key=""):
-    """Template do card (número | avatar | nome|id | chip). Se label_btn=None, não cria botão."""
     aid = str(row.get(Config.COL_ID,""))
     name = str(row.get(Config.COL_NAME,""))
     event = str(row.get(Config.COL_EVENT,""))
@@ -314,10 +293,8 @@ def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=Non
 # =============================================================================
 def _settings_expander_top(events: list[str]):
     with st.expander("Settings", expanded=True):
-        # Modo
         st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
 
-        # Evento (apenas para Check in)
         if st.session_state["weighin_mode"] == "Check in":
             if not events:
                 st.warning("No events found.")
@@ -328,7 +305,6 @@ def _settings_expander_top(events: list[str]):
                     st.session_state["weighin_event_selected"] = default_event
                 st.segmented_control("Event:", options=events, key="weighin_event_selected")
 
-        # Local mode
         st.checkbox("Local mode (batch save)", key="weighin_local_mode", help="When ON, actions go to a local buffer. Click 'Save all' to commit to the sheet.")
         st.write(f"**Buffered rows:** {len(st.session_state['weighin_buffer'])}")
         c1, c2 = st.columns([1,1])
@@ -343,24 +319,23 @@ def _settings_expander_top(events: list[str]):
                 st.rerun()
 
 def _settings_expander_bottom():
-    """Somente no Running Order (footer, fechado)."""
+    """Somente no Running Order: no rodapé, fechado e sem 'Sync data'."""
     with st.expander("Settings", expanded=False):
         st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
-        if st.button("Sync data", use_container_width=True):
-            st.session_state["weighin_overlay"] = pd.DataFrame()
-            st.session_state["weighin_buffer"].clear()
-            load_attendance.clear()
-            st.rerun()
+        # (sem botão 'Sync data' aqui por solicitação)
 
 # =============================================================================
-# Sidebar controls (display + auto-refresh)
+# Sidebar controls
 # =============================================================================
 with st.sidebar:
     st.markdown("### Display settings")
     st.session_state["title_size"] = st.slider("Title size", 36, 96, st.session_state["title_size"])
     st.session_state["clock_size"] = st.slider("Clock size", 80, 220, st.session_state["clock_size"])
     st.session_state["coltitle_size"] = st.slider("Column title size", 16, 40, st.session_state["coltitle_size"])
-    st.session_state["ro_refresh_sec"] = st.slider("Running Order refresh (sec)", 3, 60, st.session_state["ro_refresh_sec"], help="Intervalo de atualização automática da tela pública.")
+    st.session_state["ro_refresh_sec"] = st.slider(
+        "Running Order refresh (sec)", 3, 60, st.session_state["ro_refresh_sec"],
+        help="Intervalo de atualização automática da tela pública."
+    )
 
 # =============================================================================
 # MAIN
@@ -369,29 +344,25 @@ df_ath = load_athletes()
 events = _events_from_athletes(df_ath)
 
 mode = st.session_state.get("weighin_mode","Check in")
-# Settings position
 if mode in ("Check in","Check out"):
     _settings_expander_top(events)
 else:
-    _settings_expander_bottom()
+    # Settings aparecerá no rodapé após o conteúdo
+    pass
 
-# Seleção de evento herdada do Check in para as outras abas
 if st.session_state.get("weighin_event_selected") is None and events:
     st.session_state["weighin_event_selected"] = events[0]
 selected_event = st.session_state.get("weighin_event_selected") or (events[0] if events else "")
 
-# Título
 st.markdown(
     f"<h1 style='text-align:center;font-size:{st.session_state['title_size']}px;margin:8px 0 18px 0;'>"
     f"{html.escape(selected_event)} | Weigh-in</h1>",
     unsafe_allow_html=True
 )
 
-# Dados combinados (sheet + overlay)
 df_att_full = _attendance_with_overlay()
 df_in, df_out, df_rest = _checked_partitions(df_ath, df_att_full, selected_event)
 
-# Callbacks
 def on_check_in(aid, name, event):
     order_num = _next_checkin_order(_attendance_with_overlay(), event)
     _log_action(aid, name, event, Config.STATUS_IN, str(order_num))
@@ -426,11 +397,9 @@ elif mode == "Check out":
 
 # ----------------- Running Order (display-only) -----------------
 else:
-    # Auto-refresh no intervalo escolhido
-    from streamlit.runtime.scriptrunner import add_script_run_ctx  # safe import; no-op if unused
-    st_autorefresh = getattr(st, "autorefresh", None) or getattr(st, "experimental_rerun", None)
-    if hasattr(st, "autorefresh"):
-        st.autorefresh(interval=st.session_state["ro_refresh_sec"] * 1000, key="weighin_ro_autorefresh")
+    # Auto-refresh obedecendo o slider (meta refresh)
+    sec = int(st.session_state["ro_refresh_sec"])
+    st.markdown(f"<meta http-equiv='refresh' content='{sec}'>", unsafe_allow_html=True)
 
     cL, cM, cR = st.columns([1.2, 1, 1.2])
     col_title_css = f"font-size:{st.session_state['coltitle_size']}px;text-align:center;margin:10px 0 14px 0;font-weight:800;color:#ddd;"
@@ -441,10 +410,16 @@ else:
             render_card(r, None, lambda *a,**k: None, bg_color=Config.CARD_BG_IN, show_number=r['__order__'], context_key="ro_in")
 
     with cM:
+        # Relógio em Dubai
+        if ZoneInfo:
+            now_dubai = datetime.now(ZoneInfo("Asia/Dubai"))
+        else:
+            now_dubai = datetime.now(timezone.utc) + timedelta(hours=4)
+        hhmm = now_dubai.strftime("%H:%M")
         st.markdown(
             f"<div style='display:flex;align-items:center;justify-content:center;height:100%;min-height:260px;'>"
-            f"<div style='font-size:{st.session_state['clock_size']}px;font-weight:900;letter-spacing:2px;color:#eaeaea;'>"
-            f"{datetime.now().strftime('%H:%M')}</div></div>",
+            f"<div style='font-size:{st.session_state['clock_size']}px;font-weight:900;letter-spacing:2px;color:#eaeaea;'>{hhmm}</div>"
+            f"</div>",
             unsafe_allow_html=True
         )
 
@@ -452,3 +427,6 @@ else:
         st.markdown(f"<div style='{col_title_css}'>Checked out</div>", unsafe_allow_html=True)
         for _, r in df_out.iterrows():
             render_card(r, None, lambda *a,**k: None, bg_color=Config.CARD_BG_OUT, dimmed=True, context_key="ro_out")
+
+    # Settings específico da Running Order no rodapé (sem Sync data)
+    _settings_expander_bottom()

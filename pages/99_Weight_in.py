@@ -2,12 +2,11 @@
 # =============================================================================
 # UAEW Operations App — Weigh-in
 # -----------------------------------------------------------------------------
-# Versão: 2.3.3
-# - Evita voltar ao Login no Running Order:
-#   * bootstrap_page(..., require_auth=False)
-#   * Gate de autenticação só nos modos "Check in" e "Check out"
-# - Mantido: auto-refresh com st_autorefresh, relógio Dubai, settings,
-#   buffer local, Sync Data, títulos e sliders na sidebar.
+# Versão: 2.3.4
+# - Ajuste solicitado:
+#   * Número do running order sempre inteiro (sem decimais)
+#   * Quadrado e fonte maiores para o número (56px e 32px)
+# - Mantido todo o restante do comportamento e layout da v2.3.3
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -260,6 +259,19 @@ def _corner_chip(ev: str, fight: str, corner: str) -> str:
     txt = f"{ev} | FIGHT {fight or '?'} | {corner.upper() or '?'}"
     return f"<span style='background:{bg};color:#fff;padding:6px 10px;border-radius:10px;font-weight:700;font-size:12px;'>{html.escape(txt)}</span>"
 
+def _as_int_text(val) -> str:
+    """Garante string inteira (sem casas decimais) para exibição do número."""
+    if val is None:
+        return ""
+    try:
+        # cobre casos como numpy.float64(3.0) -> '3'
+        return str(int(round(float(val))))
+    except Exception:
+        try:
+            return str(int(val))
+        except Exception:
+            return str(val)
+
 def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=None, show_number=None, dimmed=False, context_key=""):
     aid = str(row.get(Config.COL_ID,""))
     name = str(row.get(Config.COL_NAME,""))
@@ -271,7 +283,16 @@ def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=Non
     bg = bg_color or Config.CARD_BG_DEFAULT
     if dimmed: bg = Config.CARD_BG_OUT
 
-    num_html = f"<div style='width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#0b3b1b;color:#fff;font-weight:800;'>{show_number}</div>" if show_number is not None else ""
+    # >>> Ajuste: número sempre inteiro e maior no quadrado
+    if show_number is not None:
+        num_txt = _as_int_text(show_number)
+        num_html = (
+            f"<div style='width:56px;height:56px;border-radius:10px;display:flex;align-items:center;justify-content:center;"
+            f"background:#0b3b1b;color:#fff;font-weight:900;font-size:32px;'>{html.escape(num_txt)}</div>"
+        )
+    else:
+        num_html = ""
+
     avatar = f"<img src='{html.escape(img or 'https://via.placeholder.com/48?text=NA', True)}' style='width:48px;height:48px;border-radius:8px;object-fit:cover;'>"
     chip = _corner_chip(event, fight, corner)
 

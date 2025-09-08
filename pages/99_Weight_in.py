@@ -1,33 +1,20 @@
 # ==============================================================================
 # UAEW Operations App — Weigh-in Page
 # ------------------------------------------------------------------------------
-# Versão:        1.0.0
+# Versão:        1.0.1
 # Gerado em:     2025-09-08
 # Autor:         Assistente (GPT)
 #
 # RESUMO
-# - Página "Weigh-in" para controlar a chegada dos atletas (Check in / Check out)
-#   e exibir a ordem (Running Order) por evento.
-# - Cards no mesmo estilo de Blood Test / Photoshoot:
-#     * Chips (evento | FIGHT # | CORNER) coloridos pelo corner (blue/red)
-#     * Sem chip de Passport e sem chip de "último check"
-#     * Atalho de WhatsApp (se houver celular)
-# - Ao clicar "Check in":
-#     * Grava na aba Attendance com:
-#         Task   = "Weigh-in"
-#         Status = "Check in"
-#         Notes  = número sequencial da ordem no EVENTO selecionado
-# - Ao clicar "Check out":
-#     * Grava na aba Attendance com:
-#         Task   = "Weigh-in"
-#         Status = "Check out"
-#         Notes  = "" (vazio)
-# - Cards ficam VERDES para atletas que já têm "Check in" no evento selecionado.
-# - "Running Order" lista (Notes numérico) na ordem ascendente para o evento.
-#
-# Observações:
-# - Escrita na planilha é alinhada ao cabeçalho real (linha 1) para evitar
-#   deslocamentos de coluna, usando apenas estes campos:
+# - Página "Weigh-in" para controlar Check in / Check out e ver Running Order.
+# - Cards no estilo das outras páginas (sem chip de Passport e sem “último check”).
+# - Chips (Event | FIGHT # | CORNER) coloridos pelo corner (blue/red).
+# - Botão único por modo:
+#     * Check in -> grava na Attendance com Notes = ordem sequencial por evento.
+#     * Check out -> grava na Attendance com Notes = "".
+# - Card fica VERDE quando o atleta já tem Check in no evento selecionado.
+# - Running Order lista por Notes (ordem) do evento selecionado.
+# - Escrita na planilha alinha à ordem real do cabeçalho:
 #   ["#", "Event", "Athlete ID", "Fighter", "Task", "Status", "User", "TimeStamp", "Notes"]
 # ==============================================================================
 
@@ -40,11 +27,11 @@ import html
 import unicodedata
 import re
 
-# --- Bootstrap (título/side bar/autenticação unificada) ---
+# --- Bootstrap ---
 bootstrap_page("Weigh-in")
 st.title("Weigh-in")
 
-# --- Projeto: helpers de planilha ---
+# --- Helpers de planilha ---
 from utils import get_gspread_client, connect_gsheet_tab
 
 
@@ -52,19 +39,15 @@ from utils import get_gspread_client, connect_gsheet_tab
 # CONFIG / CONSTANTES
 # ==============================================================================
 class Config:
-    # Planilhas / Abas
     MAIN_SHEET_NAME = "UAEW_App"
     ATHLETES_TAB_NAME = "df"
     ATTENDANCE_TAB_NAME = "Attendance"
 
-    # Tarefa fixa desta página
-    TASK_NAME = "Weigh-in"         # (exatamente assim)
+    TASK_NAME = "Weigh-in"          # nome exato da tarefa
+    STATUS_CHECKIN = "Check in"     # com espaço
+    STATUS_CHECKOUT = "Check out"   # com espaço
 
-    # Status usados
-    STATUS_CHECKIN = "Check in"    # com espaço, capitalização normal
-    STATUS_CHECKOUT = "Check out"  # com espaço, capitalização normal
-
-    # Colunas do DF de atletas (snake_case)
+    # df (athletes)
     COL_ID = "id"
     COL_NAME = "name"
     COL_EVENT = "event"
@@ -74,10 +57,9 @@ class Config:
     COL_MOBILE = "mobile"
     COL_FIGHT_NUMBER = "fight_number"
     COL_CORNER = "corner"
-
     DEFAULT_EVENT_PLACEHOLDER = "Z"
 
-    # Colunas da aba Attendance (exatamente como estão)
+    # Attendance (nomes exatos)
     ATT_COL_ROWID = "#"
     ATT_COL_EVENT = "Event"
     ATT_COL_ATHLETE_ID = "Athlete ID"
@@ -85,22 +67,21 @@ class Config:
     ATT_COL_TASK = "Task"
     ATT_COL_STATUS = "Status"
     ATT_COL_USER = "User"
-    ATT_COL_TIMESTAMP_ALT = "TimeStamp"   # onde gravamos a data/hora
+    ATT_COL_TIMESTAMP_ALT = "TimeStamp"
     ATT_COL_NOTES = "Notes"
 
-    # Cores e estilo
+    # UI
     CARD_BG_DEFAULT = "#1e1e1e"
-    CARD_BG_CHECKED = "#145A32"  # verde escuro quando já tem Check in
+    CARD_BG_CHECKED = "#145A32"  # verde escuro
     CORNER_COLOR = {"red": "#d9534f", "blue": "#428bca"}
 
 
 # ==============================================================================
-# HELPERS (strings, normalização, etc.)
+# HELPERS
 # ==============================================================================
 _INVALID_STRS = {"", "none", "None", "null", "NULL", "nan", "NaN", "<NA>"}
 
 def clean_and_normalize(text: str) -> str:
-    """Lowercase, sem acentos, e espaços colapsados."""
     if not isinstance(text, str):
         return ""
     text = text.strip().lower()
@@ -114,20 +95,15 @@ def clean_and_normalize(text: str) -> str:
 # ==============================================================================
 @st.cache_data(ttl=600)
 def load_athletes() -> pd.DataFrame:
-    """
-    Lê a aba 'df', filtra '1 - Fighter' ativos e normaliza colunas usadas.
-    """
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATHLETES_TAB_NAME)
         df = pd.DataFrame(ws.get_all_records())
         if df.empty:
             return pd.DataFrame()
-
-        # normaliza nomes das colunas
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
 
-        # checks básicos
+        # validações
         if Config.COL_ROLE not in df.columns or Config.COL_INACTIVE not in df.columns:
             st.error("Columns 'ROLE'/'INACTIVE' not found in athletes sheet.", icon="🚨")
             return pd.DataFrame()
@@ -148,7 +124,7 @@ def load_athletes() -> pd.DataFrame:
         # apenas lutadores ativos
         df = df[(df[Config.COL_ROLE] == "1 - Fighter") & (df[Config.COL_INACTIVE] == False)].copy()
 
-        # garante campos usados
+        # garante colunas
         for c in [Config.COL_EVENT, Config.COL_IMAGE, Config.COL_MOBILE, Config.COL_FIGHT_NUMBER, Config.COL_CORNER]:
             if c not in df.columns:
                 df[c] = ""
@@ -164,9 +140,6 @@ def load_athletes() -> pd.DataFrame:
 
 @st.cache_data(ttl=180)
 def load_attendance() -> pd.DataFrame:
-    """
-    Lê a aba 'Attendance'. Não infere schema — usa exatamente as colunas existentes.
-    """
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATTENDANCE_TAB_NAME)
@@ -182,9 +155,9 @@ def load_attendance() -> pd.DataFrame:
 def append_attendance_row(event: str, athlete_id: str, fighter: str,
                           status: str, notes: str | int = "") -> bool:
     """
-    Faz append de UMA linha na aba Attendance alinhando à ordem real do cabeçalho.
-    Campos usados:
-      "#", "Event", "Athlete ID", "Fighter", "Task", "Status", "User", "TimeStamp", "Notes"
+    Append de UMA linha na aba Attendance alinhando à ordem real do cabeçalho.
+      Campos: "#", "Event", "Athlete ID", "Fighter",
+              "Task", "Status", "User", "TimeStamp", "Notes"
     """
     try:
         gc = get_gspread_client()
@@ -193,7 +166,6 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
         # 1) Cabeçalho real
         header = ws.row_values(1)
         if not header:
-            # cria um header mínimo se não houver
             header = [
                 Config.ATT_COL_ROWID, Config.ATT_COL_EVENT, Config.ATT_COL_ATHLETE_ID, Config.ATT_COL_FIGHTER,
                 Config.ATT_COL_TASK, Config.ATT_COL_STATUS, Config.ATT_COL_USER, Config.ATT_COL_TIMESTAMP_ALT,
@@ -209,7 +181,6 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
             if len(col_vals) <= 1:
                 next_num = "1"
             else:
-                # pega o último valor não vazio na coluna
                 last_val = ""
                 for v in reversed(col_vals[1:]):
                     vv = str(v).strip()
@@ -218,10 +189,9 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
                         break
                 next_num = str(int(last_val) + 1) if last_val.isdigit() else str(len(col_vals))
 
-        # 3) Monta dict com os nomes do header
+        # 3) Monta dict
         ts_now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get("current_user_name") or st.session_state.get("current_user_id") or "System"
-
         row_map = {
             Config.ATT_COL_ROWID: next_num,
             Config.ATT_COL_EVENT: event,
@@ -234,11 +204,11 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
             Config.ATT_COL_NOTES: str(notes) if notes is not None else ""
         }
 
-        # 4) Alinha na ordem do header real
+        # 4) Alinha na ordem do header
         row_to_append = [row_map.get(col, "") for col in header]
         ws.append_row(row_to_append, value_input_option="USER_ENTERED")
 
-        # limpa cache p/ refletir na tela
+        # 5) Limpa cache
         load_attendance.clear()
         return True
     except Exception as e:
@@ -247,10 +217,9 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
 
 
 # ==============================================================================
-# LÓGICA DE NEGÓCIO (ordem, check-in existentes, etc.)
+# Lógica: status e ordem
 # ==============================================================================
 def get_checked_in_id_set(df_att: pd.DataFrame, event: str) -> set[str]:
-    """Retorna o set de Athlete ID que já tem 'Weigh-in'/'Check in' no evento."""
     if df_att.empty:
         return set()
     df = df_att.copy()
@@ -263,10 +232,6 @@ def get_checked_in_id_set(df_att: pd.DataFrame, event: str) -> set[str]:
     )
 
 def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
-    """
-    Calcula o próximo número de ordem (Notes) para Check in no evento informado.
-    Pega o maior Notes numérico existente (+1). Se não houver, retorna 1.
-    """
     if df_att.empty:
         return 1
     df = df_att[
@@ -276,13 +241,11 @@ def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
     ].copy()
     if df.empty:
         return 1
-    # Notes pode vir string — tentamos converter
     notes_num = pd.to_numeric(df.get("Notes", pd.Series([], dtype=str)), errors="coerce")
     max_num = int(notes_num.dropna().max()) if notes_num.notna().any() else 0
     return max_num + 1 if max_num > 0 else (len(df) + 1)
 
 def get_running_order(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
-    """Retorna DataFrame com (Order, Fighter, Athlete ID, Time) para o evento."""
     if df_att.empty:
         return pd.DataFrame(columns=["Order", "Fighter", "Athlete ID", "Time"])
     df = df_att[
@@ -292,16 +255,15 @@ def get_running_order(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
     ].copy()
     if df.empty:
         return pd.DataFrame(columns=["Order", "Fighter", "Athlete ID", "Time"])
-    df["Order"] = pd.to_numeric(df["Notes"], errors="coerce")
+    df["Order"] = pd.to_numeric(df.get("Notes"), errors="coerce")
     df["Time"] = df.get("TimeStamp", "")
     df = df.dropna(subset=["Order"])
     return df[["Order", "Fighter", "Athlete ID", "Time"]].sort_values(by="Order", ascending=True).reset_index(drop=True)
 
 
 # ==============================================================================
-# UI (estilo dos cards e render)
+# UI — estilos e render dos cards
 # ==============================================================================
-# CSS (mesmo estilo base dos outros cards; cor do fundo muda se já fez check in)
 st.markdown("""
 <style>
   .card-container {
@@ -348,19 +310,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
 def _corner_color(corner: str) -> str:
     return Config.CORNER_COLOR.get((corner or "").strip().lower(), "#4A4A4A")
 
-
 def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
-    """
-    Renderiza um card de atleta com:
-    - chip info (Event | FIGHT # | CORNER) com cor do corner
-    - WhatsApp (se existir)
-    - 1 botão de ação (Check in / Check out)
-    - fundo verde se highlight=True (já fez Check in)
-    """
     aid = str(row.get(Config.COL_ID, ""))
     name = str(row.get(Config.COL_NAME, ""))
     event = str(row.get(Config.COL_EVENT, ""))
@@ -369,7 +322,6 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
     img = str(row.get(Config.COL_IMAGE, "https://via.placeholder.com/60?text=NA"))
     mobile = str(row.get(Config.COL_MOBILE, "")).strip()
 
-    # chip com cor do corner
     chip_color = _corner_color(corner)
     bits = []
     if event and event != Config.DEFAULT_EVENT_PLACEHOLDER:
@@ -378,11 +330,8 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
         bits.append(f"FIGHT {html.escape(fight_n)}")
     if corner:
         bits.append(html.escape(corner.upper()))
-    chip_html = ""
-    if bits:
-        chip_html = f"<span class='badge' style='background:{chip_color}'>{' | '.join(bits)}</span>"
+    chip_html = f"<span class='badge' style='background:{chip_color}'>{' | '.join(bits)}</span>" if bits else ""
 
-    # WhatsApp (se tiver celular)
     wa_html = ""
     if mobile:
         phone_digits = "".join(filter(str.isdigit, mobile))
@@ -391,9 +340,7 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
         if phone_digits:
             wa_html = f"<a class='wa-chip' href='https://wa.me/{html.escape(phone_digits, True)}' target='_blank'>WhatsApp</a>"
 
-    # Fundo do card
     bg = Config.CARD_BG_CHECKED if highlight else Config.CARD_BG_DEFAULT
-
     card_html = f"""
     <div class='card-container' style='background-color:{bg};'>
       <img src='{html.escape(img, True)}' class='card-img'>
@@ -404,7 +351,6 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
       </div>
     </div>
     """
-    # layout: card à esquerda, botão à direita (simetria com outras páginas)
     left, right = st.columns([2.5, 1])
     with left:
         st.markdown(card_html, unsafe_allow_html=True)
@@ -415,62 +361,60 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
 
 
 # ==============================================================================
-# EXPANDER (filtros + modo)
+# EXPANDER (filtros + modo) — sem atribuir valores a session_state dentro do widget
 # ==============================================================================
-# Estado inicial dos widgets
+# Defaults
+st.session_state.setdefault("weighin_mode", "Check in")
 st.session_state.setdefault("weighin_event", "All Events")
 st.session_state.setdefault("weighin_search", "")
-st.session_state.setdefault("weighin_mode", "Check in")  # Check in | Check out | Running Order
 
 with st.expander("Settings", expanded=True):
-    # Segmentado: 3 opções
-    st.session_state.weighin_mode = st.segmented_control(
+    st.segmented_control(
         "Mode:",
         options=["Check in", "Check out", "Running Order"],
         key="weighin_mode",
     )
 
-    # Carrega dados base para popular os filtros
-    df_ath = load_athletes()
+    df_ath_all = load_athletes()
     events = ["All Events"]
-    if not df_ath.empty:
-        events += sorted([e for e in df_ath[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER])
+    if not df_ath_all.empty:
+        events += sorted([e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER])
 
-    st.session_state.weighin_event = st.selectbox(
+    # NÃO atribua o retorno do widget à session_state; passe key e pronto.
+    st.selectbox(
         "Event:",
         options=events,
-        index=events.index(st.session_state.weighin_event) if st.session_state.weighin_event in events else 0,
+        index=events.index(st.session_state["weighin_event"]) if st.session_state["weighin_event"] in events else 0,
         key="weighin_event"
     )
 
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
+# Lê os valores (agora, sim):
+mode = st.session_state["weighin_mode"]
+sel_event = st.session_state["weighin_event"]
+search_q = (st.session_state["weighin_search"] or "").strip().lower()
+
 
 # ==============================================================================
 # APLICA FILTROS E RENDERIZA
 # ==============================================================================
-df_ath = load_athletes()
+df_ath = df_ath_all.copy()
 if df_ath.empty:
     st.info("No athletes found.")
     st.stop()
 
-# Filtro de evento
-sel_event = st.session_state.weighin_event
 if sel_event != "All Events":
     df_ath = df_ath[df_ath[Config.COL_EVENT] == sel_event]
 
-# Busca
-q = (st.session_state.weighin_search or "").strip().lower()
-if q:
+if search_q:
     df_ath = df_ath[
-        df_ath[Config.COL_NAME].str.lower().str.contains(q, na=False) |
-        df_ath[Config.COL_ID].astype(str).str.lower().str.contains(q, na=False)
+        df_ath[Config.COL_NAME].str.lower().str.contains(search_q, na=False) |
+        df_ath[Config.COL_ID].astype(str).str.lower().str.contains(search_q, na=False)
     ]
 
-# Ordenação padrão por nome; se quiser Fight Order, é fácil de incluir
 df_ath = df_ath.sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
 
-# Attendance para status/ordem
 df_att = load_attendance()
 checked_in_ids = set()
 if sel_event != "All Events":
@@ -478,10 +422,9 @@ if sel_event != "All Events":
 
 
 # ==============================================================================
-# HANDLERS (ações de clique)
+# HANDLERS
 # ==============================================================================
 def on_check_in(aid: str, name: str, event: str):
-    """Grava Weigh-in / Check in com Notes = ordem sequencial do evento."""
     if not event or event == Config.DEFAULT_EVENT_PLACEHOLDER:
         st.warning("Select a valid event to check in.", icon="⚠️")
         return
@@ -495,11 +438,10 @@ def on_check_in(aid: str, name: str, event: str):
     )
     if ok:
         st.toast(f"Check in registrado (ordem {order_num}).", icon="✅")
-        # Atualiza estado local para pintar o card de verde
+        # pinta o card de verde localmente
         checked_in_ids.add(str(aid))
 
 def on_check_out(aid: str, name: str, event: str):
-    """Grava Weigh-in / Check out (Notes vazio)."""
     if not event or event == Config.DEFAULT_EVENT_PLACEHOLDER:
         st.warning("Select a valid event to check out.", icon="⚠️")
         return
@@ -517,8 +459,6 @@ def on_check_out(aid: str, name: str, event: str):
 # ==============================================================================
 # RENDER POR MODO
 # ==============================================================================
-mode = st.session_state.weighin_mode
-
 if mode == "Running Order":
     if sel_event == "All Events":
         st.info("Select an Event to see the Running Order.")
@@ -529,7 +469,6 @@ if mode == "Running Order":
         else:
             st.dataframe(df_order, use_container_width=True, hide_index=True)
 else:
-    # Render cards (com fundo verde se já fez Check in)
     for _, r in df_ath.iterrows():
         already_in = str(r.get(Config.COL_ID, "")) in checked_in_ids
         if mode == "Check in":

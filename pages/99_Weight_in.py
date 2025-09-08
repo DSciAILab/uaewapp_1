@@ -1,16 +1,17 @@
 # ==============================================================================
 # UAEW Operations App — Weigh-in Page
 # ------------------------------------------------------------------------------
-# Versão:        1.5.0
+# Versão:        1.6.0
 # Atualizado:    2025-09-08
 #
-# NOVIDADES 1.5.0
-# - Running Order em 3 colunas (Checked in | Relógio | Checked out).
-# - Relógio centralizado (auto refresh a cada 1s).
-# - Título centralizado e maior.
-# - Expander "Settings" movido para o rodapé e inicia fechado.
-# - Mantidas as regras: evento via segmented só no Check in; outros modos herdam.
-# - Após Check in / Check out: limpa cache de Attendance + st.rerun().
+# 1.6.0
+# - Sliders na sidebar para tamanhos: Título da página, Relógio (HH:MM) e
+#   títulos das colunas (centralizados).
+# - Running Order: 3 colunas (Checked in | Clock | Checked out). Relógio HH:MM.
+# - Settings no rodapé (fechado por padrão).
+# - (Opcional) Modo "Local buffer (batch save)" para operar sem escrever
+#   na planilha a cada clique; UI reflete o buffer; botões Save all/Discard.
+# - Em qualquer clique (in/out): st.rerun().
 # ==============================================================================
 
 from components.layout import bootstrap_page
@@ -22,17 +23,18 @@ import html
 import re
 import unicodedata
 
-# --- Bootstrap ---
+# Bootstrap
 bootstrap_page("Weigh-in")
 
-# --- Optional auto-refresh (for clock) ---
+# Auto-refresh opcional p/ o relógio (se lib existir)
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    st_autorefresh = None  # graceful fallback
+    st_autorefresh = None
 
-# --- Helpers de planilha ---
+# Helpers de planilha
 from utils import get_gspread_client, connect_gsheet_tab
+
 
 # ==============================================================================
 # CONFIG / CONSTANTES
@@ -58,7 +60,7 @@ class Config:
     COL_CORNER = "corner"
     DEFAULT_EVENT_PLACEHOLDER = "Z"
 
-    # Attendance (nomes exatos na aba)
+    # Attendance (nomes exatos)
     ATT_COL_ROWID = "#"
     ATT_COL_EVENT = "Event"
     ATT_COL_ATHLETE_ID = "Athlete ID"
@@ -69,7 +71,7 @@ class Config:
     ATT_COL_TIMESTAMP_ALT = "TimeStamp"
     ATT_COL_NOTES = "Notes"
 
-    # UI cores
+    # Cores
     CARD_BG_DEFAULT    = "#1e1e1e"
     CARD_BG_CHECKED    = "#145A32"  # verde (checked in)
     CARD_BG_CHECKEDOUT = "#555555"  # cinza (checked out)
@@ -97,11 +99,13 @@ def _col(df: pd.DataFrame, name: str) -> pd.Series:
     return pd.Series([""] * len(df), index=df.index, dtype=object)
 
 def _event_number_key(ev: str) -> tuple:
-    """Ordena por MENOR número dentro do nome do evento (UAEW62 < UAEW63)."""
     s = str(ev or "")
     m = re.search(r"(\d+)", s)
     num = int(m.group(1)) if m else 999999
     return (num, s.upper())
+
+def _corner_color(corner: str) -> str:
+    return Config.CORNER_COLOR.get((corner or "").strip().lower(), "#4A4A4A")
 
 
 # ==============================================================================
@@ -117,7 +121,7 @@ def load_athletes() -> pd.DataFrame:
             return pd.DataFrame()
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
 
-        # validações
+        # checks
         if Config.COL_ROLE not in df.columns or Config.COL_INACTIVE not in df.columns:
             st.error("Columns 'ROLE'/'INACTIVE' not found in athletes sheet.", icon="🚨")
             return pd.DataFrame()
@@ -138,7 +142,6 @@ def load_athletes() -> pd.DataFrame:
         # apenas lutadores ativos
         df = df[(df[Config.COL_ROLE] == "1 - Fighter") & (df[Config.COL_INACTIVE] == False)].copy()
 
-        # garante colunas principais
         for c in [Config.COL_EVENT, Config.COL_IMAGE, Config.COL_MOBILE, Config.COL_FIGHT_NUMBER, Config.COL_CORNER]:
             if c not in df.columns:
                 df[c] = ""
@@ -168,15 +171,12 @@ def load_attendance() -> pd.DataFrame:
 # ==============================================================================
 def append_attendance_row(event: str, athlete_id: str, fighter: str,
                           status: str, notes: str | int = "") -> bool:
-    """
-    Append de UMA linha na aba Attendance alinhando à ordem real do cabeçalho.
-    Campos usados: "#", "Event", "Athlete ID", "Fighter", "Task", "Status", "User", "TimeStamp", "Notes"
-    """
+    """Append de UMA linha na aba Attendance alinhando ao header real."""
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATTENDANCE_TAB_NAME)
 
-        # 1) Cabeçalho real
+        # header real
         header = ws.row_values(1)
         if not header:
             header = [
@@ -186,7 +186,7 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
             ]
             ws.append_row(header, value_input_option="USER_ENTERED")
 
-        # 2) Próximo "#"
+        # próximo "#"
         next_num = ""
         if Config.ATT_COL_ROWID in header:
             col_idx = header.index(Config.ATT_COL_ROWID) + 1
@@ -202,7 +202,7 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
                         break
                 next_num = str(int(last_val) + 1) if last_val.isdigit() else str(len(col_vals))
 
-        # 3) Monta dict
+        # dados
         ts_now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         user_ident = st.session_state.get("current_user_name") or st.session_state.get("current_user_id") or "System"
         row_map = {
@@ -217,10 +217,7 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
             Config.ATT_COL_NOTES: str(notes) if notes is not None else ""
         }
 
-        # 4) Append alinhado ao header
         ws.append_row([row_map.get(col, "") for col in header], value_input_option="USER_ENTERED")
-
-        # 5) Limpa cache (Attendance) — conteúdo refletido ao st.rerun()
         load_attendance.clear()
         return True
     except Exception as e:
@@ -229,7 +226,7 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
 
 
 # ==============================================================================
-# Lógica: status/ordem
+# Lógica de status/ordem (Sheet)
 # ==============================================================================
 def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
     if df_att is None or df_att.empty:
@@ -238,7 +235,6 @@ def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
     task = _col(df_att, "Task").astype(str).str.lower()
     status = _col(df_att, "Status").astype(str).str.lower()
     notes = _col(df_att, "Notes")
-
     mask = (ev == str(event)) & (task == Config.TASK_NAME.lower()) & (status == Config.STATUS_CHECKIN.lower())
     df = df_att[mask].copy()
     if df.empty:
@@ -247,7 +243,6 @@ def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
     return int(notes_num.max()) + 1 if notes_num.notna().any() else len(df) + 1
 
 def latest_status_map(df_att: pd.DataFrame, event: str) -> dict[str, str]:
-    """{athlete_id(str) -> ultimo_status_lower} para o EVENTO (apenas tarefa Weigh-in)."""
     if df_att is None or df_att.empty:
         return {}
     ev = _col(df_att, "Event").astype(str)
@@ -298,7 +293,7 @@ def last_checkin_order_by_id(df_att: pd.DataFrame, event: str) -> dict[str, int]
 
 
 # ==============================================================================
-# UI — estilos e render dos cards
+# UI — estilos
 # ==============================================================================
 st.markdown("""
 <style>
@@ -313,15 +308,149 @@ st.markdown("""
   .fighter-name { font-size: 1.15rem; font-weight: 800; margin: 0; color: white; }
   .badge { color:#fff; padding:3px 10px; border-radius:8px; font-size:.8rem; font-weight:700; display:inline-flex; }
   .clock-wrap { min-height: 60vh; display:flex; align-items:center; justify-content:center; }
-  .clock { font-size: 7rem; font-weight: 900; color:#eaeaea; line-height: 1; }
 </style>
 """, unsafe_allow_html=True)
 
-def _corner_color(corner: str) -> str:
-    return Config.CORNER_COLOR.get((corner or "").strip().lower(), "#4A4A4A")
 
+# ==============================================================================
+# ESTADO / SIDEBAR (sliders)
+# ==============================================================================
+st.session_state.setdefault("weighin_mode", "Check in")
+st.session_state.setdefault("weighin_event", None)
+st.session_state.setdefault("weighin_search", "")
+st.session_state.setdefault("weighin_buffer", [])         # lista de dicts pendentes
+st.session_state.setdefault("weighin_local_mode", False)  # batch save
+
+with st.sidebar:
+    st.header("Display")
+    title_px = st.slider("Title size (px)", 28, 96, 48, 1, key="weighin_title_px")
+    clock_px = st.slider("Clock size (px)", 40, 200, 110, 1, key="weighin_clock_px")
+    coltitle_px = st.slider("Column title size (px)", 14, 48, 22, 1, key="weighin_coltitle_px")
+
+# === Leitura bases ===
+df_ath_all = load_athletes()
+
+# Eventos válidos
+valid_events = []
+if not df_ath_all.empty:
+    valid_events = sorted(
+        [e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER],
+        key=_event_number_key
+    )
+
+if st.session_state["weighin_event"] is None and valid_events:
+    st.session_state["weighin_event"] = valid_events[0]
+
+sel_event = st.session_state["weighin_event"]
+
+# === TÍTULO (tamanho via slider) ===
+title_text = f"{sel_event} | Weigh-in" if sel_event else "Weigh-in"
+st.markdown(
+    f"<h1 style='text-align:center; font-size:{title_px}px; margin-top:.25rem;'>{html.escape(title_text)}</h1>",
+    unsafe_allow_html=True
+)
+
+if not sel_event:
+    st.info("No valid events to display.")
+    st.stop()
+
+df_ath = df_ath_all[df_ath_all[Config.COL_EVENT] == sel_event].copy().sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
+df_att = load_attendance()
+
+# ==============================================================================
+# LÓGICA DE OVERLAY LOCAL (buffer) — para operar sem gravar a cada clique
+# ==============================================================================
+def _buffer_for_event(event: str):
+    return [x for x in st.session_state["weighin_buffer"] if x.get("Event") == event]
+
+def _apply_buffer_overlays(event: str, last_status: dict[str, str], order_by_id: dict[str, int]) -> tuple[dict[str,str], dict[str,int]]:
+    """Aplica pendências do buffer no mapa de status e nas ordens."""
+    ls = dict(last_status)
+    ob = dict(order_by_id)
+    for row in _buffer_for_event(event):
+        aid = str(row.get("Athlete ID", ""))
+        status = str(row.get("Status","")).strip().lower()
+        ls[aid] = status
+        if status == Config.STATUS_CHECKIN.lower():
+            n = row.get("Notes", "")
+            try:
+                nn = int(n)
+                ob[aid] = nn
+            except Exception:
+                pass
+        elif status == Config.STATUS_CHECKOUT.lower():
+            # no running order number for checked out
+            pass
+    return ls, ob
+
+def _next_checkin_order_overlay(base_df_att: pd.DataFrame, event: str) -> int:
+    """Próxima ordem considerando também o buffer local."""
+    base = next_checkin_order(base_df_att, event)
+    extra = sum(1 for r in _buffer_for_event(event) if str(r.get("Status","")).strip().lower() == Config.STATUS_CHECKIN.lower())
+    return base + extra
+
+# mapas nativos da planilha
+last_status_sheet = latest_status_map(df_att, sel_event)
+order_by_id_sheet = last_checkin_order_by_id(df_att, sel_event)
+
+# aplica overlay local se ativado
+use_local = st.session_state["weighin_local_mode"]
+if use_local:
+    last_status, order_by_id = _apply_buffer_overlays(sel_event, last_status_sheet, order_by_id_sheet)
+else:
+    last_status, order_by_id = last_status_sheet, order_by_id_sheet
+
+checked_in_now  = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKIN.lower()}
+checked_out_now = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKOUT.lower()}
+
+# ==============================================================================
+# HANDLERS (respeitam o modo local/planilha)
+# ==============================================================================
+def _queue_buffer(event, athlete_id, fighter, status, notes=""):
+    st.session_state["weighin_buffer"].append({
+        "Event": event,
+        "Athlete ID": str(athlete_id),
+        "Fighter": fighter,
+        "Task": Config.TASK_NAME,
+        "Status": status,
+        "User": st.session_state.get("current_user_name") or st.session_state.get("current_user_id") or "System",
+        "TimeStamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "Notes": notes,
+    })
+
+def on_check_in(aid: str, name: str, event: str):
+    if use_local:
+        order_num = _next_checkin_order_overlay(df_att, event)
+        _queue_buffer(event, aid, name, Config.STATUS_CHECKIN, order_num)
+        st.toast(f"Check in (local) — ordem {order_num}.", icon="✅")
+        st.rerun()
+    else:
+        order_num = next_checkin_order(load_attendance(), event)
+        if append_attendance_row(event=event, athlete_id=aid, fighter=name,
+                                 status=Config.STATUS_CHECKIN, notes=order_num):
+            st.toast(f"Check in registrado (ordem {order_num}).", icon="✅")
+            st.rerun()
+
+def on_check_out(aid: str, name: str, event: str):
+    # precisa estar IN (considerando overlay local)
+    if aid not in checked_in_now:
+        st.warning("Only athletes currently checked in can be checked out.", icon="⚠️")
+        return
+    if use_local:
+        _queue_buffer(event, aid, name, Config.STATUS_CHECKOUT, "")
+        st.toast("Check out (local).", icon="✅")
+        st.rerun()
+    else:
+        if append_attendance_row(event=event, athlete_id=aid, fighter=name,
+                                 status=Config.STATUS_CHECKOUT, notes=""):
+            st.toast("Check out registrado.", icon="✅")
+            st.rerun()
+
+
+# ==============================================================================
+# RENDER HELPERS
+# ==============================================================================
 def render_card_action(row: pd.Series, btn_label: str, on_click, bg_color: str):
-    """Card com botão (usado em Check in / Check out)."""
     aid = str(row.get(Config.COL_ID, ""))
     name = str(row.get(Config.COL_NAME, ""))
     event = str(row.get(Config.COL_EVENT, ""))
@@ -357,7 +486,6 @@ def render_card_action(row: pd.Series, btn_label: str, on_click, bg_color: str):
     st.divider()
 
 def render_board_card(row: pd.Series, order_num: int | None, bg_color: str):
-    """Card do Running Order com número à esquerda (sem botões)."""
     aid = str(row.get(Config.COL_ID, ""))
     name = str(row.get(Config.COL_NAME, ""))
     event = str(row.get(Config.COL_EVENT, ""))
@@ -386,97 +514,32 @@ def render_board_card(row: pd.Series, order_num: int | None, bg_color: str):
         unsafe_allow_html=True
     )
 
-
-# ==============================================================================
-# ESTADO INICIAL
-# ==============================================================================
-st.session_state.setdefault("weighin_mode", "Check in")
-st.session_state.setdefault("weighin_event", None)     # definido pelo segmented do Check in
-st.session_state.setdefault("weighin_search", "")
-
-# === Leitura bases ===
-df_ath_all = load_athletes()
-
-# Eventos válidos
-valid_events = []
-if not df_ath_all.empty:
-    valid_events = sorted(
-        [e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER],
-        key=_event_number_key
-    )
-
-# Define evento default (menor número)
-if st.session_state["weighin_event"] is None and valid_events:
-    st.session_state["weighin_event"] = valid_events[0]
-
-sel_event = st.session_state["weighin_event"]
-
-# === TÍTULO centralizado ===
-title_text = f"{sel_event} | Weigh-in" if sel_event else "Weigh-in"
-st.markdown(f"<h1 style='text-align:center; font-size: 3rem; margin-top: .25rem;'>{html.escape(title_text)}</h1>", unsafe_allow_html=True)
-
-# === Base do evento ===
-if not sel_event:
-    st.info("No valid events to display.")
-    st.stop()
-
-df_ath = df_ath_all[df_ath_all[Config.COL_EVENT] == sel_event].copy().sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
-df_att = load_attendance()
-
-# Mapas do evento
-last_status = latest_status_map(df_att, sel_event)
-order_by_id = last_checkin_order_by_id(df_att, sel_event)
-checked_in_now  = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKIN.lower()}
-checked_out_now = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKOUT.lower()}
-
-# ==============================================================================
-# HANDLERS
-# ==============================================================================
-def on_check_in(aid: str, name: str, event: str):
-    order_num = next_checkin_order(load_attendance(), event)
-    if append_attendance_row(event=event, athlete_id=aid, fighter=name,
-                             status=Config.STATUS_CHECKIN, notes=order_num):
-        st.toast(f"Check in registrado (ordem {order_num}).", icon="✅")
-        st.rerun()
-
-def on_check_out(aid: str, name: str, event: str):
-    if aid not in checked_in_now:
-        st.warning("Only athletes currently checked in can be checked out.", icon="⚠️")
-        return
-    if append_attendance_row(event=event, athlete_id=aid, fighter=name,
-                             status=Config.STATUS_CHECKOUT, notes=""):
-        st.toast("Check out registrado.", icon="✅")
-        st.rerun()
+def col_title(text: str, size_px: int):
+    st.markdown(f"<div style='text-align:center; font-size:{size_px}px; font-weight:800; margin:.25rem 0 .75rem 0;'>{html.escape(text)}</div>", unsafe_allow_html=True)
 
 
 # ==============================================================================
 # CONTEÚDO (por modo)
-#  - NOTA: o Settings será renderizado no RODAPÉ, então o conteúdo usa o estado atual.
 # ==============================================================================
 mode = st.session_state["weighin_mode"]
 
 if mode == "Running Order":
-    # Atualiza relógio a cada 1s (se plugin disponível)
     if st_autorefresh:
         st_autorefresh(interval=1000, key="weighin_clock_tick")
 
-    # Conjuntos
-    left_ids  = [aid for aid in checked_in_now]    # em fila
-    right_ids = [aid for aid in checked_out_now]   # já saiu
+    left_ids  = [aid for aid in checked_in_now]
+    right_ids = [aid for aid in checked_out_now]
 
-    # Dataframes correspondentes
     left_df  = df_ath[df_ath[Config.COL_ID].astype(str).isin(left_ids)].copy()
     right_df = df_ath[df_ath[Config.COL_ID].astype(str).isin(right_ids)].copy()
 
-    # Ordena a esquerda pela ordem (Notes)
     left_df["__ord__"] = left_df[Config.COL_ID].astype(str).map(order_by_id).fillna(1e9).astype(float)
     left_df = left_df.sort_values(by="__ord__", ascending=True)
 
-    # 3 colunas: esquerda cards | meio relógio | direita cards
-    col_left, col_mid, col_right = st.columns([1, 0.65, 1])
+    cL, cM, cR = st.columns([1, 0.65, 1])
 
-    with col_left:
-        st.subheader("Checked in")
+    with cL:
+        col_title("Checked in", st.session_state["weighin_coltitle_px"])
         if left_df.empty:
             st.info("No check-ins yet.")
         else:
@@ -484,12 +547,15 @@ if mode == "Running Order":
                 order_num = order_by_id.get(str(r.get(Config.COL_ID, "")))
                 render_board_card(r, order_num, bg_color=Config.CARD_BG_CHECKED)
 
-    with col_mid:
-        now = datetime.now().strftime("%H:%M:%S")
-        st.markdown(f"<div class='clock-wrap'><div class='clock'>{now}</div></div>", unsafe_allow_html=True)
+    with cM:
+        now = datetime.now().strftime("%H:%M")
+        st.markdown(
+            f"<div class='clock-wrap'><div style='font-size:{st.session_state['weighin_clock_px']}px; font-weight:900; color:#eaeaea; line-height:1;'>{now}</div></div>",
+            unsafe_allow_html=True
+        )
 
-    with col_right:
-        st.subheader("Checked out")
+    with cR:
+        col_title("Checked out", st.session_state["weighin_coltitle_px"])
         if right_df.empty:
             st.info("No check-outs yet.")
         else:
@@ -497,12 +563,9 @@ if mode == "Running Order":
                 render_board_card(r, order_num=None, bg_color=Config.CARD_BG_CHECKEDOUT)
 
 elif mode == "Check out":
-    # Apenas quem está IN
-    # Campo de busca (herdado do estado; só mostramos se quiser)
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
     df_view = df_ath[df_ath[Config.COL_ID].astype(str).isin(checked_in_now)].copy()
-
     q = (st.session_state.get("weighin_search","") or "").strip().lower()
     if q:
         df_view = df_view[
@@ -511,19 +574,17 @@ elif mode == "Check out":
         ]
 
     for _, r in df_view.iterrows():
-        bg = Config.CARD_BG_CHECKED
-        render_card_action(r, "Check out", on_check_out, bg_color=bg)
+        render_card_action(r, "Check out", on_check_out, bg_color=Config.CARD_BG_CHECKED)
 
 else:  # Check in
-    # Evento via segmented (sem "All Events"); aqui o usuário pode trocar
-    if not valid_events:
-        st.warning("No valid events found.", icon="⚠️")
-    else:
+    # Evento via segmented (sem "All Events")
+    if valid_events:
         st.session_state["weighin_event"] = st.segmented_control(
             "Event:",
             options=valid_events,
-            key="weighin_event_segmented_header",  # key do widget principal (topo invisível no Running/Out)
+            key="weighin_event_segmented_header",
         )
+        sel_event = st.session_state["weighin_event"]  # refletir possível troca
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
     q = (st.session_state.get("weighin_search","") or "").strip().lower()
@@ -546,8 +607,7 @@ else:  # Check in
 
 
 # ==============================================================================
-# SETTINGS — RODAPÉ (inicia FECHADO)
-#  - Modo sempre aqui; evento só aparece quando modo atual = Check in
+# SETTINGS — RODAPÉ (fechado)
 # ==============================================================================
 with st.expander("Settings", expanded=False):
     st.segmented_control(
@@ -556,12 +616,40 @@ with st.expander("Settings", expanded=False):
         key="weighin_mode",
     )
 
-    # Evento apenas quando estamos em Check in
-    if st.session_state["weighin_mode"] == "Check in":
-        if valid_events:
-            st.session_state["weighin_event"] = st.segmented_control(
-                "Event:",
-                options=valid_events,
-                key="weighin_event_segmented_footer",
-            )
-        st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
+    # Evento apenas em Check in (como combinado)
+    if st.session_state["weighin_mode"] == "Check in" and valid_events:
+        st.session_state["weighin_event"] = st.segmented_control(
+            "Event:",
+            options=valid_events,
+            key="weighin_event_segmented_footer",
+        )
+
+    st.checkbox("Local mode (batch save)", key="weighin_local_mode", help="Acumula alterações em memória e salva depois.")
+    if st.session_state["weighin_local_mode"]:
+        c1, c2, c3 = st.columns([1,1,3])
+        with c1:
+            if st.button("Save all", use_container_width=True):
+                # grava todas as linhas do buffer
+                pending = list(st.session_state["weighin_buffer"])
+                ok = True
+                for row in pending:
+                    if not append_attendance_row(
+                        event=row["Event"],
+                        athlete_id=row["Athlete ID"],
+                        fighter=row["Fighter"],
+                        status=row["Status"],
+                        notes=row["Notes"]
+                    ):
+                        ok = False
+                        break
+                if ok:
+                    st.session_state["weighin_buffer"].clear()
+                    st.success("All buffered rows saved.", icon="✅")
+                    st.rerun()
+        with c2:
+            if st.button("Discard", use_container_width=True):
+                st.session_state["weighin_buffer"].clear()
+                st.info("Buffer discarded.")
+                st.rerun()
+        with c3:
+            st.write(f"Buffered rows: **{len(st.session_state['weighin_buffer'])}**")

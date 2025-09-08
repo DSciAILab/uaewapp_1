@@ -1,14 +1,16 @@
 # ==============================================================================
 # UAEW Operations App — Weigh-in Page
 # ------------------------------------------------------------------------------
-# Versão:        1.4.0
+# Versão:        1.5.0
 # Atualizado:    2025-09-08
 #
-# MUDANÇAS
-# - Evento agora é selecionado via segmented (sem "All Events") e só aparece no modo Check in.
-# - Check out e Running Order herdam o evento selecionado no Check in (sem controle visível).
-# - Após qualquer clique (Check in/Check out): limpa cache de Attendance e st.rerun().
-# - Running Order: 2 colunas — esquerda (Check in, verde, numeração), direita (Check out, cinza).
+# NOVIDADES 1.5.0
+# - Running Order em 3 colunas (Checked in | Relógio | Checked out).
+# - Relógio centralizado (auto refresh a cada 1s).
+# - Título centralizado e maior.
+# - Expander "Settings" movido para o rodapé e inicia fechado.
+# - Mantidas as regras: evento via segmented só no Check in; outros modos herdam.
+# - Após Check in / Check out: limpa cache de Attendance + st.rerun().
 # ==============================================================================
 
 from components.layout import bootstrap_page
@@ -22,6 +24,12 @@ import unicodedata
 
 # --- Bootstrap ---
 bootstrap_page("Weigh-in")
+
+# --- Optional auto-refresh (for clock) ---
+try:
+    from streamlit_autorefresh import st_autorefresh
+except Exception:
+    st_autorefresh = None  # graceful fallback
 
 # --- Helpers de planilha ---
 from utils import get_gspread_client, connect_gsheet_tab
@@ -89,10 +97,7 @@ def _col(df: pd.DataFrame, name: str) -> pd.Series:
     return pd.Series([""] * len(df), index=df.index, dtype=object)
 
 def _event_number_key(ev: str) -> tuple:
-    """
-    Gera chave de ordenação que prioriza o MENOR número dentro do nome do evento.
-    Ex.: 'UAEW63' -> (63, 'UAEW63'); se não tiver número, usa grande (999999).
-    """
+    """Ordena por MENOR número dentro do nome do evento (UAEW62 < UAEW63)."""
     s = str(ev or "")
     m = re.search(r"(\d+)", s)
     num = int(m.group(1)) if m else 999999
@@ -133,7 +138,7 @@ def load_athletes() -> pd.DataFrame:
         # apenas lutadores ativos
         df = df[(df[Config.COL_ROLE] == "1 - Fighter") & (df[Config.COL_INACTIVE] == False)].copy()
 
-        # garante colunas
+        # garante colunas principais
         for c in [Config.COL_EVENT, Config.COL_IMAGE, Config.COL_MOBILE, Config.COL_FIGHT_NUMBER, Config.COL_CORNER]:
             if c not in df.columns:
                 df[c] = ""
@@ -215,7 +220,7 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
         # 4) Append alinhado ao header
         ws.append_row([row_map.get(col, "") for col in header], value_input_option="USER_ENTERED")
 
-        # 5) Limpa cache e força rerender após handlers
+        # 5) Limpa cache (Attendance) — conteúdo refletido ao st.rerun()
         load_attendance.clear()
         return True
     except Exception as e:
@@ -297,7 +302,7 @@ def last_checkin_order_by_id(df_att: pd.DataFrame, event: str) -> dict[str, int]
 # ==============================================================================
 st.markdown("""
 <style>
-  .card-container { padding: 15px; border-radius: 10px; margin-bottom: 10px;
+  .card-container { padding: 15px; border-radius: 12px; margin-bottom: 12px;
       display: grid; grid-template-columns: 64px 64px 1fr; gap: 12px; align-items: center; }
   .order-pill { display:flex; align-items:center; justify-content:center;
       width: 64px; height: 64px; border-radius: 12px; background:#0b2840; color:#fff;
@@ -307,7 +312,8 @@ st.markdown("""
   .info-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .fighter-name { font-size: 1.15rem; font-weight: 800; margin: 0; color: white; }
   .badge { color:#fff; padding:3px 10px; border-radius:8px; font-size:.8rem; font-weight:700; display:inline-flex; }
-  .wa-chip { background:#25D366; color:#fff; padding:3px 10px; border-radius:8px; font-weight:700; text-decoration:none; }
+  .clock-wrap { min-height: 60vh; display:flex; align-items:center; justify-content:center; }
+  .clock { font-size: 7rem; font-weight: 900; color:#eaeaea; line-height: 1; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -322,7 +328,6 @@ def render_card_action(row: pd.Series, btn_label: str, on_click, bg_color: str):
     fight_n = str(row.get(Config.COL_FIGHT_NUMBER, ""))
     corner = str(row.get(Config.COL_CORNER, ""))
     img = str(row.get(Config.COL_IMAGE, "https://via.placeholder.com/64?text=NA"))
-    mobile = str(row.get(Config.COL_MOBILE, "")).strip()
 
     chip_color = _corner_color(corner)
     bits = []
@@ -383,80 +388,39 @@ def render_board_card(row: pd.Series, order_num: int | None, bg_color: str):
 
 
 # ==============================================================================
-# EXPANDER (modo e — agora — evento apenas no Check in)
+# ESTADO INICIAL
 # ==============================================================================
 st.session_state.setdefault("weighin_mode", "Check in")
-st.session_state.setdefault("weighin_event", None)     # None até definirmos pelo segmented
+st.session_state.setdefault("weighin_event", None)     # definido pelo segmented do Check in
 st.session_state.setdefault("weighin_search", "")
 
+# === Leitura bases ===
 df_ath_all = load_athletes()
 
-with st.expander("Settings", expanded=True):
-    st.segmented_control(
-        "Mode:",
-        options=["Check in", "Check out", "Running Order"],
-        key="weighin_mode",
+# Eventos válidos
+valid_events = []
+if not df_ath_all.empty:
+    valid_events = sorted(
+        [e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER],
+        key=_event_number_key
     )
 
-    # Lista de eventos válidos (sem placeholder)
-    valid_events = []
-    if not df_ath_all.empty:
-        valid_events = sorted(
-            [e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER],
-            key=_event_number_key
-        )
+# Define evento default (menor número)
+if st.session_state["weighin_event"] is None and valid_events:
+    st.session_state["weighin_event"] = valid_events[0]
 
-    # Se ainda não temos evento setado, escolhe default:
-    if st.session_state["weighin_event"] is None:
-        if len(valid_events) >= 1:
-            st.session_state["weighin_event"] = valid_events[0]  # menor número por _event_number_key
-
-    # Mostrar controle de EVENTO SOMENTE no modo CHECK IN
-    if st.session_state["weighin_mode"] == "Check in":
-        if not valid_events:
-            st.warning("No valid events found.", icon="⚠️")
-        else:
-            st.session_state["weighin_event"] = st.segmented_control(
-                "Event:",
-                options=valid_events,
-                key="weighin_event_segmented",  # key do widget
-            )
-        # Search no Check in
-        st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
-
-    # Check out: SEM seletor de evento (herda do Check in). Mantém search.
-    elif st.session_state["weighin_mode"] == "Check out":
-        st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
-
-    # Running Order: sem search, sem seletor de evento.
-
-
-# Evento selecionado (sempre definido se houver pelo menos 1)
 sel_event = st.session_state["weighin_event"]
 
-# Título da página
-if sel_event:
-    st.title(f"{sel_event} | Weigh-in")
-else:
-    st.title("Weigh-in")
+# === TÍTULO centralizado ===
+title_text = f"{sel_event} | Weigh-in" if sel_event else "Weigh-in"
+st.markdown(f"<h1 style='text-align:center; font-size: 3rem; margin-top: .25rem;'>{html.escape(title_text)}</h1>", unsafe_allow_html=True)
 
-# Base atletas do EVENTO
-df_ath = df_ath_all.copy()
-if df_ath.empty or not sel_event:
-    st.info("No athletes found.")
+# === Base do evento ===
+if not sel_event:
+    st.info("No valid events to display.")
     st.stop()
 
-df_ath = df_ath[df_ath[Config.COL_EVENT] == sel_event].copy()
-df_ath = df_ath.sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
-
-# Filtro de busca (apenas quando o campo existe)
-search_q = (st.session_state.get("weighin_search", "") or "").strip().lower()
-if search_q and st.session_state["weighin_mode"] != "Running Order":
-    df_ath = df_ath[
-        df_ath[Config.COL_NAME].str.lower().str.contains(search_q, na=False) |
-        df_ath[Config.COL_ID].astype(str).str.lower().str.contains(search_q, na=False)
-    ]
-
+df_ath = df_ath_all[df_ath_all[Config.COL_EVENT] == sel_event].copy().sort_values(by=[Config.COL_NAME]).reset_index(drop=True)
 df_att = load_attendance()
 
 # Mapas do evento
@@ -465,9 +429,8 @@ order_by_id = last_checkin_order_by_id(df_att, sel_event)
 checked_in_now  = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKIN.lower()}
 checked_out_now = {aid for aid, s in last_status.items() if s == Config.STATUS_CHECKOUT.lower()}
 
-
 # ==============================================================================
-# HANDLERS (limpam cache + rerun)
+# HANDLERS
 # ==============================================================================
 def on_check_in(aid: str, name: str, event: str):
     order_num = next_checkin_order(load_attendance(), event)
@@ -477,7 +440,6 @@ def on_check_in(aid: str, name: str, event: str):
         st.rerun()
 
 def on_check_out(aid: str, name: str, event: str):
-    # Só permite check out de quem está com último status = check in
     if aid not in checked_in_now:
         st.warning("Only athletes currently checked in can be checked out.", icon="⚠️")
         return
@@ -488,11 +450,16 @@ def on_check_out(aid: str, name: str, event: str):
 
 
 # ==============================================================================
-# RENDER POR MODO
+# CONTEÚDO (por modo)
+#  - NOTA: o Settings será renderizado no RODAPÉ, então o conteúdo usa o estado atual.
 # ==============================================================================
 mode = st.session_state["weighin_mode"]
 
 if mode == "Running Order":
+    # Atualiza relógio a cada 1s (se plugin disponível)
+    if st_autorefresh:
+        st_autorefresh(interval=1000, key="weighin_clock_tick")
+
     # Conjuntos
     left_ids  = [aid for aid in checked_in_now]    # em fila
     right_ids = [aid for aid in checked_out_now]   # já saiu
@@ -505,7 +472,8 @@ if mode == "Running Order":
     left_df["__ord__"] = left_df[Config.COL_ID].astype(str).map(order_by_id).fillna(1e9).astype(float)
     left_df = left_df.sort_values(by="__ord__", ascending=True)
 
-    col_left, col_right = st.columns(2)
+    # 3 colunas: esquerda cards | meio relógio | direita cards
+    col_left, col_mid, col_right = st.columns([1, 0.65, 1])
 
     with col_left:
         st.subheader("Checked in")
@@ -516,6 +484,10 @@ if mode == "Running Order":
                 order_num = order_by_id.get(str(r.get(Config.COL_ID, "")))
                 render_board_card(r, order_num, bg_color=Config.CARD_BG_CHECKED)
 
+    with col_mid:
+        now = datetime.now().strftime("%H:%M:%S")
+        st.markdown(f"<div class='clock-wrap'><div class='clock'>{now}</div></div>", unsafe_allow_html=True)
+
     with col_right:
         st.subheader("Checked out")
         if right_df.empty:
@@ -525,17 +497,45 @@ if mode == "Running Order":
                 render_board_card(r, order_num=None, bg_color=Config.CARD_BG_CHECKEDOUT)
 
 elif mode == "Check out":
-    # Mostrar somente quem está checked in
+    # Apenas quem está IN
+    # Campo de busca (herdado do estado; só mostramos se quiser)
+    st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
+
     df_view = df_ath[df_ath[Config.COL_ID].astype(str).isin(checked_in_now)].copy()
+
+    q = (st.session_state.get("weighin_search","") or "").strip().lower()
+    if q:
+        df_view = df_view[
+            df_view[Config.COL_NAME].str.lower().str.contains(q, na=False) |
+            df_view[Config.COL_ID].astype(str).str.lower().str.contains(q, na=False)
+        ]
+
     for _, r in df_view.iterrows():
-        aid = str(r.get(Config.COL_ID, ""))
-        bg = Config.CARD_BG_CHECKED  # quem aparece aqui está IN
+        bg = Config.CARD_BG_CHECKED
         render_card_action(r, "Check out", on_check_out, bg_color=bg)
 
 else:  # Check in
-    for _, r in df_ath.iterrows():
+    # Evento via segmented (sem "All Events"); aqui o usuário pode trocar
+    if not valid_events:
+        st.warning("No valid events found.", icon="⚠️")
+    else:
+        st.session_state["weighin_event"] = st.segmented_control(
+            "Event:",
+            options=valid_events,
+            key="weighin_event_segmented_header",  # key do widget principal (topo invisível no Running/Out)
+        )
+    st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
+
+    q = (st.session_state.get("weighin_search","") or "").strip().lower()
+    df_view = df_ath.copy()
+    if q:
+        df_view = df_view[
+            df_view[Config.COL_NAME].str.lower().str.contains(q, na=False) |
+            df_view[Config.COL_ID].astype(str).str.lower().str.contains(q, na=False)
+        ]
+
+    for _, r in df_view.iterrows():
         aid = str(r.get(Config.COL_ID, ""))
-        # cor do card conforme último status
         if aid in checked_in_now:
             bg = Config.CARD_BG_CHECKED
         elif aid in checked_out_now:
@@ -543,3 +543,25 @@ else:  # Check in
         else:
             bg = Config.CARD_BG_DEFAULT
         render_card_action(r, "Check in", on_check_in, bg_color=bg)
+
+
+# ==============================================================================
+# SETTINGS — RODAPÉ (inicia FECHADO)
+#  - Modo sempre aqui; evento só aparece quando modo atual = Check in
+# ==============================================================================
+with st.expander("Settings", expanded=False):
+    st.segmented_control(
+        "Mode:",
+        options=["Check in", "Check out", "Running Order"],
+        key="weighin_mode",
+    )
+
+    # Evento apenas quando estamos em Check in
+    if st.session_state["weighin_mode"] == "Check in":
+        if valid_events:
+            st.session_state["weighin_event"] = st.segmented_control(
+                "Event:",
+                options=valid_events,
+                key="weighin_event_segmented_footer",
+            )
+        st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")

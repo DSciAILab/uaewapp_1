@@ -1,7 +1,7 @@
 # ==============================================================================
 # UAEW Operations App — Weigh-in Page
 # ------------------------------------------------------------------------------
-# Versão:        1.0.1
+# Versão:        1.0.2
 # Gerado em:     2025-09-08
 # Autor:         Assistente (GPT)
 #
@@ -10,7 +10,7 @@
 # - Cards no estilo das outras páginas (sem chip de Passport e sem “último check”).
 # - Chips (Event | FIGHT # | CORNER) coloridos pelo corner (blue/red).
 # - Botão único por modo:
-#     * Check in -> grava na Attendance com Notes = ordem sequencial por evento.
+#     * Check in  -> grava na Attendance com Notes = ordem sequencial por evento.
 #     * Check out -> grava na Attendance com Notes = "".
 # - Card fica VERDE quando o atleta já tem Check in no evento selecionado.
 # - Running Order lista por Notes (ordem) do evento selecionado.
@@ -25,7 +25,6 @@ import numpy as np
 from datetime import datetime
 import html
 import unicodedata
-import re
 
 # --- Bootstrap ---
 bootstrap_page("Weigh-in")
@@ -33,7 +32,6 @@ st.title("Weigh-in")
 
 # --- Helpers de planilha ---
 from utils import get_gspread_client, connect_gsheet_tab
-
 
 # ==============================================================================
 # CONFIG / CONSTANTES
@@ -88,6 +86,15 @@ def clean_and_normalize(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     text = "".join([c for c in text if not unicodedata.combining(c)])
     return " ".join(text.split())
+
+def _col(df: pd.DataFrame, name: str) -> pd.Series:
+    """Retorna SEMPRE uma Series (do tamanho do DF) para a coluna pedida."""
+    if df is None or df.empty:
+        return pd.Series([], dtype=object)
+    if name in df.columns:
+        return df[name]
+    # default: série vazia do tamanho do DF (evita .astype em string)
+    return pd.Series([""] * len(df), index=df.index, dtype=object)
 
 
 # ==============================================================================
@@ -217,48 +224,74 @@ def append_attendance_row(event: str, athlete_id: str, fighter: str,
 
 
 # ==============================================================================
-# Lógica: status e ordem
+# Lógica: status e ordem (ROBUSTA a colunas ausentes)
 # ==============================================================================
 def get_checked_in_id_set(df_att: pd.DataFrame, event: str) -> set[str]:
-    if df_att.empty:
+    if df_att is None or df_att.empty:
         return set()
-    df = df_att.copy()
-    return set(
-        df[
-            (df.get("Event", "").astype(str) == str(event)) &
-            (df.get("Task", "").astype(str).str.lower() == Config.TASK_NAME.lower()) &
-            (df.get("Status", "").astype(str).str.lower() == Config.STATUS_CHECKIN.lower())
-        ].get("Athlete ID", pd.Series([], dtype=str)).astype(str).tolist()
+    ev = _col(df_att, "Event").astype(str)
+    task = _col(df_att, "Task").astype(str).str.lower()
+    status = _col(df_att, "Status").astype(str).str.lower()
+    ath = _col(df_att, "Athlete ID").astype(str)
+
+    mask = (
+        (ev == str(event)) &
+        (task == Config.TASK_NAME.lower()) &
+        (status == Config.STATUS_CHECKIN.lower())
     )
+    return set(ath[mask].tolist())
 
 def next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
-    if df_att.empty:
+    if df_att is None or df_att.empty:
         return 1
-    df = df_att[
-        (df.get("Event", "").astype(str) == str(event)) &
-        (df.get("Task", "").astype(str).str.lower() == Config.TASK_NAME.lower()) &
-        (df.get("Status", "").astype(str).str.lower() == Config.STATUS_CHECKIN.lower())
-    ].copy()
+    ev = _col(df_att, "Event").astype(str)
+    task = _col(df_att, "Task").astype(str).str.lower()
+    status = _col(df_att, "Status").astype(str).str.lower()
+    notes = _col(df_att, "Notes")
+
+    mask = (
+        (ev == str(event)) &
+        (task == Config.TASK_NAME.lower()) &
+        (status == Config.STATUS_CHECKIN.lower())
+    )
+    df = df_att[mask].copy()
     if df.empty:
         return 1
-    notes_num = pd.to_numeric(df.get("Notes", pd.Series([], dtype=str)), errors="coerce")
-    max_num = int(notes_num.dropna().max()) if notes_num.notna().any() else 0
-    return max_num + 1 if max_num > 0 else (len(df) + 1)
+
+    notes_num = pd.to_numeric(notes[mask], errors="coerce")
+    if notes_num.notna().any():
+        return int(notes_num.max()) + 1
+    # fallback se Notes não for numérico
+    return len(df) + 1
 
 def get_running_order(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
-    if df_att.empty:
+    if df_att is None or df_att.empty:
         return pd.DataFrame(columns=["Order", "Fighter", "Athlete ID", "Time"])
-    df = df_att[
-        (df.get("Event", "").astype(str) == str(event)) &
-        (df.get("Task", "").astype(str).str.lower() == Config.TASK_NAME.lower()) &
-        (df.get("Status", "").astype(str).str.lower() == Config.STATUS_CHECKIN.lower())
-    ].copy()
-    if df.empty:
+    ev = _col(df_att, "Event").astype(str)
+    task = _col(df_att, "Task").astype(str).str.lower()
+    status = _col(df_att, "Status").astype(str).str.lower()
+    fighter = _col(df_att, "Fighter").astype(str)
+    ath = _col(df_att, "Athlete ID").astype(str)
+    notes = _col(df_att, "Notes")
+    ts = _col(df_att, "TimeStamp")  # se não existir, vira série vazia
+
+    mask = (
+        (ev == str(event)) &
+        (task == Config.TASK_NAME.lower()) &
+        (status == Config.STATUS_CHECKIN.lower())
+    )
+    if not mask.any():
         return pd.DataFrame(columns=["Order", "Fighter", "Athlete ID", "Time"])
-    df["Order"] = pd.to_numeric(df.get("Notes"), errors="coerce")
-    df["Time"] = df.get("TimeStamp", "")
-    df = df.dropna(subset=["Order"])
-    return df[["Order", "Fighter", "Athlete ID", "Time"]].sort_values(by="Order", ascending=True).reset_index(drop=True)
+
+    out = pd.DataFrame({
+        "Order": pd.to_numeric(notes.where(mask), errors="coerce"),
+        "Fighter": fighter.where(mask),
+        "Athlete ID": ath.where(mask),
+        "Time": ts.where(mask),
+    }).dropna(subset=["Order"])
+    if out.empty:
+        return pd.DataFrame(columns=["Order", "Fighter", "Athlete ID", "Time"])
+    return out.sort_values(by="Order", ascending=True).reset_index(drop=True)
 
 
 # ==============================================================================
@@ -355,15 +388,15 @@ def render_card(row: pd.Series, btn_label: str, on_click, highlight: bool):
     with left:
         st.markdown(card_html, unsafe_allow_html=True)
     with right:
+        # Ao clicar, chamamos o handler
         if st.button(btn_label, key=f"{btn_label.replace(' ','_').lower()}_{aid}", use_container_width=True):
             on_click(aid, name, event)
     st.divider()
 
 
 # ==============================================================================
-# EXPANDER (filtros + modo) — sem atribuir valores a session_state dentro do widget
+# EXPANDER (filtros + modo)
 # ==============================================================================
-# Defaults
 st.session_state.setdefault("weighin_mode", "Check in")
 st.session_state.setdefault("weighin_event", "All Events")
 st.session_state.setdefault("weighin_search", "")
@@ -380,7 +413,6 @@ with st.expander("Settings", expanded=True):
     if not df_ath_all.empty:
         events += sorted([e for e in df_ath_all[Config.COL_EVENT].unique() if e and e != Config.DEFAULT_EVENT_PLACEHOLDER])
 
-    # NÃO atribua o retorno do widget à session_state; passe key e pronto.
     st.selectbox(
         "Event:",
         options=events,
@@ -390,14 +422,14 @@ with st.expander("Settings", expanded=True):
 
     st.text_input("Search Athlete:", key="weighin_search", placeholder="Type name or ID...")
 
-# Lê os valores (agora, sim):
+# Leitura dos valores
 mode = st.session_state["weighin_mode"]
 sel_event = st.session_state["weighin_event"]
 search_q = (st.session_state["weighin_search"] or "").strip().lower()
 
 
 # ==============================================================================
-# APLICA FILTROS E RENDERIZA
+# APLICA FILTROS
 # ==============================================================================
 df_ath = df_ath_all.copy()
 if df_ath.empty:
@@ -428,6 +460,7 @@ def on_check_in(aid: str, name: str, event: str):
     if not event or event == Config.DEFAULT_EVENT_PLACEHOLDER:
         st.warning("Select a valid event to check in.", icon="⚠️")
         return
+    # sempre recarrega a Attendance para calcular a próxima ordem com base no estado real
     order_num = next_checkin_order(load_attendance(), event)
     ok = append_attendance_row(
         event=event,
@@ -438,8 +471,6 @@ def on_check_in(aid: str, name: str, event: str):
     )
     if ok:
         st.toast(f"Check in registrado (ordem {order_num}).", icon="✅")
-        # pinta o card de verde localmente
-        checked_in_ids.add(str(aid))
 
 def on_check_out(aid: str, name: str, event: str):
     if not event or event == Config.DEFAULT_EVENT_PLACEHOLDER:
@@ -470,7 +501,7 @@ if mode == "Running Order":
             st.dataframe(df_order, use_container_width=True, hide_index=True)
 else:
     for _, r in df_ath.iterrows():
-        already_in = str(r.get(Config.COL_ID, "")) in checked_in_ids
+        already_in = (sel_event != "All Events") and (str(r.get(Config.COL_ID, "")) in checked_in_ids)
         if mode == "Check in":
             render_card(r, "Check in", on_check_in, highlight=already_in)
         else:  # Check out

@@ -2,11 +2,14 @@
 # =============================================================================
 # UAEW Operations App — Weigh-in
 # -----------------------------------------------------------------------------
-# Versão: 2.4.0 (ajuste "No Show")
-# - Adiciona botão "No Show" na aba Check out
-# - "No Show" registra Status = "No show" na Attendance
-# - Em Running Order, "No Show" aparece na coluna da direita em VERMELHO
-# - Após "No Show", atleta volta a poder fazer novo Check in
+# Versão: 2.4.0
+# - Mantida a estrutura da v2.3.3 (a melhor versão aprovada por você)
+# - Acrescentado "No show" (apenas na aba Check in):
+#     * Loga na Attendance com Status = "No show"
+#     * Atleta volta a ficar disponível para novo Check in
+#     * Mostra chip "No show" vermelho no card quando disponível
+#     * No Running Order, aparece na coluna da direita (Checked out) em VERMELHO
+# - Nenhuma outra mudança de layout/fluxo além do descrito acima
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -37,7 +40,7 @@ class Config:
     TASK_NAME = "Weigh-in"
     STATUS_IN = "Check in"
     STATUS_OUT = "Check out"
-    STATUS_NO_SHOW = "No show"  # <<< NOVO
+    STATUS_NOSHOW = "No show"       # <<< novo status
 
     ATT_COLS = ["#", "Event", "Athlete ID", "Fighter", "Task", "Status", "User", "TimeStamp", "Notes"]
 
@@ -53,11 +56,13 @@ class Config:
     DEFAULT_EVENT = "Z"
 
     CARD_BG_DEFAULT = "#1e1e1e"
-    CARD_BG_IN = "#1f5f2b"      # verde (checked-in)
-    CARD_BG_OUT = "#5a5a5a"     # cinza (checked-out)
-    CARD_BG_NOSHOW = "#8B1E1E"  # vermelho (no-show)  <<< NOVO
+    CARD_BG_IN = "#1f5f2b"   # verde (checked-in)
+    CARD_BG_OUT = "#5a5a5a"  # cinza (checked-out)
+    CARD_BG_NOSHOW = "#8e1d1d"  # vermelho (no show) no display
     CORNER_RED = "#d9534f"
     CORNER_BLUE = "#428bca"
+
+    CHIP_NOSHOW_BG = "#c0392b"  # chip "No show" quando disponível
 
 # =============================================================================
 # State defaults
@@ -133,7 +138,7 @@ def _attendance_with_overlay() -> pd.DataFrame:
 
 def _events_from_athletes(df_ath: pd.DataFrame) -> list[str]:
     evts = [x for x in df_ath[Config.COL_EVENT].unique() if x and x != Config.DEFAULT_EVENT]
-    evts_sorted = sorted(evts, key=_extract_event_num)
+    evts_sorted = sorted(evts, key=_extract_event_num)  # menor número é padrão
     return evts_sorted
 
 def _last_status_for_event(df_att: pd.DataFrame, event: str) -> pd.DataFrame:
@@ -151,13 +156,15 @@ def _order_from_notes(x):
     try: return int(str(x).strip())
     except Exception: return None
 
-def _checked_partitions(df_ath: pd.DataFrame, df_att: pd.DataFrame, event: str):
+def _checked_partitions(df_ath: pd.DataFrame, df_att: pd.DataFrame, event: str, *, for_running_display: bool = False):
     """
-    Retorna 4 dataframes:
-      df_in      -> status mais recente = Check in
-      df_out     -> status mais recente = Check out
-      df_noshow  -> status mais recente = No show   (<<< NOVO)
-      df_rest    -> sem status (ou outro) => disponível p/ novo Check in
+    Particiona atletas em:
+      - df_in  : último status = Check in
+      - df_out : último status = Check out (ou No show quando for_running_display=True)
+      - df_rest: disponíveis (sem status, ou No show quando for_running_display=False)
+    Também anota:
+      - __order__: número inteiro do running order (se houver)
+      - __noshow__: True se último status foi No show
     """
     last = _last_status_for_event(df_att, event)
     last.index = last["Athlete ID"].astype(str)
@@ -168,27 +175,34 @@ def _checked_partitions(df_ath: pd.DataFrame, df_att: pd.DataFrame, event: str):
             stt = str(last.loc[aid, "Status"])
             if stt == Config.STATUS_IN:
                 return "IN"
-            elif stt == Config.STATUS_OUT:
+            if stt == Config.STATUS_OUT:
                 return "OUT"
-            elif stt == Config.STATUS_NO_SHOW:  # <<< NOVO
-                return "NOSHOW"
+            if stt == Config.STATUS_NOSHOW:
+                # No show aparece como OUT apenas no display (Running Order),
+                # e como NONE nas telas interativas (para poder fazer novo check in).
+                return "OUT" if for_running_display else "NONE"
         return "NONE"
 
     df_ev = df_ath[df_ath[Config.COL_EVENT]==event].copy()
-    if df_ev.empty:
-        return df_ev.copy(), df_ev.copy(), df_ev.copy(), df_ev.copy()
+    if df_ev.empty: 
+        return df_ev.copy(), df_ev.copy(), df_ev.copy()
 
     df_ev["__st__"] = df_ev.apply(_row_status, axis=1)
     df_ev["__order__"] = df_ev[Config.COL_ID].astype(str).map(
         lambda aid: _order_from_notes(last.loc[str(aid), "Notes"]) if str(aid) in last.index else None
     )
 
-    df_in     = df_ev[df_ev["__st__"]=="IN"].copy().sort_values(by=["__order__", Config.COL_NAME])
-    df_out    = df_ev[df_ev["__st__"]=="OUT"].copy().sort_values(by=[Config.COL_NAME])
-    df_noshow = df_ev[df_ev["__st__"]=="NOSHOW"].copy().sort_values(by=[Config.COL_NAME])  # <<< NOVO
-    # "No show" volta a poder fazer Check in => incluir também no REST
-    df_rest   = df_ev[df_ev["__st__"].isin(["NONE","NOSHOW"])].copy().sort_values(by=[Config.COL_NAME])  # <<< NOVO
-    return df_in, df_out, df_noshow, df_rest
+    def _was_noshow(aid: str) -> bool:
+        if aid in last.index:
+            return str(last.loc[aid, "Status"]) == Config.STATUS_NOSHOW
+        return False
+    df_ev["__noshow__"] = df_ev[Config.COL_ID].astype(str).map(_was_noshow)
+
+    df_in  = df_ev[df_ev["__st__"]=="IN"].copy().sort_values(by=["__order__", Config.COL_NAME])
+    df_out = df_ev[df_ev["__st__"]=="OUT"].copy().sort_values(by=[Config.COL_NAME])
+    df_rest= df_ev[df_ev["__st__"]=="NONE"].copy().sort_values(by=[Config.COL_NAME])
+
+    return df_in, df_out, df_rest
 
 def _next_checkin_order(df_att: pd.DataFrame, event: str) -> int:
     last = _last_status_for_event(df_att, event)
@@ -275,7 +289,9 @@ def _corner_chip(ev: str, fight: str, corner: str) -> str:
     txt = f"{ev} | FIGHT {fight or '?'} | {corner.upper() or '?'}"
     return f"<span style='background:{bg};color:#fff;padding:6px 10px;border-radius:10px;font-weight:700;font-size:12px;'>{html.escape(txt)}</span>"
 
-def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=None, show_number=None, dimmed=False, context_key=""):
+def render_card(row: pd.Series, label_btn: str | None, on_click, *,
+                bg_color=None, show_number=None, dimmed=False, context_key="",
+                second_btn_label: str | None = None, second_on_click=None):
     aid = str(row.get(Config.COL_ID,""))
     name = str(row.get(Config.COL_NAME,""))
     event = str(row.get(Config.COL_EVENT,""))
@@ -284,60 +300,65 @@ def render_card(row: pd.Series, label_btn: str | None, on_click, *, bg_color=Non
     img = str(row.get(Config.COL_IMAGE,""))
 
     bg = bg_color or Config.CARD_BG_DEFAULT
-    if dimmed: bg = Config.CARD_BG_OUT
+    if dimmed: 
+        bg = Config.CARD_BG_OUT
 
-    # número grande, inteiro, preenchendo bem o quadrado
-    num_html = ""
-    if show_number is not None:
-        try:
-            num_int = int(show_number)
-        except Exception:
-            num_int = show_number
-        num_html = (
-            f"<div style='width:64px;height:64px;border-radius:10px;display:flex;align-items:center;justify-content:center;"
-            f"background:#0b3b1b;color:#fff;font-weight:900;font-size:34px;line-height:1;'>"
-            f"{num_int}</div>"
+    # número grande, inteiro, ocupando bem o quadrado
+    num_html = (
+        f"<div style='width:56px;height:56px;border-radius:10px;display:flex;align-items:center;justify-content:center;"
+        f"background:#0b3b1b;color:#fff;font-weight:900;font-size:32px;line-height:1;'>{int(show_number)}</div>"
+        if show_number is not None else ""
+    )
+    avatar = f"<img src='{html.escape(img or 'https://via.placeholder.com/56?text=NA', True)}' style='width:56px;height:56px;border-radius:8px;object-fit:cover;'>"
+
+    # chip de evento/corner
+    corner_bg = Config.CORNER_RED if str(corner).strip().lower()=="red" else Config.CORNER_BLUE if str(corner).strip().lower()=="blue" else "#555"
+    chip_txt = f"{event} | FIGHT {fight or '?'} | {str(corner).upper() or '?'}"
+    chip_corner = f"<span style='background:{corner_bg};color:#fff;padding:6px 10px;border-radius:10px;font-weight:700;font-size:12px;'>{html.escape(chip_txt)}</span>"
+
+    # chip de No show quando o atleta está disponível e teve No show por último
+    chip_noshow = ""
+    if bool(row.get("__noshow__", False)):
+        chip_noshow = (
+            f"<span style='background:{Config.CHIP_NOSHOW_BG};color:#fff;padding:6px 10px;border-radius:10px;"
+            f"font-weight:800;font-size:12px;margin-left:6px;'>No show</span>"
         )
 
-    avatar = f"<img src='{html.escape(img or 'https://via.placeholder.com/64?text=NA', True)}' style='width:64px;height:64px;border-radius:8px;object-fit:cover;'>"
-    chip = _corner_chip(event, fight, corner)
+    chips_html = f"{chip_corner}{chip_noshow}"
 
     card_html = f"""
     <div style='background:{bg};padding:12px 14px;border-radius:12px;display:flex;align-items:center;gap:12px;'>
         <div style='display:flex;gap:10px;align-items:center;'>{num_html}{avatar}</div>
         <div style='display:flex;flex-direction:column;gap:6px;flex:1;'>
             <div style='font-weight:800;font-size:18px;color:#fff;'>{html.escape(name)} | {html.escape(aid)}</div>
-            <div>{chip}</div>
+            <div>{chips_html}</div>
         </div>
     </div>
     """
     if label_btn:
-        left, right = st.columns([1, 0.25])
+        left, right = st.columns([1, 0.4])
         with left:
             st.markdown(card_html, unsafe_allow_html=True)
         with right:
-            key = f"btn_{context_key}_{label_btn.replace(' ','_')}_{aid}_{event}"
-            if st.button(label_btn, key=key, use_container_width=True):
-                on_click(aid, name, event)
+            # um ou dois botões na coluna da direita
+            if second_btn_label and second_on_click:
+                b1, b2 = st.columns(2)
+                with b1:
+                    key1 = f"btn_{context_key}_{label_btn.replace(' ','_')}_{aid}_{event}"
+                    if st.button(label_btn, key=key1, use_container_width=True):
+                        on_click(aid, name, event)
+                with b2:
+                    key2 = f"btn_{context_key}_{second_btn_label.replace(' ','_')}_{aid}_{event}"
+                    if st.button(second_btn_label, key=key2, use_container_width=True):
+                        second_on_click(aid, name, event)
+            else:
+                key = f"btn_{context_key}_{label_btn.replace(' ','_')}_{aid}_{event}"
+                if st.button(label_btn, key=key, use_container_width=True):
+                    on_click(aid, name, event)
     else:
         st.markdown(card_html, unsafe_allow_html=True)
-    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
-# Cabeçalho por aba (mantido da versão anterior)
-def _mode_header_html(mode: str) -> str:
-    if mode == "Check in":
-        label = "Check in"; bg = "#1f5f2b"
-    elif mode == "Check out":
-        label = "Check out"; bg = "#b36b00"
-    else:
-        label = "Weight-in — Running Order"; bg = "#2b6cb0"
-    return (
-        f"<div style='display:flex;justify-content:center;margin:6px 0 16px 0;'>"
-        f"  <span style='background:{bg};color:#fff;padding:8px 16px;border-radius:999px;font-weight:800;letter-spacing:.3px;'>"
-        f"    {html.escape(label)}"
-        f"  </span>"
-        f"</div>"
-    )
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
 # =============================================================================
 # Expander blocks
@@ -370,6 +391,7 @@ def _settings_expander_top(events: list[str]):
                 st.rerun()
 
 def _settings_expander_bottom():
+    """Somente no Running Order: no rodapé, fechado e sem 'Sync data'."""
     with st.expander("Settings", expanded=False):
         st.segmented_control("Mode:", options=["Check in", "Check out", "Running Order"], key="weighin_mode")
         # (sem Sync data aqui)
@@ -395,27 +417,43 @@ events = _events_from_athletes(df_ath)
 
 mode = st.session_state.get("weighin_mode","Check in")
 
-# Gate de autenticação só para modos com ação
+# >>> Gate de autenticação só para modos com ação
 if mode in ("Check in", "Check out") and not st.session_state.get("user_confirmed", False):
     st.error("Você precisa estar logado para usar Check in / Check out. Abra a página **Login** neste dispositivo, faça login e retorne.")
     st.stop()
+# <<<
 
 if mode in ("Check in","Check out"):
     _settings_expander_top(events)
+# (no Running Order o settings fica no rodapé)
 
 if st.session_state.get("weighin_event_selected") is None and events:
     st.session_state["weighin_event_selected"] = events[0]
 selected_event = st.session_state.get("weighin_event_selected") or (events[0] if events else "")
 
+# Cabeçalho por aba
+header_map = {
+    "Check in": "Check in",
+    "Check out": "Check out",
+    "Running Order": "Weigh-in"
+}
+header_label = header_map.get(mode, "Weigh-in")
+
 st.markdown(
     f"<h1 style='text-align:center;font-size:{st.session_state['title_size']}px;margin:8px 0 18px 0;'>"
-    f"{html.escape(selected_event)} | Weigh-in</h1>",
+    f"{html.escape(selected_event)} | {html.escape(header_label)}</h1>",
     unsafe_allow_html=True
 )
-st.markdown(_mode_header_html(mode), unsafe_allow_html=True)
 
 df_att_full = _attendance_with_overlay()
-df_in, df_out, df_noshow, df_rest = _checked_partitions(df_ath, df_att_full, selected_event)
+
+# Particionamento:
+# - telas interativas: No show volta para disponíveis (NONE)
+# - display (running): No show aparece em OUT (coluna da direita) e vermelho
+if mode == "Running Order":
+    df_in, df_out, df_rest = _checked_partitions(df_ath, df_att_full, selected_event, for_running_display=True)
+else:
+    df_in, df_out, df_rest = _checked_partitions(df_ath, df_att_full, selected_event, for_running_display=False)
 
 def on_check_in(aid, name, event):
     order_num = _next_checkin_order(_attendance_with_overlay(), event)
@@ -424,55 +462,42 @@ def on_check_in(aid, name, event):
 def on_check_out(aid, name, event):
     _log_action(aid, name, event, Config.STATUS_OUT, "")
 
-def on_no_show(aid, name, event):  # <<< NOVO
-    # registra "No show"; sem notes; volta a estar disponível p/ novo check-in
-    _log_action(aid, name, event, Config.STATUS_NO_SHOW, "")
+def on_no_show(aid, name, event):
+    _log_action(aid, name, event, Config.STATUS_NOSHOW, "")
 
 # ----------------- Check in -----------------
 if mode == "Check in":
     for _, r in pd.concat([df_in, df_rest]).iterrows():
         already_in = r["__st__"] == "IN"
+        # Quando já está IN, não mostra botões; quando está disponível, mostra "Check in" + "No show"
         render_card(
             r,
             None if already_in else "Check in",
             on_check_in,
             bg_color=Config.CARD_BG_IN if already_in else None,
             show_number=(r["__order__"] if already_in else None),
-            context_key="in"
+            context_key="in",
+            second_btn_label=(None if already_in else "No show"),
+            second_on_click=(None if already_in else on_no_show)
         )
 
 # ----------------- Check out -----------------
 elif mode == "Check out":
     for _, r in df_in.iterrows():
-        # desenha o card e DOIS botões lado a lado: "Check out" e "No Show"
-        aid = str(r.get(Config.COL_ID,""))
-        name = str(r.get(Config.COL_NAME,""))
-        event = str(r.get(Config.COL_EVENT,""))
-
-        # card
         render_card(
             r,
-            None,  # sem botão único no render_card
-            lambda *_: None,
+            "Check out",
+            on_check_out,
             bg_color=Config.CARD_BG_IN,
             show_number=r["__order__"],
-            context_key="out_card"
+            context_key="out"
         )
-        # botões lado a lado
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Check out", key=f"btn_checkout_{aid}_{event}", use_container_width=True):
-                on_check_out(aid, name, event)
-        with c2:
-            if st.button("No Show", key=f"btn_noshow_{aid}_{event}", use_container_width=True):
-                on_no_show(aid, name, event)
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
 # ----------------- Running Order (display-only) -----------------
 else:
-    # Auto-refresh suave
+    # Auto-refresh suave que mantém a mesma sessão (não derruba o login)
     sec = int(st.session_state["ro_refresh_sec"])
-    st_autorefresh(interval=max(1, sec) * 1000, key="weighin_ro_autorefresh_v3")
+    st_autorefresh(interval=max(1, sec) * 1000, key="weighin_ro_autorefresh_v4")
 
     cL, cM, cR = st.columns([1.2, 1, 1.2])
     col_title_css = f"font-size:{st.session_state['coltitle_size']}px;text-align:center;margin:10px 0 14px 0;font-weight:800;color:#ddd;"
@@ -498,10 +523,10 @@ else:
 
     with cR:
         st.markdown(f"<div style='{col_title_css}'>Checked out</div>", unsafe_allow_html=True)
-        # Primeiro No Show (vermelho), depois Check out (cinza)
-        for _, r in df_noshow.iterrows():
-            render_card(r, None, lambda *a,**k: None, bg_color=Config.CARD_BG_NOSHOW, dimmed=False, context_key="ro_noshow")
         for _, r in df_out.iterrows():
-            render_card(r, None, lambda *a,**k: None, bg_color=Config.CARD_BG_OUT, dimmed=True, context_key="ro_out")
+            # Se foi No show, pinta em vermelho; senão, cinza padrão
+            bg = Config.CARD_BG_NOSHOW if bool(r.get("__noshow__", False)) else Config.CARD_BG_OUT
+            render_card(r, None, lambda *a,**k: None, bg_color=bg, dimmed=not bool(r.get("__noshow__", False)), context_key="ro_out")
 
+    # Settings específico da Running Order no rodapé (sem Sync data)
     _settings_expander_bottom()

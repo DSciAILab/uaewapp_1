@@ -9,14 +9,13 @@ bootstrap_page("Arrival/Departure List")
 
 # --- Modo (Arrival | Departure) ---
 st.session_state.setdefault("arrdep_mode", "Arrival")
-st.session_state["arrdep_mode"] = st.segmented_control(
+mode = st.segmented_control(  # ❗ NÃO atribuir ao session_state; apenas use key
     "Mode:",
     options=["Arrival", "Departure"],
     key="arrdep_mode",
 )
-MODE = st.session_state["arrdep_mode"]
 
-st.title(f"{MODE} List")
+st.title(f"{mode} List")
 
 # --- Project Imports ---
 from utils import get_gspread_client, connect_gsheet_tab
@@ -28,7 +27,7 @@ DATA_TAB_NAME = "df"
 # ----------------------------
 # Colunas por modo (mapeamento)
 # ----------------------------
-if MODE == "Arrival":
+if mode == "Arrival":
     DATE_COL   = "ArrivalDate"
     TIME_COL   = "ArrivalTime"
     FLIGHT_COL = "ArrivalFlight"
@@ -46,8 +45,8 @@ else:
     APT_COL    = "DepartureAirport"
     STATUS_COL = "transfer_departure_status"
     CAR_COL    = "transfer_departure_car"
-    DRIVER_COL = "transfer_departure_driver"
-    PICKUP_COL = "transfer_departure_pickup"  # nova coluna solicitada
+    DRIVER_COL = "transfer_departure_driver"      # << motorista da partida
+    PICKUP_COL = "transfer_departure_pickup"      # << pickup de partida
     GROUP_LABEL = "Departures on"
     CAR_FILTER_LABEL = "Cars with request"
 
@@ -75,7 +74,7 @@ def load_arrdep_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DAT
             # DEPARTURE
             'DepartureFlight', 'DepartureDate', 'DepartureTime', 'DepartureAirport',
             'transfer_departure_status', 'transfer_departure_car', 'transfer_departure_driver',
-            'transfer_departure_pickup',  # nova coluna
+            'transfer_departure_pickup',
         ]
         existing_cols = [c for c in display_cols if c in df.columns]
         df = df[existing_cols]
@@ -109,23 +108,18 @@ if 'INACTIVE' in df_all.columns:
     df_all = df_all[df_all['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])]
     df_all.drop(columns=['INACTIVE'], inplace=True, errors='ignore')
 
-# Recorte por modo: mantém linhas que têm pelo menos a coluna de data do modo
 df_mode = df_all.copy()
-if DATE_COL in df_mode.columns:
-    # Se existir a coluna de data do modo, priorizamos visualizar quem tem esse campo preenchido
-    # (mas se você preferir, pode remover esse filtro — mantive bem leve)
-    pass
 
 if df_mode.empty:
-    st.info(f"No {MODE.lower()} records found with a filled name.")
+    st.info(f"No {mode.lower()} records found with a filled name.")
 else:
     with st.expander("Settings", expanded=True):
         # Filtro de tipo (fighters / car request)
         filtro = st.segmented_control(
-            f"Filter {MODE.lower()}s:",
+            f"Filter {mode.lower()}s:",
             options=["All", "Only Fighters", CAR_FILTER_LABEL],
-            key=f"role_car_filter_{MODE}",
-            default="All"  # evita None
+            key=f"role_car_filter_{mode}",
+            default="All"
         )
 
         df_filtrado = df_mode.copy()
@@ -138,8 +132,8 @@ else:
         status_filter = st.segmented_control(
             "Filter by status:",
             options=["All", "Planned", "Done", "Canceled", "No Show"],
-            key=f"status_filter_{MODE}",
-            default="All"  # evita None
+            key=f"status_filter_{mode}",
+            default="All"
         )
 
         if status_filter != "All" and STATUS_COL in df_filtrado.columns:
@@ -154,17 +148,17 @@ else:
         # === Toggles lado a lado ===
         col_t1, col_t2 = st.columns(2)
         with col_t1:
-            modo_cards = st.toggle("View as cards", value=True, key=f"view_as_cards_{MODE}")
+            modo_cards = st.toggle("View as cards", value=True, key=f"view_as_cards_{mode}")
         with col_t2:
             hide_resident = st.toggle(
-                f"Hide airport: Resident ({MODE.lower()}s)",
+                f"Hide airport: Resident ({mode.lower()}s)",
                 value=False,
-                key=f"hide_resident_cards_{MODE}",
+                key=f"hide_resident_cards_{mode}",
                 help=f"When ON, hides cards where {APT_COL} = Resident (cards view only)."
             )
 
         # Search box para ambas visões
-        search = st.text_input("Search in any column:", key=f"search_{MODE}")
+        search = st.text_input("Search in any column:", key=f"search_{mode}")
         df_search = df_filtrado.copy()
         if search:
             mask = pd.Series(False, index=df_search.index)
@@ -175,7 +169,7 @@ else:
     # --- Métricas (baseadas em df_search) ---
     def norm_status_series(s):
         s = s.astype(str).str.strip().str.upper()
-        s = s.replace({"CANCELLED": "CANCELED"})  # mapeia variação britânica
+        s = s.replace({"CANCELLED": "CANCELED"})
         return s
 
     status_series = norm_status_series(
@@ -191,7 +185,7 @@ else:
 
     summary_html = f'''
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;">
-        <span style="font-weight:bold;">Showing {total_filtered} of {total_all} {MODE.lower()}s:</span>
+        <span style="font-weight:bold;">Showing {total_filtered} of {total_all} {mode.lower()}s:</span>
         <span style="background-color:#ffe066;color:#23272f;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Planned: {planned_count}</span>
         <span style="background-color:#27ae60;color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Done: {done_count}</span>
         <span style="background-color:#e74c3c;color:#fff;padding:4px 12px;border-radius:15px;font-size:0.9em;font-weight:bold;">Canceled: {canceled_count}</span>
@@ -199,10 +193,10 @@ else:
     </div>'''
     st.markdown(summary_html, unsafe_allow_html=True)
 
-    if modo_cards:
+    if st.session_state.get(f"view_as_cards_{mode}", True):
         # Aplica o "hide resident" apenas nos cards
         df_cards = df_search.copy()
-        if hide_resident and APT_COL in df_cards.columns:
+        if st.session_state.get(f"hide_resident_cards_{mode}", False) and APT_COL in df_cards.columns:
             df_cards = df_cards[~df_cards[APT_COL].astype(str).str.strip().str.lower().eq('resident')]
 
         now = datetime.datetime.now()
@@ -287,7 +281,7 @@ else:
                         <div style="display: flex; gap: 18px; margin-bottom: 8px;">
                             <span><strong>Flight:</strong> {html.escape(str(row.get(FLIGHT_COL,'')))}</span>
                             <span><strong>Time:</strong> {html.escape(str(row.get(TIME_COL,'')))}</span>
-                            <span><strong>{'Airport' if MODE=='Arrival' else 'Airport'}</strong>: {html.escape(str(row.get(APT_COL,'')))}</span>
+                            <span><strong>Airport:</strong> {html.escape(str(row.get(APT_COL,'')))}</span>
                         </div>
                         {line_html}
                     </div>

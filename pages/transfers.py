@@ -2,10 +2,9 @@
 # =============================================================================
 # UAEW Operations App — Transfers (Arrival / Departure)
 # -----------------------------------------------------------------------------
-# Mantém a estrutura do "Arrival List", adicionando:
-# - Segmented "Arrival / Departure" DENTRO do expander Settings
-# - Suporte completo a Departure (inclui transfer_departure_pickup e driver)
-# - Formatação robusta de horário em HH:MM (corrige "30/12/1899")
+# - Segmented "Arrival / Departure" dentro do expander Settings
+# - Hora sempre mostrada como HH:MM (corrige "30/12/1899" -> vazio)
+# - Ordenação via segmented: Guest | Car number | Date & Time
 # =============================================================================
 
 from components.layout import bootstrap_page
@@ -14,14 +13,14 @@ import pandas as pd
 import datetime
 import re
 
-# --- Bootstrap: configura página, autentica e desenha o sidebar unificado ---
+# --- Bootstrap / Título ---
 bootstrap_page("Transfers")
 st.title("Transfers")
 
 # --- Project Imports ---
 from utils import get_gspread_client, connect_gsheet_tab
 
-# --- Constants ---
+# --- Constantes ---
 MAIN_SHEET_NAME = "UAEW_App"
 DATA_TAB_NAME = "df"
 
@@ -34,6 +33,7 @@ def _fmt_hhmm(val) -> str:
       - strings: '13:45', '13:45:00', '1:45 PM', '07h05', '07.05'
       - números seriais (Sheets/Excel): 0.5 (=12:00), 0.315972... (=07:35)
       - datetimes com data base '1899-12-30' (pega só HH:MM)
+      - se vier só '30/12/1899' (data base sem hora) -> retorna vazio
     """
     if val is None:
         return ""
@@ -42,7 +42,11 @@ def _fmt_hhmm(val) -> str:
     if s == "":
         return ""
 
-    # 1) Valor numérico -> tratar como serial (fração do dia)
+    # 0) Se for exatamente uma data base 30/12/1899 sem hora -> vazio
+    if re.fullmatch(r"\s*30[/-]12[/-]1899\s*$", s):
+        return ""
+
+    # 1) Numérico -> serial (fração do dia)
     try:
         if re.fullmatch(r"[-+]?\d+(\.\d+)?", s):
             x = float(s)
@@ -54,31 +58,54 @@ def _fmt_hhmm(val) -> str:
     except Exception:
         pass
 
-    # 2) Data/hora parseável — ex.: '1899-12-30 07:35:00'
+    # 2) Data/hora parseável
     try:
         dt = pd.to_datetime(s, dayfirst=True, errors="raise")
-        if pd.notna(dt) and (dt.hour or dt.minute):
-            return f"{dt.hour:02d}:{dt.minute:02d}"
+        if pd.notna(dt):
+            # Caso “data base do Excel”
+            if dt.year == 1899 and dt.month == 12 and dt.day == 30:
+                # Se tiver hora/minuto, usamos só a hora. Se não tiver, vazio.
+                if dt.hour or dt.minute:
+                    return f"{dt.hour:02d}:{dt.minute:02d}"
+                return ""
+            # Em outros casos, se houver hora, retorna; senão vazio
+            if dt.hour or dt.minute:
+                return f"{dt.hour:02d}:{dt.minute:02d}"
+            return ""
     except Exception:
         pass
 
-    # 3) Padrões típicos de hora: '7:5', '07:05:00', '07h05', '07.05'
+    # 3) Padrões típicos de hora textual
     m = re.match(r'^\s*(\d{1,2})[:h\.](\d{1,2})', s, re.IGNORECASE)
     if m:
         hh = int(m.group(1)); mm = int(m.group(2))
         return f"{hh:02d}:{mm:02d}"
 
-    # Fallback: retorna como veio
-    return s
+    # Fallback: se nada casou, retorna vazio em vez de poluir com uma "data"
+    return ""
 
 def _norm_status_arrival(x: str) -> str:
     s = ("" if x is None else str(x)).strip().upper()
     return "CANCELED" if s in ("CANCELLED", "CANCELED") else s
 
+def _car_number_key(val: str) -> int:
+    """
+    Extrai o primeiro número do texto do carro (ex.: 'DXB_CAR - 53' -> 53).
+    Se não houver número, retorna grande para ir ao final.
+    """
+    s = "" if val is None else str(val)
+    m = re.search(r"(\d+)", s)
+    if not m:
+        return 10**9
+    try:
+        return int(m.group(1))
+    except Exception:
+        return 10**9
+
 # --- Data Loading ---
 @st.cache_data(ttl=600)
 def load_transfers_df(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DATA_TAB_NAME) -> pd.DataFrame:
-    """Carrega a aba 'df' com todos os dados (sem filtrar ainda)."""
+    """Carrega a aba 'df' com todos os dados."""
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, data_tab_name)
@@ -98,13 +125,12 @@ def highlight_today(row, date_col: str):
 with st.spinner("Loading data..."):
     df_all = load_transfers_df()
 
-# Filtra INACTIVE (comporta valores diferentes)
+# Filtra INACTIVE
 if not df_all.empty and 'INACTIVE' in df_all.columns:
     df_all = df_all[df_all['INACTIVE'].isin([False, "FALSE", "false", "False", 0, "0"])].copy()
 
-# ================== SETTINGS (com segmented dentro do expander) ===============
+# ================== SETTINGS (segmented dentro do expander) ===================
 with st.expander("Settings", expanded=True):
-    # Escolha ARRIVAL / DEPARTURE aqui (dentro do expander)
     st.segmented_control(
         "Mode:",
         options=["Arrival", "Departure"],
@@ -112,35 +138,42 @@ with st.expander("Settings", expanded=True):
     )
 
     # Filtro de tipo (fighters / car request)
-    filtro = st.segmented_control(
+    st.segmented_control(
         "Filter list:",
         options=["All", "Only Fighters", "Cars with request"],
         key="role_car_filter",
         default="All"
     )
 
-    # Filtro de status (depende do modo)
-    status_options = ["All", "Planned", "Done", "Canceled", "No Show"]
+    # Filtro de status
     st.segmented_control(
         "Filter by status:",
-        options=status_options,
+        options=["All", "Planned", "Done", "Canceled", "No Show"],
         key="status_filter",
         default="All"
     )
 
-    # === Toggles lado a lado ===
+    # Ordenação
+    st.segmented_control(
+        "Order by:",
+        options=["Guest", "Car number", "Date & Time"],
+        key="order_by",
+        default="Date & Time"
+    )
+
+    # Toggles
     col_t1, col_t2 = st.columns(2)
     with col_t1:
-        modo_cards = st.toggle("View as cards", value=True, key="view_as_cards")
+        st.toggle("View as cards", value=True, key="view_as_cards")
     with col_t2:
-        hide_resident = st.toggle(
+        st.toggle(
             "Hide airport: Resident",
             value=False,
             key="hide_resident_cards",
             help="When ON, hides cards where Airport = Resident (cards view only)."
         )
 
-    # Search box para ambas as visões
+    # Busca
     search = st.text_input("Search in any column:")
 
 mode = st.session_state.get("arrdep_mode", "Arrival")
@@ -154,7 +187,7 @@ if mode == "Arrival":
     STATUS_COL = "transfer_arrival_status"
     CAR_COL    = "transfer_arrival_car"
     DRIVER_COL = "transfer_arrival_driver"
-    PICKUP_COL = None  # não se aplica em arrival
+    PICKUP_COL = None
     title_mode = "Arrivals"
 else:
     FLIGHT_COL = "DepartureFlight"
@@ -164,10 +197,10 @@ else:
     STATUS_COL = "transfer_departure_status"
     CAR_COL    = "transfer_departure_car"
     DRIVER_COL = "transfer_departure_driver"
-    PICKUP_COL = "transfer_departure_pickup"  # pedido do usuário
+    PICKUP_COL = "transfer_departure_pickup"
     title_mode = "Departures"
 
-# Mantém apenas colunas relevantes que existirem
+# Mantém colunas relevantes
 base_cols = [
     'ID', 'ROLE', 'CORNER', 'NAME',
     FLIGHT_COL, DATE_COL, TIME_COL, AIRP_COL,
@@ -202,11 +235,9 @@ elif st.session_state.get("role_car_filter") == "Cars with request" and CAR_COL 
 sel_status = st.session_state.get("status_filter", "All")
 if sel_status != "All" and STATUS_COL in df_filtrado.columns:
     target = sel_status.upper()
-    df_filtrado = df_filtrado[
-        df_filtrado[STATUS_COL].apply(_norm_status_arrival) == target
-    ]
+    df_filtrado = df_filtrado[df_filtrado[STATUS_COL].apply(_norm_status_arrival) == target]
 
-# Search em qualquer coluna
+# Search
 df_search = df_filtrado.copy()
 if search:
     mask = pd.Series(False, index=df_search.index)
@@ -214,15 +245,43 @@ if search:
         mask = mask | df_search[col].astype(str).str.contains(search, case=False, na=False)
     df_search = df_search[mask]
 
+# --------------------- Chaves de ordenação ------------------------------------
+order_by = st.session_state.get("order_by", "Date & Time")
+
+df_order = df_search.copy()
+now = datetime.datetime.now()
+current_year = now.year
+
+# Chave por data/hora
+df_order["__HHMM__"] = df_order.get(TIME_COL, "").apply(_fmt_hhmm)
+if DATE_COL in df_order.columns:
+    df_order["__DT__"] = pd.to_datetime(
+        df_order[DATE_COL].astype(str) + "/" + str(current_year) + " " + df_order["__HHMM__"].astype(str),
+        format="%d/%m/%Y %H:%M",
+        errors="coerce"
+    )
+else:
+    df_order["__DT__"] = pd.NaT
+
+# Chave por carro
+df_order["__CARKEY__"] = df_order.get(CAR_COL, "").apply(_car_number_key)
+
+# Ordena
+if order_by == "Guest":
+    df_order = df_order.sort_values(by=["NAME"], na_position="last")
+elif order_by == "Car number":
+    df_order = df_order.sort_values(by=["__CARKEY__", "NAME"], na_position="last")
+else:  # Date & Time
+    df_order = df_order.sort_values(by=["__DT__", "NAME"], na_position="last")
+
 # ---------------------------- Métricas ----------------------------------------
 def norm_status_series(series):
-    s = series.astype(str).str.strip().str.upper()
-    s = s.replace({"CANCELLED": "CANCELED"})
+    s = series.astype(str).str.strip().str.upper().replace({"CANCELLED": "CANCELED"})
     return s
 
-status_series = norm_status_series(df_search.get(STATUS_COL, pd.Series(dtype=str)))
+status_series = norm_status_series(df_order.get(STATUS_COL, pd.Series(dtype=str)))
 
-total_filtered = len(df_search)
+total_filtered = len(df_order)
 total_all = len(df)
 planned_count  = (status_series == "PLANNED").sum()
 done_count     = (status_series == "DONE").sum()
@@ -241,12 +300,11 @@ st.markdown(summary_html, unsafe_allow_html=True)
 
 # ---------------------------- Visualização ------------------------------------
 if st.session_state.get("view_as_cards", True):
-    # Aplica o "hide resident" apenas nos cards
-    df_cards = df_search.copy()
-    if hide_resident and AIRP_COL in df_cards.columns:
+    # Aplica "hide resident" nos cards
+    df_cards = df_order.copy()
+    if st.session_state.get("hide_resident_cards", False) and AIRP_COL in df_cards.columns:
         df_cards = df_cards[~df_cards[AIRP_COL].astype(str).str.strip().str.lower().eq('resident')]
 
-    now = datetime.datetime.now()
     today_str = now.strftime('%d/%m')
 
     corner_colors = {
@@ -266,25 +324,13 @@ if st.session_state.get("view_as_cards", True):
         for _, row in group.iterrows():
             card_color, text_color = "#23272f", "#f8f9fa"
 
-            # janela crítica (laranja) para próximas 3h / últimas 30min
-            dt_event = None
-            try:
-                if row.get(DATE_COL) and row.get(TIME_COL) is not None:
-                    time_fmt = _fmt_hhmm(row.get(TIME_COL, ""))
-                    if time_fmt:
-                        dt_event = datetime.datetime.strptime(
-                            f"{row[DATE_COL]}/{now.year} {time_fmt}",
-                            '%d/%m/%Y %H:%M'
-                        )
-            except Exception:
-                pass
-
-            is_today = (str(date_val) == today_str)
-            if dt_event:
+            # janela crítica (laranja) próximas 3h / últimas 30min
+            dt_event = row.get("__DT__")
+            if pd.notna(dt_event):
                 diff = dt_event - now
                 if datetime.timedelta(minutes=-30) <= diff <= datetime.timedelta(hours=3):
                     card_color, text_color = "#FF8C00", "#f8f9fa"
-            elif is_today:
+            elif str(date_val) == today_str:
                 card_color, text_color = "#ffe066", "#23272f"
 
             corner = str(row.get('CORNER', '')).upper()
@@ -310,7 +356,7 @@ if st.session_state.get("view_as_cards", True):
             driver_val = str(row.get(DRIVER_COL, '')).strip()
             pickup_val = str(row.get(PICKUP_COL, '')).strip() if PICKUP_COL else ""
 
-            # monta a linha inferior (car / driver / pickup / status)
+            # linha inferior (car / driver / pickup / status)
             line_html = '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;">'
             if car_val:
                 line_html += f'<span><strong>Car:</strong> {car_val}</span>'
@@ -329,7 +375,7 @@ if st.session_state.get("view_as_cards", True):
                     </div>
                     <div style="display: flex; gap: 18px; margin-bottom: 8px; flex-wrap:wrap;">
                         <span><strong>Flight:</strong> {row.get(FLIGHT_COL,'')}</span>
-                        <span><strong>Time:</strong> {_fmt_hhmm(row.get(TIME_COL,''))}</span>
+                        <span><strong>Time:</strong> {row.get('__HHMM__','')}</span>
                         <span><strong>Airport:</strong> {row.get(AIRP_COL,'')}</span>
                     </div>
                     {line_html}
@@ -339,23 +385,11 @@ if st.session_state.get("view_as_cards", True):
             )
 else:
     # --- Tabela ---
-    df_table = df_search.copy()
-    current_year = datetime.datetime.now().year
-
-    # Construir coluna datetime só para ordenar; exibe HH:MM formatado
-    if DATE_COL in df_table.columns and TIME_COL in df_table.columns:
-        df_table["__HHMM__"] = df_table[TIME_COL].apply(_fmt_hhmm)
-        df_table['__DT__'] = pd.to_datetime(
-            df_table[DATE_COL].astype(str) + '/' + str(current_year) + ' ' + df_table["__HHMM__"].astype(str),
-            format='%d/%m/%Y %H:%M',
-            errors='coerce'
-        )
-        df_table = df_table.sort_values(by='__DT__', na_position='last')
-        # substitui visualmente o TIME_COL por HH:MM
+    df_table = df_order.copy()
+    # substituir a coluna de hora pela HH:MM já calculada
+    if TIME_COL in df_table.columns:
         df_table[TIME_COL] = df_table["__HHMM__"]
-        df_table.drop(columns=['__DT__', '__HHMM__'], inplace=True, errors='ignore')
-
-    # remove driver na visão tabela (apenas para limpar visualmente se quiser)
-    # (mantemos por padrão, como na sua versão original removia só em arrival)
-    styled_df = df_table.style.apply(lambda r: highlight_today(r, DATE_COL), axis=1)
+    # ordenar já foi feito; apenas destacar hoje
+    styled_df = df_table.drop(columns=["__DT__", "__CARKEY__", "__HHMM__"], errors="ignore") \
+                        .style.apply(lambda r: highlight_today(r, DATE_COL), axis=1)
     st.dataframe(styled_df, use_container_width=True, hide_index=True)

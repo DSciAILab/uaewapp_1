@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fight Dashboard</title>
+    <style>
+        /* --- ESTRUTURA E LAYOUT GERAL --- */
+        html { font-size: 16px; }
+        body {
+            background-color: #0f0f10; color: #e1e1e1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; height: 100vh; width: 100vw;
+            overflow: hidden;
+        }
+        #app-container {
+            display: flex; flex-direction: column;
+            height: 100%; padding: 1rem;
+            box-sizing: border-box;
+        }
+        #main-title {
+            font-size: 2.5rem; text-align: center;
+            color: #f0f0f0; text-transform: uppercase;
+            letter-spacing: 0.1rem; margin: 0 0 1rem 0;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+            flex-shrink: 0;
+        }
+        #dashboard-container {
+            flex-grow: 1; min-height: 0;
+        }
+        #loader, #error-message {
+            text-align: center; padding-top: 20vh; font-size: 1.5rem;
+        }
+        #last-update {
+            font-size: 0.8rem; text-align: center;
+            color: #888; margin-top: 1rem;
+            flex-shrink: 0;
+        }
+
+        /* --- ESTILOS DO GRID DO DASHBOARD --- */
+        .dashboard-grid {
+            display: grid; height: 100%; gap: 2px;
+            background-color: #4a4a50; border-radius: 12px;
+            overflow: hidden; box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.5);
+        }
+        .grid-item {
+            background-color: #2a2a2e; padding: 0.5rem;
+            display: flex; align-items: center; justify-content: center;
+            word-break: break-word; overflow: hidden;
+        }
+        .grid-header {
+            background-color: #1c1c1f; font-weight: 600;
+            font-size: 1rem; min-height: auto;
+            text-align: center;
+        }
+        .blue-corner-header { background-color: #0d2e4e !important; }
+        .red-corner-header { background-color: #5a1d1d !important; }
+        .center-col-header { background-color: #111 !important; }
+        
+        .fighter-name {
+            font-weight: 700; font-size: 1.6rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .fighter-name-blue { justify-content: flex-end !important; text-align: right; padding-right: 1rem; }
+        .fighter-name-red { justify-content: flex-start !important; text-align: left; padding-left: 1rem; }
+        
+        .center-info-cell {
+            flex-direction: column; line-height: 1.4;
+            background-color: #333; font-size: 1.1rem;
+            /* ALTERADO: Garante uma largura mínima para a coluna central */
+            min-width: 140px; 
+        }
+        .status-done { background-color: #4A6D2F; }
+        .status-requested { background-color: #FF8C00; }
+        .status-pending { background-color: #dc3545; }
+        .status-neutral { background-color: transparent !important; }
+        
+        .fighter-img {
+            width: 80px; height: 80px;
+            border-radius: 50%; object-fit: cover;
+            border: 3px solid #666;
+        }
+        .fight-info-number { font-weight: bold; color: #fff; font-size: 1.2em; }
+        .fight-info-event { font-style: italic; color: #ccc; }
+        .fight-info-division { font-style: normal; color: #ddd; }
+    </style>
+</head>
+<body>
+    
+    <div id="app-container">
+        <h1 id="main-title">UAE Warriors - Fight Week Dashboard</h1>
+        <div id="loader">Carregando Dashboard... 🔄</div>
+        <div id="error-message" style="display: none;"></div>
+        <div id="dashboard-container"></div>
+        <p id="last-update"></p>
+    </div>
+
+    <script>
+        // Substitua as URLs abaixo pelas URLs .csv que você gerou ao publicar suas abas na web.
+        const FIGHTCARD_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66-GpyYOmVnTVnkytCcLnbZ_dcNNrr0mQPmG3wLKCNwQzcRRlt6VpdCAubCjOi7qoG_t_Q43cALgW/pub?gid=987314401&single=true&output=csv";
+        const ATTENDANCE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66-GpyYOmVnTVnkytCcLnbZ_dcNNrr0mQPmG3wLKCNwQzcRRlt6VpdCAubCjOi7qoG_t_Q43cALgW/pub?gid=443957189&single=true&output=csv"; // Ex: https://docs.google.com/spreadsheets/d/ID_DA_SUA_PLANILHA/gviz/tq?tqx=out:csv&sheet=Attendance
+        const CONFIG_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT66-GpyYOmVnTVnkytCcLnbZ_dcNNrr0mQPmG3wLKCNwQzcRRlt6VpdCAubCjOi7qoG_t_Q43cALgW/pub?gid=488986412&single=true&output=csv";       // Ex: https://docs.google.com/spreadsheets/d/ID_DA_SUA_PLANILHA/gviz/tq?tqx=out:csv&sheet=Config
+        
+        const REFRESH_INTERVAL_MS = 300000;
+        const SELECTED_EVENT = "All Events";
+        const TASKS_TO_MONITOR = [];
+
+        const STATUS_INFO = { "Done": { class: "status-done", text: "Done" }, "Requested": { class: "status-requested", text: "Requested" }, "---": { class: "status-neutral", text: "---" }, "Pending": { class: "status-pending", text: "Pending" }, "Pendente": { class: "status-pending", text: "Pending" }, "Não Registrado": { class: "status-pending", text: "Not Registered" }, "Não Solicitado": { class: "status-neutral", text: "Not Requested" },};
+        const DEFAULT_STATUS_INFO = { class: "status-pending", text: "Pending" };
+        const TASK_EMOJI_MAP = { "Walkout Music": "🎵", "Stats": "📊", "Black Screen Video": "⬛", "Video Shooting": "🎥", "Photoshoot": "📸", "Blood Test": "🩸", };
+        
+        function calculateLongestNameWidth(fights) {
+            let longestName = "Fighter";
+            for (const fight of fights) {
+                const blueName = fight.blue?.Fighter || '';
+                const redName = fight.red?.Fighter || '';
+                if (blueName.length > longestName.length) longestName = blueName;
+                if (redName.length > longestName.length) longestName = redName;
+            }
+            const ruler = document.createElement('span');
+            ruler.style.visibility = 'hidden';
+            ruler.style.position = 'absolute';
+            ruler.style.whiteSpace = 'nowrap';
+            ruler.style.fontSize = '1.6rem';
+            ruler.style.fontWeight = '700';
+            ruler.style.fontFamily = ' -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+            ruler.textContent = longestName;
+            document.body.appendChild(ruler);
+            const widthInPixels = ruler.offsetWidth + 32; // Adiciona padding
+            document.body.removeChild(ruler);
+            return widthInPixels;
+        }
+
+        /**
+         * ALTERADO: A lógica de definição de colunas foi corrigida.
+         */
+        function renderHTML(processedFights, taskList, attendanceData) {
+            const container = document.getElementById('dashboard-container');
+            if (!container) return;
+            const numTasks = taskList.length;
+
+            const fighterNameWidthPx = calculateLongestNameWidth(processedFights);
+            
+            /* ALTERADO: Substituindo '%' por 'auto' para estabilidade */
+            const photoWidth = 'auto';
+            const divisionWidth = 'auto';
+            
+            const taskColumns = numTasks > 0 ? Array(numTasks).fill('1fr') : [];
+            
+            const gridTemplateColumns = [
+                ...taskColumns,
+                `${fighterNameWidthPx}px`,
+                photoWidth,
+                divisionWidth,
+                photoWidth,
+                `${fighterNameWidthPx}px`,
+                ...taskColumns
+            ].join(' ');
+            
+            const numFights = processedFights.length;
+            const gridTemplateRows = `auto auto repeat(${numFights}, 1fr)`;
+
+            let html = `<div class="dashboard-grid" style="grid-template-columns: ${gridTemplateColumns}; grid-template-rows: ${gridTemplateRows};">`;
+            
+            // O restante da função que gera o HTML não precisa de alterações.
+            html += `<div class="grid-item grid-header blue-corner-header" style="grid-column: 1 / span ${numTasks + 2};">BLUE CORNER</div>`;
+            html += `<div class="grid-item grid-header center-col-header" style="grid-column: ${numTasks + 3}; grid-row: 1 / span 2;">FIGHT<br>INFO</div>`;
+            html += `<div class="grid-item grid-header red-corner-header" style="grid-column: ${numTasks + 4} / span ${numTasks + 2};">RED CORNER</div>`;
+            taskList.slice().reverse().forEach(task => { html += `<div class="grid-item grid-header task-header" title="${task}">${TASK_EMOJI_MAP[task] || task[0]}</div>`; });
+            html += "<div class='grid-item grid-header fighter-header'>Fighter</div>";
+            html += "<div class='grid-item grid-header photo-header'>Photo</div>";
+            html += "<div class='grid-item grid-header photo-header'>Photo</div>";
+            html += "<div class='grid-item grid-header fighter-header'>Fighter</div>";
+            taskList.forEach(task => { html += `<div class="grid-item grid-header task-header" title="${task}">${TASK_EMOJI_MAP[task] || task[0]}</div>`; });
+
+            for (const fight of processedFights) {
+                const blue = fight.blue || {}; const red = fight.red || {};
+                taskList.slice().reverse().forEach(task => { const status = getTaskStatus(blue.AthleteID, task, fight.event, attendanceData); html += `<div class="grid-item status-cell ${status.class}" title="${status.text}"></div>`; });
+                html += `<div class="grid-item fighter-name fighter-name-blue">${blue.Fighter || 'N/A'}</div>`;
+                html += `<div class="grid-item photo-cell"><img class="fighter-img" src="${blue.Picture || 'https://via.placeholder.com/90?text=N/A'}" alt="Foto"/></div>`;
+                html += `<div class="grid-item center-info-cell"><div class="fight-info-number">${fight.order == 999 ? 'N/A' : '#' + fight.order}</div><div class="fight-info-event">${fight.event || ''}</div><div class="fight-info-division">${fight.division || 'N/A'}</div></div>`;
+                html += `<div class="grid-item photo-cell"><img class="fighter-img" src="${red.Picture || 'https://via.placeholder.com/90?text=N/A'}" alt="Foto"/></div>`;
+                html += `<div class="grid-item fighter-name fighter-name-red">${red.Fighter || 'N/A'}</div>`;
+                taskList.forEach(task => { const status = getTaskStatus(red.AthleteID, task, fight.event, attendanceData); html += `<div class="grid-item status-cell ${status.class}" title="${status.text}"></div>`; });
+            }
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        // --- RESTANTE DO JAVASCRIPT (NÃO PRECISA MUDAR) ---
+        async function fetchAndParseCSV(url) { const cacheBusterUrl = `${url}&_=${new Date().getTime()}`; const response = await fetch(cacheBusterUrl); if (!response.ok) throw new Error(`Erro ao buscar dados de ${url}: ${response.statusText}`); const text = await response.text(); const rows = text.split(/\r?\n/).map(row => row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))); if (rows.length < 2) return []; const headers = rows[0].map(h => h.trim()); return rows.slice(1).map(row => headers.reduce((obj, header, i) => { obj[header] = row[i]; return obj; }, {})); }
+        function getTaskStatus(athleteId, taskName, eventName, attendanceData) { if (!athleteId || !taskName || !eventName || !attendanceData.length) return STATUS_INFO["Pending"] || DEFAULT_STATUS_INFO; const relevantRecords = attendanceData.filter(rec => rec["Athlete ID"] === athleteId && rec["Task"] === taskName && rec["Event"] === eventName); if (!relevantRecords.length) return STATUS_INFO["Pending"] || DEFAULT_STATUS_INFO; if (relevantRecords[0]["Timestamp"]) { relevantRecords.sort((a, b) => { try { const [dayA, monthA, yearTimeA] = a["Timestamp"].split('/'); const [yearA, timeA] = yearTimeA.split(' '); const [dayB, monthB, yearTimeB] = b["Timestamp"].split('/'); const [yearB, timeB] = yearTimeB.split(' '); const dateA = new Date(`${yearA}-${monthA}-${dayA}T${timeA || '00:00:00'}`); const dateB = new Date(`${yearB}-${monthB}-${dayB}T${timeB || '00:00:00'}`); return dateB - dateA; } catch { return 0; } }); } const latestStatus = relevantRecords[0]["Status"]; return STATUS_INFO[latestStatus] || { class: DEFAULT_STATUS_INFO.class, text: latestStatus }; }
+        async function updateDashboard() { console.log("Atualizando dados...", new Date().toLocaleTimeString()); const loader = document.getElementById('loader'); const container = document.getElementById('dashboard-container'); const errorBox = document.getElementById('error-message'); loader.style.display = 'block'; container.innerHTML = ''; errorBox.style.display = 'none'; try { const [fightcardData, attendanceData, configData] = await Promise.all([ fetchAndParseCSV(FIGHTCARD_SHEET_URL), fetchAndParseCSV(ATTENDANCE_SHEET_URL), fetchAndParseCSV(CONFIG_SHEET_URL) ]); let taskList = configData.map(row => row.TaskList).filter(Boolean); if (TASKS_TO_MONITOR.length > 0) taskList = taskList.filter(task => TASKS_TO_MONITOR.includes(task)); const filteredFc = (SELECTED_EVENT === "All Events") ? fightcardData : fightcardData.filter(row => row.Event === SELECTED_EVENT); const fights = {}; for (const fighter of filteredFc) { if (!fighter.Fighter || !fighter.AthleteID) continue; const fightId = `${fighter.Event}_${fighter.FightOrder}`; if (!fights[fightId]) fights[fightId] = { event: fighter.Event, order: parseInt(fighter.FightOrder, 10) || 999, division: fighter.Division }; if (fighter.Corner.toLowerCase() === 'blue') fights[fightId].blue = fighter; else if (fighter.Corner.toLowerCase() === 'red') fights[fightId].red = fighter; if (!fights[fightId].division && fighter.Division) fights[fightId].division = fighter.Division; } const processedFights = Object.values(fights).sort((a, b) => { if (a.event < b.event) return -1; if (a.event > b.event) return 1; return a.order - b.order; }); renderHTML(processedFights, taskList, attendanceData); } catch (error) { console.error("Falha ao atualizar o dashboard:", error); errorBox.textContent = `Erro: ${error.message}. Verifique as URLs da planilha.`; errorBox.style.display = 'block'; } finally { loader.style.display = 'none'; document.getElementById('last-update').textContent = `*Dashboard atualizado em: ${new Date().toLocaleString('pt-BR')}*`; } }
+        document.addEventListener('DOMContentLoaded', () => { updateDashboard(); setInterval(updateDashboard, REFRESH_INTERVAL_MS); });
+    </script>
+</body>
+</html>

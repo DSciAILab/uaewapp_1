@@ -14,7 +14,7 @@ bootstrap_page("Stats")
 st.title("Stats")
 
 # --- Project Imports ---
-from utils import get_gspread_client, connect_gsheet_tab
+from utils import get_gspread_client, connect_gsheet_tab, safe_get_all_records
 
 # ==============================================================================
 # CONSTANTS & CONFIG
@@ -192,7 +192,7 @@ def load_athletes() -> pd.DataFrame:
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATHLETES_TAB_NAME)
-        df = pd.DataFrame(ws.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(ws))
         if df.empty:
             return pd.DataFrame()
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
@@ -232,7 +232,7 @@ def load_attendance() -> pd.DataFrame:
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.ATTENDANCE_TAB_NAME)
-        df_att = pd.DataFrame(ws.get_all_records())
+        df_att = pd.DataFrame(safe_get_all_records(ws))
         if df_att.empty:
             return pd.DataFrame(columns=[
                 Config.ATT_COL_ROWID, Config.ATT_COL_EVENT, Config.ATT_COL_ATHLETE_ID,
@@ -281,7 +281,7 @@ def load_stats() -> pd.DataFrame:
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET_NAME, Config.STATS_TAB_NAME)
-        df = pd.DataFrame(ws.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(ws))
         return df
     except Exception as e:
         st.error(f"Error loading stats: {e}", icon="🚨")

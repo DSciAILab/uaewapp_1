@@ -13,7 +13,7 @@ bootstrap_page("Walkout Music")
 st.title("Walkout Music")
 
 # --- Project Imports ---
-from utils import get_gspread_client, connect_gsheet_tab
+from utils import get_gspread_client, connect_gsheet_tab, safe_get_all_records
 
 # ==============================================================================
 # CONFIG
@@ -147,7 +147,7 @@ def load_athlete_data() -> pd.DataFrame:
     try:
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, Config.MAIN_SHEET_NAME, Config.ATHLETES_TAB_NAME)
-        data = ws.get_all_records()
+        data = safe_get_all_records(ws)
         if not data:
             return pd.DataFrame()
         df = pd.DataFrame(data)

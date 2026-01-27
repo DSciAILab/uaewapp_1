@@ -36,12 +36,12 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     except Exception as e:
         st.error(f"Erro ao conectar à aba '{tab_name}': {e}", icon="🚨"); st.stop()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)  # Cache curto para multi-usuário
 def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
-        return worksheet.get_all_records() or []
+        return safe_get_all_records(worksheet)
     except Exception as e:
         st.error(f"Erro ao carregar usuários '{users_tab_name}': {e}", icon="🚨"); return []
 
@@ -56,11 +56,16 @@ def get_valid_user_info(user_input: str, sheet_name: str = MAIN_SHEET_NAME, user
     proc_input = user_input.strip().upper()
     val_id_input = proc_input[2:] if proc_input.startswith("PS") and len(proc_input) > 2 and proc_input[2:].isdigit() else proc_input
     for record in all_users:
-        ps_sheet = str(record.get("PS", "")).strip(); name_sheet = str(record.get("USER", "")).strip().upper()
-        if ps_sheet == val_id_input or ("PS" + ps_sheet) == proc_input or name_sheet == proc_input or ps_sheet == proc_input: return record
+        # Tenta pegar chaves de forma case-insensitive
+        ps_sheet = str(record.get("PS", record.get("ps", ""))).strip()
+        name_sheet = str(record.get("USER", record.get("user", ""))).strip().upper()
+        
+        # Logica de comparação robusta
+        if ps_sheet == val_id_input or ("PS" + ps_sheet) == proc_input or name_sheet == proc_input or ps_sheet == proc_input: 
+            return record
     return None
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)  # Cache curto para multi-usuário
 def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = CONFIG_TAB_NAME):
     try:
         gspread_client = get_gspread_client()
@@ -80,3 +85,48 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
     except Exception as e: 
         st.error(f"Erro ao carregar config '{config_tab_name}': {e}", icon="🚨")
         return [], []
+
+def safe_get_all_records(worksheet):
+    """
+    Robust replacement for gspread's get_all_records().
+    Handles:
+    - Empty sheets
+    - Duplicate headers (suffixes with _1, _2, etc.)
+    - Empty headers (names them 'col_X')
+    Returns a list of dictionaries.
+    """
+    try:
+        all_values = worksheet.get_all_values()
+        if not all_values or len(all_values) < 2:
+            return []
+            
+        headers = all_values[0]
+        # Make headers unique
+        unique_headers = []
+        seen = {}
+        for i, h in enumerate(headers):
+            clean_h = str(h).strip()
+            if not clean_h:
+                clean_h = f"col_{i+1}"
+            
+            if clean_h in seen:
+                seen[clean_h] += 1
+                unique_headers.append(f"{clean_h}_{seen[clean_h]}")
+            else:
+                seen[clean_h] = 0
+                unique_headers.append(clean_h)
+        
+        records = []
+        for row in all_values[1:]:
+            record = {}
+            for i, header in enumerate(unique_headers):
+                # Handle rows shorter than headers
+                val = row[i] if i < len(row) else ""
+                record[header] = val
+            records.append(record)
+            
+        return records
+    except Exception as e:
+        # Fallback empty list on any error to prevent app crash
+        print(f"Error in safe_get_all_records: {e}")
+        return []

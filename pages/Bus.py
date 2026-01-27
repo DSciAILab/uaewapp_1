@@ -13,6 +13,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
 import time
+from utils import safe_get_all_records
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Bus Attendance", layout="wide")
@@ -73,7 +74,7 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
-        data = worksheet.get_all_records()
+        data = safe_get_all_records(worksheet)
         if not data: return pd.DataFrame()
         df = pd.DataFrame(data)
 
@@ -97,7 +98,7 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
 def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USERS_TAB_NAME):
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
-    return worksheet.get_all_records() or []
+    return safe_get_all_records(worksheet) or []
 
 def get_valid_user_info(user_input: str):
     if not user_input: return None
@@ -123,14 +124,17 @@ def load_config_data(sheet_name: str = MAIN_SHEET_NAME, config_tab_name: str = C
 def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name: str = ATTENDANCE_TAB_NAME):
     gspread_client = get_gspread_client()
     worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-    data = worksheet.get_all_records()
+    data = worksheet.get_all_values()
     
     expected_cols = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
 
-    if not data:
+    if not data or len(data) < 2:
         return pd.DataFrame(columns=expected_cols)
 
-    df_att = pd.DataFrame(data)
+    # Usa primeira linha como header
+    headers = data[0]
+    rows = data[1:]
+    df_att = pd.DataFrame(rows, columns=headers)
     for col in expected_cols:
         if col not in df_att.columns:
             df_att[col] = pd.NA

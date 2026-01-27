@@ -106,8 +106,7 @@ def get_gspread_client():
         return gspread.authorize(creds)
     except KeyError as e:
         st.error(f"Erro config: Chave GCP ausente. Detalhes: {e}", icon="🚨"); st.stop()
-    except Exception as e:
-        st.error(f"Erro API Google: {e}", icon="🚨"); st.stop()
+from utils import safe_get_all_records
 
 def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
     try:
@@ -126,7 +125,7 @@ def load_athlete_data(sheet_name: str = MAIN_SHEET_NAME, athletes_tab_name: str 
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
-        data = worksheet.get_all_records()
+        data = safe_get_all_records(worksheet)
         if not data: return pd.DataFrame()
         df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame()
@@ -159,7 +158,7 @@ def load_users_data(sheet_name: str = MAIN_SHEET_NAME, users_tab_name: str = USE
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, users_tab_name)
-        return worksheet.get_all_records() or []
+        return safe_get_all_records(worksheet) or []
     except Exception as e:
         st.error(f"Erro ao carregar usuários '{users_tab_name}': {e}", icon="🚨"); return []
 
@@ -192,9 +191,18 @@ def load_attendance_data(sheet_name: str = MAIN_SHEET_NAME, attendance_tab_name:
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-        df_att = pd.DataFrame(worksheet.get_all_records())
-        if df_att.empty: return pd.DataFrame(columns=["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"])
+        # Usa get_all_values para evitar erro de header duplicado
+        data = worksheet.get_all_values()
         expected_cols_order = ["#", "Event", ID_COLUMN_IN_ATTENDANCE, "Name", "Task", "Status", "User", "Timestamp", "Notes"]
+        
+        if not data or len(data) < 2:
+             return pd.DataFrame(columns=expected_cols_order)
+        
+        # Usa primeira linha como header
+        headers = data[0]
+        rows = data[1:]
+        df_att = pd.DataFrame(rows, columns=headers)
+        
         for col in expected_cols_order:
             if col not in df_att.columns: df_att[col] = pd.NA
         return df_att

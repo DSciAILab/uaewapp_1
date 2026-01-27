@@ -24,9 +24,18 @@ from typing import List, Tuple, Optional
 # --- Project Imports (helpers existentes) ---
 from utils import (
     get_gspread_client, connect_gsheet_tab,
-    load_users_data, get_valid_user_info, load_config_data
+    load_users_data, get_valid_user_info, load_config_data,
+    safe_get_all_records
+)
 )
 from auth import check_authentication, display_user_sidebar
+
+# --- Multi-user & Realtime Support ---
+from locks_manager import get_lock_manager
+from realtime_utils import (
+    get_realtime_sync, setup_auto_refresh, 
+    render_sync_indicator, RealtimeSync
+)
 
 
 # ==============================================================================
@@ -187,13 +196,13 @@ def get_attendance_ws(sheet_name: str, tab_name: str):
 # ==============================================================================
 # DATA LOADING (CACHED)
 # ==============================================================================
-@st.cache_data(ttl=600, show_spinner=False)
-def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) -> pd.DataFrame:
+@st.cache_data(ttl=30, show_spinner=False)  # Cache curto para multi-usuário
+def load_athlete_data(sheet_name: str, athletes_tab_name: str, _cfg: BaseConfig) -> pd.DataFrame:
     """Load athletes sheet, apply filters and normalizations."""
     try:
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, athletes_tab_name)
-        data = ws.get_all_records()
+        data = safe_get_all_records(ws)
         if not data:
             return pd.DataFrame()
         df = pd.DataFrame(data)
@@ -203,91 +212,124 @@ def load_athlete_data(sheet_name: str, athletes_tab_name: str, cfg: BaseConfig) 
         df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
         # garante colunas essenciais
-        if cfg.COL_ROLE not in df.columns or cfg.COL_INACTIVE not in df.columns:
-            st.error(f"Columns '{cfg.COL_ROLE.upper()}'/'{cfg.COL_INACTIVE.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
+        if _cfg.COL_ROLE not in df.columns or _cfg.COL_INACTIVE not in df.columns:
+            st.error(f"Columns '{_cfg.COL_ROLE.upper()}'/'{_cfg.COL_INACTIVE.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
-        if cfg.COL_ID not in df.columns:
-            df[cfg.COL_ID] = ""  # evita KeyError
-        if cfg.COL_NAME not in df.columns:
-            st.error(f"'{cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
+        if _cfg.COL_ID not in df.columns:
+            df[_cfg.COL_ID] = ""  # evita KeyError
+        if _cfg.COL_NAME not in df.columns:
+            st.error(f"'{_cfg.COL_NAME.upper()}' not found in '{athletes_tab_name}'.", icon="🚨")
             return pd.DataFrame()
 
         # inativos
-        if df[cfg.COL_INACTIVE].dtype == 'object':
-            df[cfg.COL_INACTIVE] = (
-                df[cfg.COL_INACTIVE]
+        if df[_cfg.COL_INACTIVE].dtype == 'object':
+            df[_cfg.COL_INACTIVE] = (
+                df[_cfg.COL_INACTIVE]
                 .astype(str).str.strip().str.upper()
                 .map({'FALSE': False, 'TRUE': True, '': False})
                 .fillna(False)
             )
-        elif pd.api.types.is_numeric_dtype(df[cfg.COL_INACTIVE]):
-            df[cfg.COL_INACTIVE] = df[cfg.COL_INACTIVE].map({0: False, 1: True}).fillna(False)
+        elif pd.api.types.is_numeric_dtype(df[_cfg.COL_INACTIVE]):
+            df[_cfg.COL_INACTIVE] = df[_cfg.COL_INACTIVE].map({0: False, 1: True}).fillna(False)
         else:
-            df[cfg.COL_INACTIVE] = False
+            df[_cfg.COL_INACTIVE] = False
 
         # somente lutadores ativos
-        df = df[(df[cfg.COL_ROLE] == "1 - Fighter") & (df[cfg.COL_INACTIVE] == False)].copy()
+        df = df[(df[_cfg.COL_ROLE] == "1 - Fighter") & (df[_cfg.COL_INACTIVE] == False)].copy()
 
         # completa colunas usadas na UI
-        df[cfg.COL_EVENT] = df[cfg.COL_EVENT].fillna(cfg.DEFAULT_EVENT_PLACEHOLDER) if cfg.COL_EVENT in df.columns else cfg.DEFAULT_EVENT_PLACEHOLDER
-        for col_check in [cfg.COL_IMAGE, cfg.COL_MOBILE, cfg.COL_FIGHT_NUMBER, cfg.COL_CORNER, cfg.COL_PASSPORT_IMAGE, cfg.COL_ROOM]:
+        df[_cfg.COL_EVENT] = df[_cfg.COL_EVENT].fillna(_cfg.DEFAULT_EVENT_PLACEHOLDER) if _cfg.COL_EVENT in df.columns else _cfg.DEFAULT_EVENT_PLACEHOLDER
+        for col_check in [_cfg.COL_IMAGE, _cfg.COL_MOBILE, _cfg.COL_FIGHT_NUMBER, _cfg.COL_CORNER, _cfg.COL_PASSPORT_IMAGE, _cfg.COL_ROOM]:
             if col_check not in df.columns:
                 df[col_check] = ""
             else:
                 df[col_check] = df[col_check].fillna("")
 
-        return df.sort_values(by=[cfg.COL_EVENT, cfg.COL_NAME]).reset_index(drop=True)
+        return df.sort_values(by=[_cfg.COL_EVENT, _cfg.COL_NAME]).reset_index(drop=True)
     except Exception as e:
         st.error(f"Error loading athletes (gspread): {e}", icon="🚨")
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def load_attendance_data(sheet_name: str, attendance_tab_name: str, cfg: BaseConfig) -> pd.DataFrame:
+@st.cache_data(ttl=30, show_spinner=False)  # Cache curto para multi-usuário
+def load_attendance_data(sheet_name: str, attendance_tab_name: str, _cfg: BaseConfig) -> pd.DataFrame:
     """Load attendance sheet and ensure required columns exist."""
     try:
         gspread_client = get_gspread_client()
         ws = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-        df_att = pd.DataFrame(ws.get_all_records())
-        # garante colunas esperadas
-        required_cols = [
-            cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
-            cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
-            cfg.ATT_COL_TIMESTAMP, cfg.ATT_COL_TIMESTAMP_ALT, cfg.ATT_COL_NOTES
+        
+        expected_headers = [
+            _cfg.ATT_COL_ID, _cfg.ATT_COL_EVENT, _cfg.ATT_COL_NAME, _cfg.ATT_COL_FIGHTER,
+            _cfg.ATT_COL_ATHLETE_ID, _cfg.ATT_COL_TASK, _cfg.ATT_COL_STATUS, _cfg.ATT_COL_USER,
+            _cfg.ATT_COL_TIMESTAMP, _cfg.ATT_COL_TIMESTAMP_ALT, _cfg.ATT_COL_NOTES
         ]
-        if df_att.empty:
-            return pd.DataFrame(columns=required_cols)
-        for col in required_cols:
+        
+        # Use get_all_values exclusively to handle duplicate headers safely
+        all_values = ws.get_all_values()
+        if not all_values or len(all_values) < 2:
+            return pd.DataFrame(columns=expected_headers)
+        
+        # Use first row as header
+        header = all_values[0]
+        data_rows = all_values[1:]
+        
+        # Create DataFrame with data
+        df_att = pd.DataFrame(data_rows)
+        
+        # Assign column names, handling extra columns if necessary
+        if len(header) > 0:
+            # If we have more columns in data than expected, or just different ones
+            # we try to map them or just use what we have.
+            # Best approach: create DF with actual headers, then ensure expected ones exist
+            df_att = pd.DataFrame(data_rows, columns=header)
+        
+        # Ensure regex/normalization for columns if needed
+        # But mostly we just need to ensure the columns we EXPECT are present
+        for col in expected_headers:
+             if col not in df_att.columns:
+                 df_att[col] = pd.NA
+                 
+        # Keep only relevant columns if desired, or keep all (safer to keep all to avoid losing data on write if we wrote back full df, but we usually append)
+        # For reading, we can keep all.
+
+            else:
+                # Pad with expected headers if needed
+                df_att.columns = (header + expected_headers[len(header):])[:len(df_att.columns)]
+        
+        # Ensure all required columns exist
+        for col in expected_headers:
             if col not in df_att.columns:
                 df_att[col] = pd.NA
+        
         return df_att
+        
     except Exception as e:
         st.error(f"Error loading attendance '{attendance_tab_name}': {e}", icon="🚨")
         return pd.DataFrame(columns=[
-            cfg.ATT_COL_ID, cfg.ATT_COL_EVENT, cfg.ATT_COL_NAME, cfg.ATT_COL_FIGHTER,
-            cfg.ATT_COL_ATHLETE_ID, cfg.ATT_COL_TASK, cfg.ATT_COL_STATUS, cfg.ATT_COL_USER,
-            cfg.ATT_COL_TIMESTAMP, cfg.ATT_COL_TIMESTAMP_ALT, cfg.ATT_COL_NOTES
+            _cfg.ATT_COL_ID, _cfg.ATT_COL_EVENT, _cfg.ATT_COL_NAME, _cfg.ATT_COL_FIGHTER,
+            _cfg.ATT_COL_ATHLETE_ID, _cfg.ATT_COL_TASK, _cfg.ATT_COL_STATUS, _cfg.ATT_COL_USER,
+            _cfg.ATT_COL_TIMESTAMP, _cfg.ATT_COL_TIMESTAMP_ALT, _cfg.ATT_COL_NOTES
         ])
 
 
 # ==============================================================================
 # DATA PROCESSING
 # ==============================================================================
-@st.cache_data(ttl=120, show_spinner=False)
-def preprocess_attendance(df_attendance: pd.DataFrame, cfg: BaseConfig) -> pd.DataFrame:
+@st.cache_data(ttl=30, show_spinner=False)  # Cache curto para multi-usuário
+def preprocess_attendance(df_attendance: pd.DataFrame, _cfg: BaseConfig) -> pd.DataFrame:
     """Normalize columns and parse timestamps."""
     if df_attendance is None or df_attendance.empty:
         return pd.DataFrame()
     df = df_attendance.copy()
 
-    df["fighter_norm"] = df[cfg.ATT_COL_FIGHTER].astype(str).apply(clean_and_normalize)
-    df["event_norm"]   = df[cfg.ATT_COL_EVENT].astype(str).apply(clean_and_normalize)
-    df["task_norm"]    = df[cfg.ATT_COL_TASK].astype(str).str.strip().str.lower()
-    df["status_norm"]  = df[cfg.ATT_COL_STATUS].astype(str).str.strip().str.lower()
+    df["fighter_norm"] = df[_cfg.ATT_COL_FIGHTER].astype(str).apply(clean_and_normalize)
+    df["event_norm"]   = df[_cfg.ATT_COL_EVENT].astype(str).apply(clean_and_normalize)
+    df["task_norm"]    = df[_cfg.ATT_COL_TASK].astype(str).str.strip().str.lower()
+    df["status_norm"]  = df[_cfg.ATT_COL_STATUS].astype(str).str.strip().str.lower()
 
     # Prefer TimeStamp then fallback to Timestamp
-    s2 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP_ALT])
-    s1 = _clean_str_series(df[cfg.ATT_COL_TIMESTAMP])
+    s2 = _clean_str_series(df[_cfg.ATT_COL_TIMESTAMP_ALT])
+    s1 = _clean_str_series(df[_cfg.ATT_COL_TIMESTAMP])
     df["TS_raw"] = s2.where(s2 != "", s1)
 
     df["TS_dt"] = parse_ts_series(df["TS_raw"])
@@ -299,35 +341,35 @@ def get_all_athletes_status(
     df_attendance: pd.DataFrame,
     fixed_task: str,
     aliases: List[str],
-    cfg: BaseConfig
+    _cfg: BaseConfig
 ) -> pd.DataFrame:
     """Compute current fixed-task status for each athlete+event."""
     if df_athletes is None or df_athletes.empty:
-        return pd.DataFrame(columns=[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
+        return pd.DataFrame(columns=[_cfg.COL_NAME, _cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp'])
 
     base = df_athletes.copy()
-    base['name_norm'] = base[cfg.COL_NAME].apply(clean_and_normalize)
-    base['event_norm'] = base[cfg.COL_EVENT].apply(clean_and_normalize)
+    base['name_norm'] = base[_cfg.COL_NAME].apply(clean_and_normalize)
+    base['event_norm'] = base[_cfg.COL_EVENT].apply(clean_and_normalize)
 
     if df_attendance is None or df_attendance.empty:
-        base['current_task_status'] = cfg.STATUS_PENDING
+        base['current_task_status'] = _cfg.STATUS_PENDING
         base['latest_task_user'] = 'N/A'
         base['latest_task_timestamp'] = 'N/A'
-        return base[[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+        return base[[_cfg.COL_NAME, _cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
     task_mask = make_task_mask(df_attendance["task_norm"], fixed_task, aliases)
     df_task = df_attendance[task_mask].copy()
 
     if df_task.empty:
-        base['current_task_status'] = cfg.STATUS_PENDING
+        base['current_task_status'] = _cfg.STATUS_PENDING
         base['latest_task_user'] = 'N/A'
         base['latest_task_timestamp'] = 'N/A'
-        return base[[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+        return base[[_cfg.COL_NAME, _cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
     df_task["__idx__"] = np.arange(len(df_task))
 
     merged = pd.merge(
-        base[[cfg.COL_NAME, cfg.COL_EVENT, 'name_norm', 'event_norm']],
+        base[[_cfg.COL_NAME, _cfg.COL_EVENT, 'name_norm', 'event_norm']],
         df_task,
         left_on=['name_norm', 'event_norm'],
         right_on=['fighter_norm', 'event_norm'],
@@ -336,15 +378,15 @@ def get_all_athletes_status(
 
     latest = merged.drop_duplicates(subset=['name_norm', 'event_norm'], keep='first')
 
-    latest['current_task_status'] = latest[cfg.ATT_COL_STATUS].apply(cfg.map_raw_status_to_logical)
+    latest['current_task_status'] = latest[_cfg.ATT_COL_STATUS].apply(_cfg.map_raw_status_to_logical)
     latest['latest_task_timestamp'] = latest.apply(
         lambda row: row['TS_dt'].strftime("%d/%m/%Y") if pd.notna(row.get('TS_dt', pd.NaT))
-        else _fmt_date_from_text(row.get('TS_raw', row.get(cfg.ATT_COL_TIMESTAMP_ALT, row.get(cfg.ATT_COL_TIMESTAMP, '')))),
+        else _fmt_date_from_text(row.get('TS_raw', row.get(_cfg.ATT_COL_TIMESTAMP_ALT, row.get(_cfg.ATT_COL_TIMESTAMP, '')))),
         axis=1
     )
-    latest['latest_task_user'] = latest[cfg.ATT_COL_USER].fillna('N/A')
+    latest['latest_task_user'] = latest[_cfg.ATT_COL_USER].fillna('N/A')
 
-    return latest[[cfg.COL_NAME, cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
+    return latest[[_cfg.COL_NAME, _cfg.COL_EVENT, 'current_task_status', 'latest_task_user', 'latest_task_timestamp']]
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -354,7 +396,7 @@ def last_task_other_event_by_name(
     current_event: str,
     fixed_task: str,
     aliases: List[str],
-    cfg: BaseConfig,
+    _cfg: BaseConfig,
     fallback_any_event: bool = True
 ) -> Tuple[str, str]:
     """Return (date_str, event_name) of the last DONE record for the fixed task in a different event."""
@@ -365,7 +407,7 @@ def last_task_other_event_by_name(
     evt_n  = clean_and_normalize(current_event)
 
     task_is = make_task_mask(df_attendance["task_norm"], fixed_task, aliases)
-    status_done = df_attendance["status_norm"] == cfg.STATUS_DONE.lower()
+    status_done = df_attendance["status_norm"] == _cfg.STATUS_DONE.lower()
     base_mask = (df_attendance["fighter_norm"] == name_n) & task_is & status_done
 
     cand = df_attendance[base_mask & (df_attendance["event_norm"] != evt_n)].copy()
@@ -383,11 +425,11 @@ def last_task_other_event_by_name(
         return "N/A", ""
 
     row = cand.iloc[0]
-    ev_label = str(row.get(cfg.ATT_COL_EVENT, "")).strip()
+    ev_label = str(row.get(_cfg.ATT_COL_EVENT, "")).strip()
     if pd.notna(row.get("TS_dt", pd.NaT)):
         dt_str = row["TS_dt"].strftime("%d/%m/%Y")
     else:
-        dt_str = _fmt_date_from_text(row.get("TS_raw", row.get(cfg.ATT_COL_TIMESTAMP_ALT, row.get(cfg.ATT_COL_TIMESTAMP, ""))))
+        dt_str = _fmt_date_from_text(row.get("TS_raw", row.get(_cfg.ATT_COL_TIMESTAMP_ALT, row.get(_cfg.ATT_COL_TIMESTAMP, ""))))
     return dt_str, ev_label
 
 
@@ -450,7 +492,17 @@ def flush_buffer(cfg: BaseConfig):
     for i in range(0, len(rows), BATCH):
         fast_values_append(ws, rows[i:i+BATCH])
 
+    # Registra mudança no realtime sync
+    try:
+        gc = get_gspread_client()
+        realtime_sync = get_realtime_sync(gc, cfg.MAIN_SHEET_NAME)
+        user_id = st.session_state.get('current_user_id', 'unknown')
+        realtime_sync.record_change(cfg.ATTENDANCE_TAB_NAME, user_id)
+    except Exception:
+        pass  # Não bloqueia se falhar
+
     st.session_state["write_buffer"].clear()
+    st.session_state["pending_local_updates"].clear()  # Limpa overrides locais
     st.success("Alterações enviadas ao Google Sheets.", icon="✅")
 
 def registrar_log(
@@ -582,6 +634,37 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
 
     # Prefixo para keys
     _kpref = _slugify(page_title)
+    
+    # ========== MULTI-USER & REALTIME SETUP ==========
+    # Auto-refresh a cada 5 segundos
+    refresh_count = setup_auto_refresh(interval_ms=5000, key=f"{_kpref}_autorefresh")
+    
+    # Inicializa managers
+    gc = get_gspread_client()
+    lock_manager = get_lock_manager(gc, cfg.MAIN_SHEET_NAME)
+    realtime_sync = get_realtime_sync(gc, cfg.MAIN_SHEET_NAME)
+    
+    # Tracking de última sincronização
+    if f"{_kpref}_last_sync" not in st.session_state:
+        st.session_state[f"{_kpref}_last_sync"] = datetime.now()
+    
+    # Atualiza timestamp de sincronização após refresh
+    if refresh_count > 0:
+        st.session_state[f"{_kpref}_last_sync"] = datetime.now()
+        # Limpa caches para forçar reload
+        load_attendance_data.clear()
+        preprocess_attendance.clear()
+        load_athlete_data.clear()
+    
+    # Busca usuários ativos
+    active_users = realtime_sync.get_active_users(minutes=5)
+    
+    # Renderiza indicador de sincronização
+    render_sync_indicator(
+        last_sync=st.session_state.get(f"{_kpref}_last_sync"),
+        active_users=active_users
+    )
+    # ========== FIM MULTI-USER SETUP ==========
 
     # Global CSS
     st.markdown("""
@@ -598,6 +681,7 @@ def render_task_page(page_title: str, fixed_task: str, task_aliases: List[str]):
         .green-button button:hover { background-color: #218838; color: white !important; border: 1px solid #218838; }
         .red-button button { background-color: #dc3545; color: white !important; border: 1px solid #dc3545; }
         .red-button button:hover { background-color: #c82333; color: white !important; border: 1px solid #c82333; }
+        .locked-indicator { background-color: #ffc107; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 

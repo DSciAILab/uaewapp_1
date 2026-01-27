@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-from streamlit_autorefresh import st_autorefresh
+from realtime_utils import setup_auto_refresh  # Auto-refresh seguro
 from datetime import datetime
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
+from utils import safe_get_all_records
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Task Control", layout="wide")
@@ -67,7 +68,7 @@ def load_live_queue_data_all():
     try:
         client = get_gspread_client()
         sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
-        df = pd.DataFrame(sheet.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(sheet))
         if df.empty: return pd.DataFrame(columns=['TaskName', 'AthleteID', 'Status', 'CheckinNumber', 'Timestamp'])
         df['AthleteID'] = df['AthleteID'].astype(str)
         df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
@@ -79,7 +80,7 @@ def update_athlete_status_on_sheet(task_name, athlete_id, new_status):
         client = get_gspread_client(); sheet = client.open(MAIN_SHEET_NAME).worksheet(LIVE_QUEUE_SHEET_NAME)
         check_in_number = ""
         if new_status == 'na fila':
-            all_records = pd.DataFrame(sheet.get_all_records())
+            all_records = pd.DataFrame(safe_get_all_records(sheet))
             if not all_records.empty and 'TaskName' in all_records.columns:
                 task_records = all_records[all_records['TaskName'] == task_name]
                 max_order = pd.to_numeric(task_records['CheckinNumber'], errors='coerce').max()

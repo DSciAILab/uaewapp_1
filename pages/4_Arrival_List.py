@@ -9,7 +9,7 @@ bootstrap_page("Arrival List")
 st.title("Arrival List")
 
 # --- Project Imports ---
-from utils import get_gspread_client, connect_gsheet_tab
+from utils import get_gspread_client, connect_gsheet_tab, safe_get_all_records
 
 # --- Constants ---
 MAIN_SHEET_NAME = "UAEW_App"
@@ -22,7 +22,7 @@ def load_arrival_data(sheet_name: str = MAIN_SHEET_NAME, data_tab_name: str = DA
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, data_tab_name)
-        data = worksheet.get_all_records()
+        data = safe_get_all_records(worksheet)
         if not data:
             return pd.DataFrame()
         

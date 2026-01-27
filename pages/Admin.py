@@ -2,9 +2,15 @@ from components.layout import bootstrap_page
 import streamlit as st
 
 # --- Admin-only page protection ---
-user_is_admin = st.session_state.get("user_type", "").strip().lower() == "admin"
-if not user_is_admin:
-    st.error("Access denied. Admins only.", icon="🚨")
+current_role = str(st.session_state.get("user_type", "")).strip().lower()
+
+# Mostra o cargo atual para facilitar o ajuste na planilha
+if current_role != "admin":
+    st.warning(f"Cargo atual na sessão: '{current_role or 'Não definido'}'")
+    st.info("Para acessar, a coluna 'user_type' na planilha deve dizer 'admin'.")
+
+if current_role != "admin":
+    st.error("Acesso negado. Apenas administradores podem ver esta página.", icon="🚨")
     st.stop()
 
 bootstrap_page("Admin Panel")

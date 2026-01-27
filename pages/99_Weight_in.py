@@ -14,14 +14,14 @@ import streamlit as st
 import pandas as pd
 import re, html
 from datetime import datetime, timezone, timedelta
-from streamlit_autorefresh import st_autorefresh
+from realtime_utils import setup_auto_refresh  # Auto-refresh seguro
 
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
     ZoneInfo = None
 
-from utils import get_gspread_client, connect_gsheet_tab
+from utils import get_gspread_client, connect_gsheet_tab, safe_get_all_records
 
 # >>> Importante: não exigir auth aqui para não derrubar a Running Order
 bootstrap_page("Weight-in", require_auth=False)
@@ -87,7 +87,7 @@ def load_athletes() -> pd.DataFrame:
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET, Config.ATHLETES_TAB)
-        df = pd.DataFrame(ws.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(ws))
         if df.empty: return pd.DataFrame()
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
 
@@ -113,7 +113,7 @@ def load_attendance() -> pd.DataFrame:
     try:
         gc = get_gspread_client()
         ws = connect_gsheet_tab(gc, Config.MAIN_SHEET, Config.ATT_TAB)
-        df = pd.DataFrame(ws.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(ws))
         for c in Config.ATT_COLS:
             if c not in df.columns: df[c] = ""
         return df
@@ -432,7 +432,7 @@ elif mode == "Check out":
 else:
     # Auto-refresh suave que mantém a mesma sessão (não derruba o login)
     sec = int(st.session_state["ro_refresh_sec"])
-    st_autorefresh(interval=max(1, sec) * 1000, key="weighin_ro_autorefresh_v3")
+    setup_auto_refresh(interval_ms=interval=max(1, sec) * 1000, key="weighin_ro_autorefresh_v3")
 
     cL, cM, cR = st.columns([1.2, 1, 1.2])
     col_title_css = f"font-size:{st.session_state['coltitle_size']}px;text-align:center;margin:10px 0 14px 0;font-weight:800;color:#ddd;"

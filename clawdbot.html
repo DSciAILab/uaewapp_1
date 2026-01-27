@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial Completo: Clawdbot + Groq no Synology DS224+</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #1e40af;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f8fafc;
+            --dark: #1e293b;
+            --code-bg: #0f172a;
+            --border: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            min-height: 100vh;
+            box-shadow: 0 0 50px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .roadmap {
+            background: var(--light);
+            padding: 2rem;
+            border-bottom: 3px solid var(--primary);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .roadmap h3 {
+            text-align: center;
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
+        }
+
+        .steps {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .step {
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 1rem;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #cbd5e1;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin: 0 auto 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .step-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .step.active .step-number {
+            background: var(--primary);
+            color: white;
+        }
+
+        .step.active .step-title {
+            color: var(--primary);
+        }
+
+        .step.completed .step-number {
+            background: var(--accent);
+            color: white;
+        }
+
+        .step.completed .step-number::before {
+            content: "✓";
+        }
+
+        .content {
+            padding: 3rem 2rem;
+        }
+
+        .section {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h2 {
+            color: var(--primary);
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--primary);
+            padding-left: 1rem;
+        }
+
+        h3 {
+            color: var(--secondary);
+            font-size: 1.4rem;
+            margin: 2rem 0 1rem;
+        }
+
+        .alert {
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            border-color: var(--primary);
+            color: #1e40af;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            border-color: var(--warning);
+            color: #92400e;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            border-color: var(--accent);
+            color: #065f46;
+        }
+
+        .code-block {
+            position: relative;
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .code-header {
+            background: #374151;
+            color: white;
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .code-title {
+            font-weight: 600;
+            color: #f3f4f6;
+        }
+
+        .copy-btn, .download-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            margin-left: 0.5rem;
+        }
+
+        .copy-btn:hover, .download-btn:hover {
+            background: var(--secondary);
+            transform: translateY(-1px);
+        }
+
+        .copy-btn.copied {
+            background: var(--accent);
+        }
+
+        pre {
+            background: var(--code-bg);
+            color: #e2e8f0;
+            padding: 1.5rem;
+            margin: 0;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .step-list {
+            counter-reset: step;
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .step-list li {
+            counter-increment: step;
+            margin-bottom: 1.5rem;
+            padding-left: 3rem;
+            position: relative;
+        }
+
+        .step-list li::before {
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: var(--primary);
+            color: white;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .nav-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .nav-btn:hover {
+            background: var(--secondary);
+            transform: translateX(5px);
+        }
+
+        .nav-btn.prev:hover {
+            transform: translateX(-5px);
+        }
+
+        .footer {
+            background: var(--dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2rem; }
+            .content { padding: 2rem 1rem; }
+            .steps { flex-direction: column; }
+            .step { min-width: 100%; }
+        }
+
+        /* Syntax highlighting */
+        .comment { color: #6a9955; }
+        .string { color: #ce9178; }
+        .number { color: #b5cea8; }
+        .keyword { color: #569cd6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Clawdbot no Synology DS224+</h1>
+            <p>Tutorial completo com Groq API (Llama 3.1) - Otimizado para 6GB RAM</p>
+        </div>
+
+        <div class="roadmap">
+            <h3>Progresso da Instalação</h3>
+            <div class="steps">
+                <div class="step active" onclick="showSection(0)">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Preparação</div>
+                </div>
+                <div class="step" onclick="showSection(1)">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Groq API</div>
+                </div>
+                <div class="step" onclick="showSection(2)">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Estrutura</div>
+                </div>
+                <div class="step" onclick="showSection(3)">
+                    <div class="step-number">4</div>
+                    <div class="step-title">Docker</div>
+                </div>
+                <div class="step" onclick="showSection(4)">
+                    <div class="step-number">5</div>
+                    <div class="step-title">Configuração</div>
+                </div>
+                <div class="step" onclick="showSection(5)">
+                    <div class="step-number">6</div>
+                    <div class="step-title">Deploy</div>
+                </div>
+                <div class="step" onclick="showSection(6)">
+                    <div class="step-number">7</div>
+                    <div class="step-title">Testes</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Seção 1: Preparação -->
+            <div class="section active">
+                <h2>1. Preparação do Sistema</h2>
+                <p>Vamos preparar seu Synology DS224+ para rodar o Clawdbot com máxima eficiência. Com 6GB de RAM, você tem recursos excelentes para esta aplicação.</p>
+
+                <div class="alert alert-info">
+                    <strong>📋 Verificações Iniciais:</strong><br>
+                    • DSM 7.2+ instalado e atualizado<br>
+                    • Container Manager instalado<br>
+                    • Pelo menos 2GB de espaço livre<br>
+                    • Conexão estável com internet
+                </div>
+
+                <h3>1.1 Instalação do Container Manager</h3>
+                <ol class="step-list">
+                    <li><strong>Acesse o Package Center</strong> no menu principal do DSM</li>
+                    <li><strong>Busque por "Container Manager"</strong> na barra de pesquisa</li>
+                    <li><strong>Instale o pacote</strong> e aguarde a conclusão (2-3 minutos)</li>
+                    <li><strong>Verifique a instalação</strong> abrindo o Container Manager</li>
+                </ol>
+
+                <h3>1.2 Especificações do Seu Sistema</h3>
+                <p>Seu DS224+ tem configuração ideal para o Clawdbot:</p>
+                <ul>
+                    <li><strong>Processador:</strong> Intel Celeron J4125 (4 cores, 2.0-2.7GHz) ✅</li>
+                    <li><strong>RAM:</strong> 6GB DDR4 ✅ Excelente!</li>
+                    <li><strong>Arquitetura:</strong> x86_64 ✅ Compatível</li>
+                    <li><strong>Docker:</strong> Suporte nativo completo ✅</li>
+                </ul>
+
+                <div class="nav-buttons">
+                    <div></div>
+                    <button class="nav-btn" onclick="showSection(1)">Próximo: Groq API →</button>
+                </div>
+            </div>
+
+            <!-- Seção 2: Groq API -->
+            <div class="section">
+                <h2>2. Configuração da API Groq</h2>
+                <p>O Groq oferece acesso ao Llama 3.1 com velocidade excepcional (250-300 tokens/segundo) e tier gratuito generoso.</p>
+
+                <div class="alert alert-success">
+                    <strong>🚀 Por que Groq?</strong><br>
+                    • Velocidade: 100x mais rápido que modelos locais<br>
+                    • Custo: $0.05-0.59 por milhão de tokens<br>
+                    • Tier gratuito: 14.400 requisições diárias<br>
+                    • Zero impacto no seu NAS
+                </div>
+
+                <h3>2.1 Criação da Conta</h3>
+                <ol class="step-list">
+                    <li><strong>Acesse:</strong> <a href="https://console.groq.com" target="_blank">console.groq.com</a></li>
+                    <li><strong>Cadastre-se</strong> usando Google, GitHub ou e-mail</li>
+                    <li><strong>Confirme seu e-mail</strong> através do link enviado</li>
+                    <li><strong>Complete o perfil</strong> com informações básicas</li>
+                </ol>
+
+                <h3>2.2 Gerando a API Key</h3>
+                <ol class="step-list">
+                    <li><strong>Vá em "API Keys"</strong> no menu lateral</li>
+                    <li><strong>Clique em "Create API Key"</strong></li>
+                    <li><strong>Nome:</strong> "Clawdbot-DS224"</li>
+                    <li><strong>Copie e guarde a chave</strong> (será exibida apenas uma vez!)</li>
+                </ol>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ CRÍTICO:</strong> Sua API key é como uma senha do banco. Nunca compartilhe publicamente. Se comprometida, revogue imediatamente.
+                </div>
+
+                <h3>2.3 Modelos Disponíveis</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">Modelos Groq Recomendados</span>
+                    </div>
+                    <pre>llama-3.1-8b-instant    → Tarefas simples e rápidas  ($0.05/1M tokens)
+llama-3.1-70b-versatile → Análises complexas       ($0.59/1M tokens)
+llama-3.2-3b-preview    → Balanço custo/performance ($0.06/1M tokens)</pre>
+                </div>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(0)">← Anterior</button>
+                    <button class="nav-btn" onclick="showSection(2)">Próximo: Estrutura →</button>
+                </div>
+            </div>
+
+            <!-- Seção 3: Estrutura -->
+            <div class="section">
+                <h2>3. Estrutura de Diretórios</h2>
+                <p>Vamos criar uma estrutura organizada que facilita manutenção, backups e troubleshooting.</p>
+
+                <h3>3.1 Estrutura Completa</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">Árvore de Diretórios</span>
+                    </div>
+                    <pre>/volume1/docker/clawdbot/
+├── config/              <span class="comment"># Configurações (.env, soul.md)</span>
+├── data/                <span class="comment"># Memória persistente do bot</span>
+│   ├── conversations/   <span class="comment"># Histórico de conversas</span>
+│   ├── memory/          <span class="comment"># Contexto de longo prazo</span>
+│   └── cache/           <span class="comment"># Cache temporário</span>
+├── logs/                <span class="comment"># Logs da aplicação</span>
+├── skills/              <span class="comment"># Plugins e extensões</span>
+└── backups/             <span class="comment"># Backups automáticos</span></pre>
+                </div>
+
+                <h3>3.2 Criação via File Station</h3>
+                <ol class="step-list">
+                    <li><strong>Abra o File Station</strong> no menu principal</li>
+                    <li><strong>Navegue até volume1</strong> e localize/crie a pasta "docker"</li>
+                    <li><strong>Crie a pasta "clawdbot"</strong> dentro de docker</li>
+                    <li><strong>Crie as subpastas:</strong> config, data, logs, skills, backups</li>
+                    <li><strong>Dentro de data, crie:</strong> conversations, memory, cache</li>
+                </ol>
+
+                <h3>3.3 Criação via SSH (Opcional)</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">create-structure.sh</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('create-structure.sh', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre>#!/bin/bash
+
+<span class="comment"># Script para criar estrutura completa do Clawdbot</span>
+BASE_DIR=<span class="string">"/volume1/docker/clawdbot"</span>
+
+echo <span class="string">"Criando estrutura para Clawdbot..."</span>
+
+<span class="comment"># Criar diretórios</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/config"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/data/conversations"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/data/memory"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/data/cache"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/logs"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/skills"</span>
+sudo mkdir -p <span class="string">"$BASE_DIR/backups"</span>
+
+<span class="comment"># Definir permissões</span>
+sudo chown -R $(whoami):users <span class="string">"$BASE_DIR"</span>
+sudo chmod -R <span class="number">755</span> <span class="string">"$BASE_DIR"</span>
+
+echo <span class="string">"✅ Estrutura criada com sucesso!"</span></pre>
+                </div>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(1)">← Anterior</button>
+                    <button class="nav-btn" onclick="showSection(3)">Próximo: Docker →</button>
+                </div>
+            </div>
+
+            <!-- Seção 4: Docker -->
+            <div class="section">
+                <h2>4. Configuração Docker Compose</h2>
+                <p>O arquivo docker-compose.yml define como o Clawdbot será executado, otimizado especificamente para seu DS224+ com 6GB RAM.</p>
+
+                <h3>4.1 Arquivo Principal</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">docker-compose.yml</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('docker-compose.yml', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre><span class="keyword">version:</span> <span class="string">'3.8'</span>
+
+<span class="keyword">services:</span>
+  <span class="keyword">clawdbot:</span>
+    <span class="keyword">image:</span> node:22-bookworm-slim
+    <span class="keyword">container_name:</span> clawdbot
+    <span class="keyword">hostname:</span> clawdbot-ds224
+    <span class="keyword">restart:</span> unless-stopped
+    
+    <span class="keyword">volumes:</span>
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./skills:/app/skills
+    
+    <span class="keyword">working_dir:</span> /app
+    
+    <span class="keyword">environment:</span>
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+      - LOG_LEVEL=info
+      <span class="comment"># Otimização para 6GB RAM total</span>
+      - NODE_OPTIONS=--max-old-space-size=1536
+      - ENV_FILE=/app/config/.env
+    
+    <span class="keyword">command:</span> >
+      sh -c "
+        echo '🚀 Iniciando Clawdbot...' &&
+        apt-get update -qq &&
+        apt-get install -y -qq git curl &&
+        if [ ! -f package.json ]; then
+          echo '📦 Clonando repositório...' &&
+          git clone https://github.com/clawdbot/clawdbot.git . &&
+          echo '📚 Instalando dependências...' &&
+          npm install --production --silent
+        fi &&
+        echo '✨ Iniciando aplicação...' &&
+        npm start
+      "
+    
+    <span class="keyword">ports:</span>
+      - <span class="string">"3000:3000"</span>
+    
+    <span class="comment"># Limites otimizados para DS224+ (6GB RAM)</span>
+    <span class="keyword">deploy:</span>
+      <span class="keyword">resources:</span>
+        <span class="keyword">limits:</span>
+          <span class="keyword">memory:</span> 2G        <span class="comment"># Deixa 4GB para DSM</span>
+          <span class="keyword">cpus:</span> <span class="string">'2.0'</span>     <span class="comment"># Usa 2 dos 4 cores</span>
+        <span class="keyword">reservations:</span>
+          <span class="keyword">memory:</span> 512M
+          <span class="keyword">cpus:</span> <span class="string">'0.5'</span>
+    
+    <span class="keyword">healthcheck:</span>
+      <span class="keyword">test:</span> [<span class="string">"CMD"</span>, <span class="string">"node"</span>, <span class="string">"--version"</span>]
+      <span class="keyword">interval:</span> 60s
+      <span class="keyword">timeout:</span> 10s
+      <span class="keyword">retries:</span> 3
+
+<span class="keyword">networks:</span>
+  <span class="keyword">default:</span>
+    <span class="keyword">name:</span> clawdbot-network</pre>
+                </div>
+
+                <h3>4.2 Instalação no Container Manager</h3>
+                <ol class="step-list">
+                    <li><strong>Abra Container Manager</strong> → Seção "Projeto"</li>
+                    <li><strong>Clique em "Criar"</strong> no canto superior</li>
+                    <li><strong>Configurações:</strong>
+                        <br>• Nome: clawdbot
+                        <br>• Caminho: /volume1/docker/clawdbot
+                        <br>• Origem: Criar docker-compose.yml</li>
+                    <li><strong>Cole o código acima</strong> no editor</li>
+                    <li><strong>Salve mas NÃO inicie ainda</strong> (precisamos dos arquivos de config)</li>
+                </ol>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ IMPORTANTE:</strong> Não inicie o container ainda! Primeiro precisamos criar os arquivos .env e soul.md na próxima etapa.
+                </div>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(2)">← Anterior</button>
+                    <button class="nav-btn" onclick="showSection(4)">Próximo: Configuração →</button>
+                </div>
+            </div>
+
+            <!-- Seção 5: Configuração -->
+            <div class="section">
+                <h2>5. Arquivos de Configuração</h2>
+                <p>Agora vamos criar os arquivos essenciais que conectam seu Clawdbot ao Groq e definem sua personalidade.</p>
+
+                <h3>5.1 Arquivo .env (Variáveis de Ambiente)</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">.env</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('.env', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre><span class="comment"># ============================================</span>
+<span class="comment"># CLAWDBOT - CONFIGURAÇÃO PRINCIPAL</span>
+<span class="comment"># ============================================</span>
+
+<span class="comment"># --- GROQ API (Principal) ---</span>
+<span class="keyword">GROQ_API_KEY</span>=gsk_sua_chave_groq_aqui
+<span class="keyword">GROQ_MODEL_8B</span>=llama-3.1-8b-instant
+<span class="keyword">GROQ_MODEL_70B</span>=llama-3.1-70b-versatile
+<span class="keyword">DEFAULT_MODEL</span>=groq/llama-3.1-8b-instant
+<span class="keyword">FALLBACK_MODEL</span>=groq/llama-3.1-70b-versatile
+
+<span class="comment"># --- ROTEAMENTO INTELIGENTE ---</span>
+<span class="keyword">ENABLE_SMART_ROUTING</span>=true
+<span class="keyword">SIMPLE_QUERY_MODEL</span>=groq/llama-3.1-8b-instant
+<span class="keyword">COMPLEX_QUERY_MODEL</span>=groq/llama-3.1-70b-versatile
+<span class="keyword">COMPLEXITY_THRESHOLD</span>=100
+
+<span class="comment"># --- LIMITES DE CUSTO ---</span>
+<span class="keyword">DAILY_COST_LIMIT</span>=1.00
+<span class="keyword">MONTHLY_COST_LIMIT</span>=15.00
+<span class="keyword">SEND_COST_ALERTS</span>=true
+<span class="keyword">ALERT_THRESHOLD_PERCENT</span>=80
+
+<span class="comment"># --- MENSAGERIA (Opcional) ---</span>
+<span class="comment"># TELEGRAM_BOT_TOKEN=</span>
+<span class="comment"># WHATSAPP_PHONE_NUMBER=</span>
+
+<span class="comment"># --- SEGURANÇA ---</span>
+<span class="keyword">PAIRING_CODE</span>=meu_codigo_seguro_unico_2024
+<span class="keyword">ADMIN_USER_ID</span>=fernando
+<span class="keyword">ALLOWED_USERS</span>=fernando
+
+<span class="comment"># --- SISTEMA ---</span>
+<span class="keyword">NODE_ENV</span>=production
+<span class="keyword">TZ</span>=America/Sao_Paulo
+<span class="keyword">LOG_LEVEL</span>=info
+<span class="keyword">MAX_MEMORY_FILES</span>=1000
+<span class="keyword">ENABLE_TELEMETRY</span>=false</pre>
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>🔐 SEGURANÇA CRÍTICA:</strong><br>
+                    • Substitua "gsk_sua_chave_groq_aqui" pela sua chave real<br>
+                    • Crie um PAIRING_CODE único e forte<br>
+                    • Mantenha este arquivo seguro e privado<br>
+                    • Configure limites de custo desde o início
+                </div>
+
+                <h3>5.2 Arquivo soul.md (Personalidade)</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">soul.md</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('soul.md', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre># 🤖 Clawdbot - Assistente do Fernando
+
+## Identidade Core
+Você é o assistente pessoal de IA do Fernando, rodando em um Synology DS224+ com 6GB de RAM.
+Utiliza modelos Llama 3.1 via Groq API para respostas ultra-rápidas e eficientes.
+
+## Sistema
+- **Hardware:** DS224+ (Intel J4125, 6GB RAM)
+- **IA:** Groq API (Llama 3.1 8B/70B)
+- **Localização:** America/Sao_Paulo
+
+## Estilo de Comunicação
+- **Idioma:** Português brasileiro sempre
+- **Tom:** Direto, técnico quando necessário, "straight shooting"
+- **Formato:** Use Markdown para estruturar respostas
+- **Abordagem:** Seja honesto sobre limitações
+
+## Responsabilidades
+1. **Produtividade:** Organizar tarefas, criar resumos, planejar
+2. **Suporte Técnico:** Ajudar com Synology, Docker, programação
+3. **Automação:** Sugerir e implementar workflows
+4. **Monitoramento:** Acompanhar custos de API e performance
+
+## Preferências do Fernando
+- **Horário:** 9h-18h BRT
+- **Comunicação:** Respostas diretas, detalhes quando solicitado
+- **Segurança:** Sempre confirmar ações destrutivas
+- **Custo:** Alertar sobre gastos altos de API
+
+## Protocolos de Segurança
+- NUNCA expor API keys ou senhas
+- Confirmar antes de executar comandos de sistema
+- Alertar sobre riscos financeiros
+- Respeitar limites de privacidade
+
+## Roteamento de Modelos
+- **8B Instant:** Conversas, perguntas simples, tarefas rápidas
+- **70B Versatile:** Análises complexas, código avançado, raciocínio profundo
+- **Critério:** Use 70B apenas quando necessário para controlar custos</pre>
+                </div>
+
+                <h3>5.3 Upload dos Arquivos</h3>
+                <ol class="step-list">
+                    <li><strong>Baixe os arquivos</strong> usando os botões "Download" acima</li>
+                    <li><strong>Edite no seu computador</strong> substituindo as chaves de API</li>
+                    <li><strong>Via File Station:</strong> navegue até /volume1/docker/clawdbot/config/</li>
+                    <li><strong>Faça upload</strong> dos arquivos .env e soul.md</li>
+                    <li><strong>Verifique permissões:</strong> apenas você deve ter acesso</li>
+                </ol>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(3)">← Anterior</button>
+                    <button class="nav-btn" onclick="showSection(5)">Próximo: Deploy →</button>
+                </div>
+            </div>
+
+            <!-- Seção 6: Deploy -->
+            <div class="section">
+                <h2>6. Deploy e Segurança</h2>
+                <p>Com tudo configurado, vamos inicializar o Clawdbot e implementar medidas de segurança essenciais.</p>
+
+                <h3>6.1 Iniciando o Container</h3>
+                <ol class="step-list">
+                    <li><strong>Container Manager</strong> → Projeto → clawdbot</li>
+                    <li><strong>Clique em "Iniciar"</strong> ou "Build"</li>
+                    <li><strong>Aguarde 3-5 minutos</strong> (primeira inicialização)</li>
+                    <li><strong>Monitore os logs</strong> na aba "Log" do container</li>
+                </ol>
+
+                <h3>6.2 Configuração de Segurança</h3>
+                
+                <h4>Firewall do DSM</h4>
+                <ol class="step-list">
+                    <li><strong>Painel de Controle</strong> → Segurança → Firewall</li>
+                    <li><strong>Ative o firewall</strong> se não estiver habilitado</li>
+                    <li><strong>Crie regra:</strong> Permitir porta 3000 apenas da rede local</li>
+                    <li><strong>Bloqueie acesso externo</strong> direto à porta 3000</li>
+                </ol>
+
+                <h4>Reverse Proxy (HTTPS)</h4>
+                <ol class="step-list">
+                    <li><strong>Painel de Controle</strong> → Portal de Aplicativos → Proxy Reverso</li>
+                    <li><strong>Criar nova regra:</strong>
+                        <br>• Origem: localhost:3000
+                        <br>• Destino: clawdbot.seudominio.synology.me:443</li>
+                    <li><strong>Ative WebSocket</strong> nas configurações avançadas</li>
+                    <li><strong>Configure certificado SSL</strong> (Let's Encrypt recomendado)</li>
+                </ol>
+
+                <h3>6.3 Script de Backup Automático</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">backup-clawdbot.sh</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('backup-clawdbot.sh', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre>#!/bin/bash
+
+<span class="comment"># Backup automático do Clawdbot</span>
+SOURCE_DIR=<span class="string">"/volume1/docker/clawdbot"</span>
+BACKUP_DIR=<span class="string">"/volume1/docker/clawdbot/backups"</span>
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_NAME=<span class="string">"clawdbot_backup_${DATE}.tar.gz"</span>
+
+echo <span class="string">"🔄 Iniciando backup do Clawdbot..."</span>
+
+<span class="comment"># Criar backup</span>
+tar -czf <span class="string">"${BACKUP_DIR}/${BACKUP_NAME}"</span> \
+    -C <span class="string">"$SOURCE_DIR"</span> \
+    --exclude=<span class="string">'data/cache/*'</span> \
+    --exclude=<span class="string">'logs/*.log'</span> \
+    config/ data/ skills/
+
+<span class="keyword">if</span> [ $? -eq <span class="number">0</span> ]; then
+    echo <span class="string">"✅ Backup criado: ${BACKUP_NAME}"</span>
+    
+    <span class="comment"># Limpar backups antigos (>30 dias)</span>
+    find <span class="string">"$BACKUP_DIR"</span> -name <span class="string">"clawdbot_backup_*.tar.gz"</span> -mtime +30 -delete
+    echo <span class="string">"🧹 Backups antigos removidos"</span>
+<span class="keyword">else</span>
+    echo <span class="string">"❌ Erro no backup!"</span>
+    exit <span class="number">1</span>
+<span class="keyword">fi</span></pre>
+                </div>
+
+                <h3>6.4 Agendamento do Backup</h3>
+                <ol class="step-list">
+                    <li><strong>Painel de Controle</strong> → Agendador de Tarefas</li>
+                    <li><strong>Criar</strong> → Tarefa agendada → Script definido pelo usuário</li>
+                    <li><strong>Configurar:</strong>
+                        <br>• Nome: Backup Clawdbot
+                        <br>• Usuário: root
+                        <br>• Agendamento: Diário às 3:00 AM</li>
+                    <li><strong>Cole o script</strong> na área de comando</li>
+                </ol>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(4)">← Anterior</button>
+                    <button class="nav-btn" onclick="showSection(6)">Próximo: Testes →</button>
+                </div>
+            </div>
+
+            <!-- Seção 7: Testes -->
+            <div class="section">
+                <h2>7. Testes e Verificação</h2>
+                <p>Vamos verificar se tudo está funcionando corretamente e otimizar a performance.</p>
+
+                <h3>7.1 Verificação dos Logs</h3>
+                <p>No Container Manager, vá até o container clawdbot e verifique os logs. Você deve ver:</p>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">Logs Esperados</span>
+                    </div>
+                    <pre>🚀 Iniciando Clawdbot...
+📦 Clonando repositório...
+📚 Instalando dependências...
+✅ Groq API conectada
+✨ Server listening on port 3000
+🤖 Clawdbot ready! Pairing code: meu_codigo_seguro_unico_2024</pre>
+                </div>
+
+                <h3>7.2 Teste de Acesso Web</h3>
+                <ol class="step-list">
+                    <li><strong>Abra o navegador</strong> no seu computador</li>
+                    <li><strong>Acesse:</strong> http://IP_DO_SEU_NAS:3000</li>
+                    <li><strong>Use o PAIRING_CODE</strong> definido no .env</li>
+                    <li><strong>Teste uma mensagem:</strong> "Olá! Você está funcionando com Groq?"</li>
+                </ol>
+
+                <h3>7.3 Teste da API Groq</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">test-groq.sh</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                            <button class="download-btn" onclick="downloadCode('test-groq.sh', this)">💾 Download</button>
+                        </div>
+                    </div>
+                    <pre>#!/bin/bash
+
+<span class="comment"># Teste da conexão Groq</span>
+API_KEY=<span class="string">"sua_chave_groq_aqui"</span>
+
+echo <span class="string">"🧪 Testando conexão com Groq..."</span>
+
+curl -X POST <span class="string">"https://api.groq.com/openai/v1/chat/completions"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -H <span class="string">"Authorization: Bearer $API_KEY"</span> \
+  -d <span class="string">'{
+    "model": "llama-3.1-8b-instant",
+    "messages": [{"role": "user", "content": "Responda apenas: Teste OK"}],
+    "temperature": 0.5,
+    "max_tokens": 10
+  }'</span>
+
+echo <span class="string">""</span>
+echo <span class="string">"✅ Se você viu uma resposta JSON, está funcionando!"</span></pre>
+                </div>
+
+                <h3>7.4 Monitoramento de Recursos</h3>
+                <p>Verifique o uso de recursos no <strong>Monitor de Recursos</strong> do DSM:</p>
+                
+                <div class="alert alert-info">
+                    <strong>📊 Uso Normal Esperado:</strong><br>
+                    • <strong>RAM:</strong> 400-800MB (picos até 1.2GB)<br>
+                    • <strong>CPU:</strong> 1-5% idle, 15-30% durante inferência<br>
+                    • <strong>Rede:</strong> Variável conforme uso da API<br>
+                    • <strong>Disco:</strong> Baixo I/O, crescimento gradual dos logs
+                </div>
+
+                <h3>7.5 Troubleshooting Comum</h3>
+                
+                <h4>Container não inicia:</h4>
+                <ul>
+                    <li>Verifique se os arquivos .env e soul.md existem</li>
+                    <li>Confirme permissões das pastas (755)</li>
+                    <li>Analise logs para erros específicos</li>
+                </ul>
+
+                <h4>API key inválida:</h4>
+                <ul>
+                    <li>Verifique se copiou a chave completa</li>
+                    <li>Confirme que não há espaços extras</li>
+                    <li>Gere nova chave no console Groq</li>
+                </ul>
+
+                <h4>Respostas lentas:</h4>
+                <ul>
+                    <li>Verifique conexão com internet</li>
+                    <li>Force uso do modelo 8B para testes</li>
+                    <li>Monitore uso de CPU/RAM do NAS</li>
+                </ul>
+
+                <h3>7.6 Comandos Úteis</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-title">Comandos Docker Essenciais</span>
+                        <div>
+                            <button class="copy-btn" onclick="copyCode(this)">📋 Copiar</button>
+                        </div>
+                    </div>
+                    <pre><span class="comment"># Ver logs em tempo real</span>
+docker logs -f clawdbot
+
+<span class="comment"># Verificar uso de recursos</span>
+docker stats clawdbot
+
+<span class="comment"># Reiniciar container</span>
+docker restart clawdbot
+
+<span class="comment"># Executar comando no container</span>
+docker exec -it clawdbot bash
+
+<span class="comment"># Atualizar Clawdbot</span>
+docker exec clawdbot git pull origin main
+docker restart clawdbot</pre>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>🎉 Parabéns, Fernando!</strong><br>
+                    Seu Clawdbot está rodando com sucesso no DS224+, usando Groq para máxima velocidade e mínimo custo. Aproveite seu novo assistente de IA!
+                </div>
+
+                <h3>Próximos Passos</h3>
+                <ul>
+                    <li><strong>Integração Telegram:</strong> Configure um bot para conversar pelo celular</li>
+                    <li><strong>Skills do ClawdHub:</strong> Adicione funcionalidades extras</li>
+                    <li><strong>Automações:</strong> Crie rotinas personalizadas</li>
+                    <li><strong>Monitoramento:</strong> Configure alertas de custo e performance</li>
+                </ul>
+
+                <div class="nav-buttons">
+                    <button class="nav-btn prev" onclick="showSection(5)">← Anterior</button>
+                    <button class="nav-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">↑ Voltar ao Topo</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p><strong>Tutorial Clawdbot + Groq para Synology DS224+</strong></p>
+            <p>Criado especialmente para Fernando | Janeiro 2024</p>
+            <p>Documentação: <a href="https://github.com/clawdbot/clawdbot" target="_blank">github.com/clawdbot/clawdbot</a></p>
+        </div>
+    </div>
+
+    <script>
+        let currentSection = 0;
+        const sections = document.querySelectorAll('.section');
+        const steps = document.querySelectorAll('.step');
+
+        function showSection(index) {
+            // Hide all sections
+            sections.forEach(section => section.classList.remove('active'));
+            
+            // Show selected section
+            sections[index].classList.add('active');
+            
+            // Update roadmap
+            updateRoadmap(index);
+            
+            // Scroll to top
+            window.scrollTo({top: 0, behavior: 'smooth'});
+            
+            currentSection = index;
+        }
+
+        function updateRoadmap(activeIndex) {
+            steps.forEach((step, index) => {
+                step.classList.remove('active', 'completed');
+                
+                if (index < activeIndex) {
+                    step.classList.add('completed');
+                } else if (index === activeIndex) {
+                    step.classList.add('active');
+                }
+            });
+        }
+
+        function copyCode(btn) {
+            const codeBlock = btn.closest('.code-block').querySelector('pre');
+            const text = codeBlock.textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copiado!';
+                btn.classList.add('copied');
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(() => {
+                alert('Erro ao copiar. Selecione o texto manualmente.');
+            });
+        }
+
+        function downloadCode(filename, btn) {
+            const codeBlock = btn.closest('.code-block').querySelector('pre');
+            const text = codeBlock.textContent;
+            
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            const originalText = btn.textContent;
+            btn.textContent = '✅ Baixado!';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        }
+
+        // Initialize
+        updateRoadmap(0);
+    </script>
+</body>
+</html>

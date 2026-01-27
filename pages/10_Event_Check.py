@@ -13,6 +13,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import html
 import time
+from utils import safe_get_all_records
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="UAEW | Transfer & Check-In", layout="wide")
@@ -45,7 +46,7 @@ def connect_gsheet_tab(gspread_client, sheet_name: str, tab_name: str):
 def load_athlete_data():
     try:
         gspread_client = get_gspread_client(); worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, ATHLETES_TAB_NAME)
-        df = pd.DataFrame(worksheet.get_all_records())
+        df = pd.DataFrame(safe_get_all_records(worksheet))
         if df.empty: return pd.DataFrame()
         df.columns = df.columns.str.strip()
         df["INACTIVE"] = df["INACTIVE"].astype(str).str.upper().map({'FALSE': False, 'TRUE': True, '': True}).fillna(True)
@@ -61,12 +62,12 @@ def load_transfer_checkin_data():
     try: 
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, DF_TRANSFERS_TAB_NAME)
-        return pd.DataFrame(worksheet.get_all_records())
+        return pd.DataFrame(safe_get_all_records(worksheet))
     except Exception as e: st.error(f"Erro ao carregar dados de check-in/transfer: {e}", icon="🚨"); return pd.DataFrame()
 
 @st.cache_data(ttl=300)
 def load_users_data():
-    try: gspread_client = get_gspread_client(); worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, USERS_TAB_NAME); return worksheet.get_all_records() or []
+    try: gspread_client = get_gspread_client(); worksheet = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, USERS_TAB_NAME); return safe_get_all_records(worksheet) or []
     except Exception as e: st.error(f"Erro ao carregar usuários: {e}", icon="🚨"); return []
 
 def get_valid_user_info(user_input: str):
@@ -82,7 +83,7 @@ def get_valid_user_info(user_input: str):
 def save_checkin_record(data: dict):
     try:
         gspread_client = get_gspread_client(); ws = connect_gsheet_tab(gspread_client, MAIN_SHEET_NAME, DF_TRANSFERS_TAB_NAME)
-        all_records = ws.get_all_records()
+        all_records = safe_get_all_records(ws)
         df_checkin = pd.DataFrame(all_records)
         
         existing_row_index = -1

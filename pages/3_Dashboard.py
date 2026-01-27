@@ -1,12 +1,12 @@
 from components.layout import bootstrap_page
 import streamlit as st
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 import html
 
 # Helpers centralizados (evita duplicar código de credenciais e conexão)
 from utils import get_gspread_client, connect_gsheet_tab
+from realtime_utils import setup_auto_refresh  # Auto-refresh seguro
 
 # ------------------------------------------------------------------------------
 # Bootstrap da página (config/layout/sidebar centralizados)
@@ -122,9 +122,16 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
     try:
         gspread_client = get_gspread_client()
         worksheet = connect_gsheet_tab(gspread_client, sheet_name, attendance_tab_name)
-        df_att = pd.DataFrame(worksheet.get_all_records())
-        if df_att.empty:
+        
+        # Usa get_all_values para evitar erro de header duplicado
+        data = worksheet.get_all_values()
+        if not data or len(data) < 2:
             return pd.DataFrame(columns=[ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL])
+
+        # Cria DataFrame usando primeira linha como header
+        headers = data[0]
+        rows = data[1:]
+        df_att = pd.DataFrame(rows, columns=headers)
 
         # Normalizações e garantia de colunas
         for col in [ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL]:
@@ -134,7 +141,8 @@ def load_attendance_data(sheet_name=MAIN_SHEET_NAME, attendance_tab_name=ATTENDA
 
         return df_att
     except Exception as e:
-        st.error(f"Error loading Attendance: {e}", icon="🚨")
+        # Se falhar silenciosamente retorna vazio para não quebrar a página
+        st.error(f"Error loading Attendance: {e}")
         return pd.DataFrame(columns=[ATTENDANCE_ATHLETE_ID_COL, ATTENDANCE_TASK_COL, ATTENDANCE_STATUS_COL, ATTENDANCE_EVENT_COL, ATTENDANCE_TIMESTAMP_COL, ATTENDANCE_TIMESTAMP_ALT_COL])
 
 
@@ -337,8 +345,8 @@ def get_dashboard_style(font_size_px: int, num_tasks: int, fighter_width_pc: int
 # ------------------------------------------------------------------------------
 # App
 # ------------------------------------------------------------------------------
-# Auto-refresh a cada 60s
-st_autorefresh(interval=60_000, key="dash_auto_refresh_v15")
+# Auto-refresh a cada 60s (seguro - não quebra se módulo não instalado)
+setup_auto_refresh(interval_ms=60_000, key="dash_auto_refresh_v15")
 
 with st.spinner("Loading data..."):
     df_fc = load_fightcard_data()

@@ -8,7 +8,7 @@ bootstrap_page("Photoshoot")  # <- PRIMEIRA LINHA DA PÁGINA
 # ==============================================================================
 # PHOTOSHOOT - PAGE
 # ==============================================================================
-from task_app import render_task_page
+from task_logic import render_task_page
 
 # exact title in tab + page
 PAGE_TITLE = "Photoshoot"

@@ -6,7 +6,7 @@ bootstrap_page("Blood Test")  # <- PRIMEIRA LINHA DA PÁGINA
 # ==============================================================================
 # BLOOD TEST - PAGE
 # ==============================================================================
-from task_app import render_task_page
+from task_logic import render_task_page
 
 PAGE_TITLE = "Blood Test"
 FIXED_TASK = "Blood Test"

@@ -27,7 +27,6 @@ from utils import (
     load_users_data, get_valid_user_info, load_config_data,
     safe_get_all_records
 )
-)
 from auth import check_authentication, display_user_sidebar
 
 # --- Multi-user & Realtime Support ---
@@ -112,9 +111,9 @@ class BaseConfig:
 
 # Ordem fixa de colunas no Attendance (alinha o append sem baixar cabeçalho)
 ATT_HEADER_ORDER = [
-    BaseConfig.ATT_COL_ID, BaseConfig.ATT_COL_EVENT, BaseConfig.ATT_COL_NAME, BaseConfig.ATT_COL_FIGHTER,
-    BaseConfig.ATT_COL_ATHLETE_ID, BaseConfig.ATT_COL_TASK, BaseConfig.ATT_COL_STATUS, BaseConfig.ATT_COL_USER,
-    BaseConfig.ATT_COL_TIMESTAMP, BaseConfig.ATT_COL_TIMESTAMP_ALT, BaseConfig.ATT_COL_NOTES
+    BaseConfig.ATT_COL_ID, BaseConfig.ATT_COL_EVENT, BaseConfig.ATT_COL_ATHLETE_ID, BaseConfig.ATT_COL_FIGHTER,
+    BaseConfig.ATT_COL_TASK, BaseConfig.ATT_COL_STATUS, BaseConfig.ATT_COL_USER,
+    BaseConfig.ATT_COL_TIMESTAMP_ALT, BaseConfig.ATT_COL_NOTES
 ]
 
 
@@ -282,19 +281,10 @@ def load_attendance_data(sheet_name: str, attendance_tab_name: str, _cfg: BaseCo
             # we try to map them or just use what we have.
             # Best approach: create DF with actual headers, then ensure expected ones exist
             df_att = pd.DataFrame(data_rows, columns=header)
-        
-        # Ensure regex/normalization for columns if needed
-        # But mostly we just need to ensure the columns we EXPECT are present
-        for col in expected_headers:
-             if col not in df_att.columns:
-                 df_att[col] = pd.NA
-                 
-        # Keep only relevant columns if desired, or keep all (safer to keep all to avoid losing data on write if we wrote back full df, but we usually append)
-        # For reading, we can keep all.
 
-            else:
-                # Pad with expected headers if needed
-                df_att.columns = (header + expected_headers[len(header):])[:len(df_att.columns)]
+        else:
+            # Pad with expected headers if needed
+            df_att.columns = (header + expected_headers[len(header):])[:len(df_att.columns)]
         
         # Ensure all required columns exist
         for col in expected_headers:

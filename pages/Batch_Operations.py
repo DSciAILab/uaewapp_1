@@ -2,8 +2,9 @@ from components.layout import bootstrap_page
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import time
 from utils import get_gspread_client, connect_gsheet_tab, load_config_data
-from task_app import (
+from task_logic import (
     BaseConfig, 
     load_athlete_data, 
     load_attendance_data,
@@ -39,13 +40,23 @@ if not tasks_list:
     st.error("Nenhuma tarefa configurada. Verifique a aba 'Config' na planilha.", icon="🚨")
     st.stop()
 
-selected_task = st.selectbox(
+# Use segmented control for tasks (User Request: "segmented com todas as tarefas")
+# Fallback to selectbox if too many tasks, but user requested segmented.
+selected_task = st.segmented_control(
     "Tarefa:",
     options=tasks_list,
-    help="Escolha a tarefa que deseja atualizar em lote"
+    default=tasks_list[0] if tasks_list else None,
+    help="Escolha a tarefa que deseja atualizar em lote",
+    key="batch_task_selector"
 )
 
+if not selected_task:
+    st.info("Selecione uma tarefa acima para começar.")
+    st.stop()
+
+
 # --- Calcula status atual para a tarefa selecionada ---
+# (Mantém lógica de cálculo)
 athletes_status = get_all_athletes_status(
     df_athletes, 
     df_attendance, 
@@ -80,7 +91,8 @@ with col1:
     selected_event = st.selectbox("Evento:", options=event_options)
 
 with col2:
-    # Filtro por status
+    # Filtro por status (User Request: "segmented de todas as opcoes" - assumindo filtro aqui também, ou na ação)
+    # Vamos manter selectbox aqui por espaço, e usar segmented na AÇÃO (novo status)
     STATUS_FILTER_LABELS = {
         "All": "Todos",
         cfg.STATUS_PENDING: "Pending",
@@ -123,186 +135,162 @@ if df_filtered.empty:
 
 st.markdown(f"**{len(df_filtered)} atletas encontrados**")
 
-# Checkbox para selecionar todos
-select_all = st.checkbox("Selecionar todos os atletas filtrados", key="select_all_batch")
+# --- Botões de Seleção em Lote ---
+col_sel_btn1, col_sel_btn2, _ = st.columns([1, 1, 3])
 
-# Cria dataframe para exibição
-display_df = df_filtered[[
-    cfg.COL_ID, 
-    cfg.COL_NAME, 
-    cfg.COL_EVENT, 
-    cfg.COL_FIGHT_NUMBER,
-    'current_task_status'
-]].copy()
+# Estado para controle de seleção
+if "batch_selection_key" not in st.session_state:
+    st.session_state.batch_selection_key = 0
+if "batch_select_all" not in st.session_state:
+    st.session_state.batch_select_all = False
 
-display_df.columns = ['ID', 'Nome', 'Evento', 'Luta', 'Status Atual']
+with col_sel_btn1:
+    if st.button("✅ Selecionar Todos"):
+        st.session_state.batch_select_all = True
+        st.session_state.batch_selection_key += 1
+        st.rerun()
 
-# Adiciona coluna de seleção
-if 'selected_athletes' not in st.session_state:
-    st.session_state['selected_athletes'] = set()
+with col_sel_btn2:
+    if st.button("❌ Desmarcar Todos"):
+        st.session_state.batch_select_all = False
+        st.session_state.batch_selection_key += 1
+        st.rerun()
 
-# Se "selecionar todos" foi marcado
-if select_all:
-    st.session_state['selected_athletes'] = set(df_filtered.index.tolist())
-else:
-    # Remove atletas que não estão mais no filtro
-    st.session_state['selected_athletes'] = st.session_state['selected_athletes'].intersection(
-        set(df_filtered.index.tolist())
-    )
+# Tabela Interativa (st.data_editor)
+# Prepara dataframe para editor
+editor_df = df_filtered[[cfg.COL_ID, cfg.COL_NAME, cfg.COL_EVENT, cfg.COL_FIGHT_NUMBER, 'current_task_status']].copy()
 
-# Exibe tabela com checkboxes
-selected_indices = []
-for idx, row in df_filtered.iterrows():
-    col_check, col_info = st.columns([0.5, 9.5])
-    
-    with col_check:
-        is_selected = st.checkbox(
-            "✓",
-            value=idx in st.session_state['selected_athletes'],
-            key=f"athlete_check_{idx}",
-            label_visibility="collapsed"
-        )
-        if is_selected:
-            st.session_state['selected_athletes'].add(idx)
-            selected_indices.append(idx)
-        elif idx in st.session_state['selected_athletes']:
-            st.session_state['selected_athletes'].remove(idx)
-    
-    with col_info:
-        status_color = cfg.STATUS_COLOR_MAP.get(
-            row['current_task_status'], 
-            cfg.STATUS_COLOR_MAP[cfg.STATUS_PENDING]
-        )
-        st.markdown(
-            f"""<div style="background-color: {status_color}; padding: 10px; border-radius: 5px; margin-bottom: 5px;">
-                <b>{row[cfg.COL_NAME]}</b> (ID: {row[cfg.COL_ID]}) | 
-                Evento: {row[cfg.COL_EVENT]} | 
-                Luta: {row[cfg.COL_FIGHT_NUMBER] or 'N/A'} | 
-                Status: <b>{row['current_task_status'] or 'Pending'}</b>
-            </div>""",
-            unsafe_allow_html=True
-        )
+# Define valor inicial baseado no botão clicado
+editor_df.insert(0, "Selecionar", st.session_state.batch_select_all) 
+
+# Key dinâmica força o reset do editor quando os botões são clicados
+dynamic_key = f"batch_data_editor_{st.session_state.batch_selection_key}"
+
+edited_df = st.data_editor(
+    editor_df,
+    column_config={
+        "Selecionar": st.column_config.CheckboxColumn("Selecionar", default=False),
+        cfg.COL_ID: st.column_config.TextColumn("ID", disabled=True),
+        cfg.COL_NAME: st.column_config.TextColumn("Nome", disabled=True),
+        cfg.COL_EVENT: st.column_config.TextColumn("Evento", disabled=True),
+        cfg.COL_FIGHT_NUMBER: st.column_config.TextColumn("Luta", disabled=True),
+        "current_task_status": st.column_config.TextColumn("Status Atual", disabled=True)
+    },
+    hide_index=True,
+    use_container_width=True,
+    num_rows="fixed",
+    key=dynamic_key
+)
+
+# Identifica selecionados
+selected_indices_in_editor = edited_df[edited_df["Selecionar"]].index
+selected_real_indices = selected_indices_in_editor.tolist()
+num_selected = len(selected_real_indices)
 
 st.divider()
 
 # --- Ação em Lote ---
 st.subheader("4️⃣ Ação em Lote")
 
-num_selected = len(st.session_state['selected_athletes'])
 st.info(f"**{num_selected} atleta(s) selecionado(s)**", icon="📋")
 
 if num_selected == 0:
-    st.warning("Selecione pelo menos um atleta para aplicar ações em lote.", icon="⚠️")
-    st.stop()
+    st.warning("Selecione pelo menos um atleta na tabela acima para aplicar ações.")
+else:
+    # AÇÃO: Novo Status com Segmented Control (User request: "segmented de todas as opcoes")
+    col_action1, col_action2 = st.columns([2, 1])
+    
+    with col_action1:
+        st.markdown("**Definir Novo Status:**")
+        new_status = st.segmented_control(
+            "Novo Status",
+            options=[cfg.STATUS_REQUESTED, cfg.STATUS_DONE, cfg.STATUS_NOT_REQUESTED, cfg.STATUS_PENDING],
+            format_func=lambda x: {
+                cfg.STATUS_REQUESTED: "Requested",
+                cfg.STATUS_DONE: "Done",
+                cfg.STATUS_NOT_REQUESTED: "Not Requested (---)",
+                cfg.STATUS_PENDING: "Clear (Pending)"
+            }.get(x, x),
+            label_visibility="collapsed",
+            key="new_status_segmented"
+        )
+    
+    with col_action2:
+        notes = st.text_input("Notas (opcional):", placeholder="Obs para o log...")
 
-# Seleção do novo status
-col_action1, col_action2 = st.columns(2)
+    st.markdown("---")
+    
+    if st.button("✅ Atualizar Status em Lote", type="primary", use_container_width=True, disabled=(not new_status)):
+        if not new_status:
+            st.error("Selecione um status para aplicar.")
+        else:
+            try:
+                # Prepara dados para gravação
+                gspread_client = get_gspread_client()
+                ws_attendance = connect_gsheet_tab(
+                    gspread_client, 
+                    cfg.MAIN_SHEET_NAME, 
+                    cfg.ATTENDANCE_TAB_NAME
+                )
+                
+                # Pega o próximo ID disponível
+                all_values = ws_attendance.get_all_values()
+                next_id = 1
+                if all_values and len(all_values) > 1:
+                    # Lógica simples de ID incremental baseada na contagem de linhas
+                    next_id = len(all_values)
 
-with col_action1:
-    new_status = st.selectbox(
-        "Novo Status:",
-        options=[cfg.STATUS_REQUESTED, cfg.STATUS_DONE, cfg.STATUS_NOT_REQUESTED],
-        format_func=lambda x: {
-            cfg.STATUS_REQUESTED: "Requested",
-            cfg.STATUS_DONE: "Done",
-            cfg.STATUS_NOT_REQUESTED: "Not Requested (---)"
-        }.get(x, x)
-    )
-
-with col_action2:
-    notes = st.text_input("Notas (opcional):", placeholder="Adicione observações...")
-
-# Botão de aplicar
-st.markdown("---")
-
-col_btn1, col_btn2 = st.columns(2)
-
-with col_btn1:
-    if st.button("✅ Aplicar Alterações em Lote", type="primary", use_container_width=True):
-        try:
-            # Prepara dados para gravação
-            gspread_client = get_gspread_client()
-            ws_attendance = connect_gsheet_tab(
-                gspread_client, 
-                cfg.MAIN_SHEET_NAME, 
-                cfg.ATTENDANCE_TAB_NAME
-            )
-            
-            # Pega o próximo ID disponível com get_all_values
-            all_values = ws_attendance.get_all_values()
-            next_id = 1
-            if all_values and len(all_values) > 1:
-                # Assume que a coluna ID está no índice correto ou busca pelo nome
-                headers = all_values[0]
-                try:
-                    id_idx = headers.index(cfg.ATT_COL_ID)
-                    existing_ids = [
-                        int(str(row[id_idx])) 
-                        for row in all_values[1:] 
-                        if len(row) > id_idx and str(row[id_idx]).isdigit()
+                # Prepara linhas para inserção
+                rows_to_insert = []
+                timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                user_name = st.session_state.get('current_user_name', 'Unknown')
+                
+                for idx in selected_real_indices:
+                    athlete_row = df_filtered.loc[idx]
+                    
+                    # Status logic: "Pending" geralmente significa limpar o registro, mas na planilha append-only,
+                    # enviamos "" ou o status explícito.
+                    status_to_write = "" if new_status == cfg.STATUS_PENDING else new_status
+                    
+                    new_row = [
+                        str(next_id),
+                        str(athlete_row[cfg.COL_EVENT]),
+                        str(athlete_row[cfg.COL_ID]),     # Athlete ID
+                        str(athlete_row[cfg.COL_NAME]),   # Fighter
+                        selected_task,                    # Task
+                        status_to_write,                  # Status
+                        user_name,                        # User
+                        timestamp,                        # TimeStamp (ALT)
+                        notes or "Batch Update"           # Notes
                     ]
-                    next_id = max(existing_ids, default=0) + 1
-                except ValueError:
-                    # Se não achar a coluna ID, tenta usar a coluna 0 ou 4 como fallback baseado na estrutura conhecida
-                    # Fallback seguro: pega o maior número na coluna 0 (geralmente #) ou 4 (Athlete ID)
-                    # Mas ATT_COL_ID geralmente é "Athlete ID". 
-                    pass
-            
-            # Prepara linhas para inserção
-            rows_to_insert = []
-            timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            user_name = st.session_state.get('current_user_name', 'Unknown')
-            
-            for idx in st.session_state['selected_athletes']:
-                athlete_row = df_filtered.loc[idx]
+                    rows_to_insert.append(new_row)
+                    next_id += 1
                 
-                new_row = [
-                    str(next_id),
-                    str(athlete_row[cfg.COL_EVENT]),
-                    str(athlete_row[cfg.COL_NAME]),
-                    str(athlete_row[cfg.COL_NAME]),  # Fighter
-                    str(athlete_row[cfg.COL_ID]),
-                    selected_task,
-                    new_status,
-                    user_name,
-                    "",  # Timestamp (vazio)
-                    timestamp,  # TimeStamp
-                    notes or "Batch Update"
-                ]
-                rows_to_insert.append(new_row)
-                next_id += 1
-            
-            # Insere em lote
-            if rows_to_insert:
-                body = {"values": rows_to_insert}
-                ws_attendance.spreadsheet.values_append(
-                    f"{ws_attendance.title}!A:Z",
-                    params={
-                        "valueInputOption": "USER_ENTERED",
-                        "insertDataOption": "INSERT_ROWS"
-                    },
-                    body=body
-                )
+                # Insere em lote
+                if rows_to_insert:
+                    body = {"values": rows_to_insert}
+                    ws_attendance.spreadsheet.values_append(
+                        f"{ws_attendance.title}!A:Z",
+                        params={
+                            "valueInputOption": "USER_ENTERED",
+                            "insertDataOption": "INSERT_ROWS"
+                        },
+                        body=body
+                    )
+                    
+                    st.success(
+                        f"✅ {len(rows_to_insert)} registro(s) atualizado(s) com sucesso!",
+                        icon="🎉"
+                    )
+                    
+                    # Limpa cache para forçar reload
+                    load_attendance_data.clear()
+                    preprocess_attendance.clear()
+                    load_athlete_data.clear()
+                    
+                    time.sleep(3)
+                    st.rerun()
                 
-                st.success(
-                    f"✅ {len(rows_to_insert)} registro(s) adicionado(s) com sucesso! "
-                    f"Tarefa '{selected_task}' marcada como '{new_status}'.",
-                    icon="🎉"
-                )
-                
-                # Limpa seleção
-                st.session_state['selected_athletes'] = set()
-                
-                # Limpa cache para forçar reload
-                load_attendance_data.clear()
-                preprocess_attendance.clear()
-                
-                st.rerun()
-            
-        except Exception as e:
-            st.error(f"Erro ao aplicar alterações em lote: {e}", icon="🚨")
+            except Exception as e:
+                st.error(f"Erro ao aplicar alterações em lote: {e}", icon="🚨")
 
-with col_btn2:
-    if st.button("🗑️ Limpar Seleção", use_container_width=True):
-        st.session_state['selected_athletes'] = set()
-        st.rerun()

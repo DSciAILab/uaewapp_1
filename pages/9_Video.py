@@ -8,7 +8,7 @@ bootstrap_page("Video Shooting")  # <- PRIMEIRA LINHA DA PÁGINA
 # ==============================================================================
 # VIDEO SHOOTING - PAGE
 # ==============================================================================
-from task_app import render_task_page
+from task_logic import render_task_page
 
 PAGE_TITLE = "Video Shooting"
 FIXED_TASK = "Video Shooting"
